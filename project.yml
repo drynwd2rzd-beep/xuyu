@@ -42,6 +42,7 @@ targets:
         NSPhotoLibraryAddUsageDescription: 把聊天里的图片保存到相册。
         NSMicrophoneUsageDescription: 用语音输入文字。
         NSSpeechRecognitionUsageDescription: 把你说的话转成文字。
+        NSFaceIDUsageDescription: 确认是你本人再打开絮语，或让 AI 操作你的电脑。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.xuyu.ios
@@ -50,6 +51,20 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+  # 核心逻辑的自动测试：拆分回复、表情标记、聊天间隔、记忆窗口、备份恢复
+  XuyuTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: Xuyu
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.xuyu.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
   # 云端自动操作测试：在模拟器里把主要流程点一遍，闪退就会失败
   XuyuUITests:
@@ -75,6 +90,7 @@ schemes:
     test:
       config: Debug
       targets:
+        - XuyuTests
         - XuyuUITests
     archive:
       config: Release

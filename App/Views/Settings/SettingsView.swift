@@ -48,6 +48,8 @@ struct SettingsView: View {
                     navRow("外观与背景", route: .appearance)
                     Hairline()
                     navRow("备份与恢复", route: .backup)
+                    Hairline()
+                    navRow("隐私与安全", route: .privacy)
                 }
             }
             .padding(.horizontal, Space.page)

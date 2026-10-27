@@ -14,7 +14,7 @@ struct ChatSearchView: View {
 
     @State private var query = ""
     @State private var filter: Filter = .all
-    @AppStorage("recentSearches") private var recentRaw = ""
+    @AppStorage(Prefs.recentSearches) private var recentRaw = ""
     @FocusState private var focused: Bool
 
     private var recents: [String] { recentRaw.split(separator: "\n").map(String.init) }

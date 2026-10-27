@@ -151,7 +151,7 @@ struct Composer: View {
                       onLibrary: { showPhotos = true }, onFile: { showFiles = true },
                       onNote: { showNote = true }, onMention: mention)
         case .stickers:
-            StickerPanel(onKaomoji: { draft += $0 }, onSticker: sendSticker, atTop: $panelAtTop)
+            StickerPanel(onSticker: sendSticker, atTop: $panelAtTop)
         }
     }
 

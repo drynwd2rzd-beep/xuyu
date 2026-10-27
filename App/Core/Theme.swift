@@ -366,7 +366,6 @@ enum Fmt {
     static let weekday = make("EEE")
     static let weekdayMD = make("EEE · M月d日")
     static let enLong = make("EEEE, MMMM d", en)
-    static let enShort = make("EEE, MMM d", en)
     static let enMonth = make("MMMM", en)
     static let ymd = make("yyyy.M.d")
     static let full = make("yyyy年M月d日 EEEE HH:mm")

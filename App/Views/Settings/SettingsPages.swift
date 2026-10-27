@@ -34,6 +34,34 @@ struct SettingsPage<Content: View>: View {
     }
 }
 
+// MARK: - 隐私与安全
+
+struct PrivacySettingsView: View {
+    @AppStorage(Prefs.appLock) private var appLock = false
+    @AppStorage(Prefs.workAuth) private var workAuth = false
+
+    var body: some View {
+        SettingsPage(title: "隐私与安全") {
+            SettingsGroup(title: "Face ID") {
+                SettingRow(title: "打开 App") { InkToggle(isOn: guarded($appLock), label: "打开 App 需要 Face ID") }
+                Hairline()
+                SettingRow(title: "让 TA 操作电脑") { InkToggle(isOn: guarded($workAuth), label: "让 TA 操作电脑前需要 Face ID") }
+            }
+        }
+    }
+
+    /// 打开、关掉都要先确认是你本人，别人拿到手机也改不了
+    private func guarded(_ value: Binding<Bool>) -> Binding<Bool> {
+        Binding(get: { value.wrappedValue }, set: { new in
+            Task {
+                if await AppLock.authenticate(new ? "开启 Face ID 保护" : "关闭 Face ID 保护") {
+                    withAnimation(Motion.spring) { value.wrappedValue = new }
+                }
+            }
+        })
+    }
+}
+
 // MARK: - 通知
 
 struct NotificationSettingsView: View {

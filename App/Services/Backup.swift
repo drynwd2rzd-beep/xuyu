@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 @MainActor
 enum Backup {
     static let version = 1
-    static let lastBackupKey = "lastBackupAt"
-    static let autoKey = "autoBackupToPC"
+    static let lastBackupKey = Prefs.lastBackupAt
+    static let autoKey = Prefs.autoBackupToPC
 
     struct Archive: Codable {
         var version: Int
@@ -20,7 +20,6 @@ enum Backup {
         var diaries: [DiaryDTO]
         var stickers: [StickerDTO]
         var prefs: [String: String]
-        var kaomoji: Data?
         var myAvatar: Data?
     }
 
@@ -113,7 +112,6 @@ enum Backup {
             },
             stickers: stickers.map { StickerDTO(id: $0.id, pack: $0.pack, data: $0.data, createdAt: $0.createdAt, lastUsedAt: $0.lastUsedAt) },
             prefs: prefs,
-            kaomoji: defaults.data(forKey: KaomojiStore.key),
             myAvatar: MyAvatarStore.image?.jpegData(compressionQuality: 0.9))
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
@@ -194,7 +192,6 @@ enum Backup {
             else if value == "1" || value == "0" { defaults.set(value == "1", forKey: key) }
             else { defaults.set(value, forKey: key) }
         }
-        if let kaomoji = archive.kaomoji { defaults.set(kaomoji, forKey: KaomojiStore.key) }
         if let avatar = archive.myAvatar { MyAvatarStore.save(avatar) }
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         todos.forEach(Reminders.sync)

@@ -60,7 +60,7 @@ struct InitialAvatar: View {
 /// 用户自己的头像：称呼的第一个字
 /// 自己的头像照片，存在 App 自己的目录里
 enum MyAvatarStore {
-    static let stampKey = "myAvatarStamp"
+    static let stampKey = Prefs.myAvatarStamp
 
     private static var url: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

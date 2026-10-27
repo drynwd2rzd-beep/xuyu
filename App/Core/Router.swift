@@ -12,6 +12,7 @@ enum Route: Hashable {
     case notifications
     case appearance
     case backup
+    case privacy
 }
 
 @Observable
@@ -61,8 +62,8 @@ final class BannerCenter {
 
 /// CI 截图：`-demo YES -demoScreen chat` 用内存数据启动并直达指定页面
 enum DemoMode {
-    static var isOn: Bool { UserDefaults.standard.bool(forKey: "demo") }
-    static var screen: String { UserDefaults.standard.string(forKey: "demoScreen") ?? "" }
+    static var isOn: Bool { UserDefaults.standard.bool(forKey: Prefs.demo) }
+    static var screen: String { UserDefaults.standard.string(forKey: Prefs.demoScreen) ?? "" }
 
     @MainActor
     static func apply(router: Router, context: ModelContext) {

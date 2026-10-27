@@ -38,7 +38,7 @@ struct ChatView: View {
     /// 是否跟着最新消息走：你往上翻看记录时不打扰，回到底部或发消息后重新跟随
     @State private var follow = true
     /// 键盘高度：表情 / 加号面板做成一样高，切换时输入框不跳
-    @AppStorage("keyboardHeight") private var keyboardHeight = 336.0
+    @AppStorage(Prefs.keyboardHeight) private var keyboardHeight = 336.0
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -481,7 +481,17 @@ struct ChatView: View {
         let quoteID = quoting == nil ? nil : quotingID
         withAnimation(Motion.spring) { quoting = nil }
         quotingID = nil
-        engine.send(text, kind: kind, attachments: attachments, quote: quote, quoteID: quoteID, in: convo, members: members, context: context)
+        let deliver = { engine.send(text, kind: kind, attachments: attachments, quote: quote, quoteID: quoteID, in: convo, members: members, context: context) }
+        guard members.contains(where: \.canWork) else { return deliver() }
+        // 会操作电脑的角色：开了保护就先确认是你本人；没通过就把话放回输入框
+        Task {
+            if await AppLock.shared.confirmWork() {
+                deliver()
+            } else {
+                if kind == .text { draft = text }
+                flash("没有通过验证")
+            }
+        }
     }
 
     private func deleteMessages(_ ids: Set<UUID>) {

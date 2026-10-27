@@ -206,6 +206,8 @@ struct RouteView: View {
             AppearanceSettingsView()
         case .backup:
             BackupView()
+        case .privacy:
+            PrivacySettingsView()
         }
     }
 
