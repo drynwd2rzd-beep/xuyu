@@ -48,6 +48,23 @@ function claudeCatalog() {
   }));
 }
 
+// Codex 的模型说明是英文，按系列翻成中文
+const CODEX_FAMILY = {
+  astra: '最强，适合最难、最复杂的工作',
+  sol: '主力模型，写代码和日常都好用',
+  terra: '均衡，适合直接明了的工作',
+  luna: '又快又省，适合简单的事',
+};
+
+function codexDescription(m) {
+  const family = Object.keys(CODEX_FAMILY).find((k) => String(m.slug).includes(k));
+  if (!family) return m.description || '';
+  const en = String(m.description || '').toLowerCase();
+  if (en.startsWith('latest')) return `最新 · ${CODEX_FAMILY[family]}`;
+  if (/older|previous/.test(en)) return `上一代 · ${CODEX_FAMILY[family]}`;
+  return CODEX_FAMILY[family];
+}
+
 function codexCatalog() {
   try {
     const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
@@ -57,8 +74,8 @@ function codexCatalog() {
       .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
       .map((m) => ({
         id: m.slug,
-        name: m.display_name || m.slug,
-        description: m.description || '',
+        name: String(m.display_name || m.slug).replace(/[- ](Sol|Astra|Terra|Luna)$/i, ' $1'),
+        description: codexDescription(m),
         efforts: (m.supported_reasoning_levels || []).map((l) => l.effort),
         defaultEffort: m.default_reasoning_level || '',
       }));

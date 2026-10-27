@@ -78,6 +78,7 @@ struct MessageRow: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 content(isUser: false)
+                    .animation(Motion.spring, value: isThinking)
                 if message.status == .error { errorLine }
             }
             Spacer(minLength: 28)
@@ -91,18 +92,8 @@ struct MessageRow: View {
             withAnimation(Motion.spring) { reasoningOpen.toggle() }
         } label: {
             HStack(spacing: 6) {
-                // 回复还没出字时，标志慢慢转动
-                TimelineView(.animation(paused: !isThinking)) { ctx in
-                    EngineLogo(engine: persona?.engine ?? .claude, size: 14)
-                        .rotationEffect(.degrees(isThinking ? ctx.date.timeIntervalSinceReferenceDate * 90 : 0))
-                }
+                EngineLogo(engine: persona?.engine ?? .claude, size: 14)
                 Text(persona?.name ?? "已删除的角色").font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
-                if isThinking {
-                    Text(reasoning.isEmpty ? "正在输入…" : "正在思考…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.inkSoft)
-                        .transition(.opacity)
-                }
                 if !reasoning.isEmpty && showReasoning {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8.5, weight: .bold))
@@ -110,7 +101,6 @@ struct MessageRow: View {
                         .rotationEffect(.degrees(reasoningOpen ? 180 : 0))
                 }
             }
-            .photoChip()
             .padding(.leading, 2)
         }
         .buttonStyle(.plain)
@@ -123,7 +113,10 @@ struct MessageRow: View {
     private func content(isUser: Bool) -> some View {
         switch message.kind {
         case .text:
-            if !text.isEmpty {
+            if isThinking {
+                // 还没出字：一个气泡，里面三个点轮流跳
+                TypingDots().transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
+            } else if !text.isEmpty {
                 bubble(isUser: isUser) {
                     if !isUser && MarkdownParser.looksRich(text) {
                         VStack(alignment: .trailing, spacing: 2) {
@@ -229,15 +222,20 @@ struct TypingDots: View {
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { i in
+                    // 每个点依次轻轻跳起再落下，像 iMessage 那样
+                    let phase = (t * 1.6 - Double(i) * 0.18).truncatingRemainder(dividingBy: 1)
+                    let lift = phase < 0.4 ? sin(phase / 0.4 * .pi) : 0
                     Circle()
                         .fill(Palette.inkSoft)
-                        .frame(width: 7, height: 7)
-                        .opacity(0.3 + 0.7 * max(0, sin(t * 4.5 - Double(i) * 0.75)))
+                        .frame(width: 7.5, height: 7.5)
+                        .offset(y: -4 * lift)
+                        .opacity(0.45 + 0.55 * lift)
                 }
             }
+            .frame(height: 20)
         }
         .padding(.horizontal, Space.card)
-        .padding(.vertical, 14)
+        .padding(.vertical, 9)
         .background(Palette.botBubble.opacity(0.9), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
         .accessibilityLabel("正在输入")

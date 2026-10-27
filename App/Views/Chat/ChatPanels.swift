@@ -64,7 +64,7 @@ struct PlusPanel: View {
             }
         }
         .padding(Space.item)
-        .background(Palette.card.opacity(0.94), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 14, y: 6)
         .task { await recent.load() }
@@ -172,6 +172,7 @@ final class RecentPhotos {
 struct StickerPanel: View {
     let onKaomoji: (String) -> Void
     let onSticker: (Sticker) -> Void
+    @Binding var atTop: Bool
 
     @Environment(\.modelContext) private var context
     @Query(sort: \Sticker.createdAt) private var stickers: [Sticker]
@@ -273,9 +274,11 @@ struct StickerPanel: View {
             .scrollIndicators(.hidden)
             // 面板高度固定，切换分类或打开时不会挤压聊天内容
             .frame(height: 232)
+            // 告诉外面表情是不是已经翻到最上面：在最上面再往下拉，就收起面板
+            .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 1 } action: { _, top in atTop = top }
         }
         .padding(10)
-        .background(Palette.card.opacity(0.94), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.06), radius: 14, y: 6)
         .animation(Motion.spring, value: tab)

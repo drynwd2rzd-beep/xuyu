@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 enum HomeWidget: String, CaseIterable, Identifiable {
-    case whisper, days, todo, diary, countdown, mood, memory
+    case whisper, days, todo, diary, countdown, mood, memory, photo
 
     var id: String { rawValue }
     var wide: Bool { self == .whisper || self == .diary }
@@ -16,6 +17,7 @@ enum HomeWidget: String, CaseIterable, Identifiable {
         case .countdown: "倒数日"
         case .mood: "心情"
         case .memory: "回忆"
+        case .photo: "照片"
         }
     }
 
@@ -27,7 +29,8 @@ enum HomeWidget: String, CaseIterable, Identifiable {
         case .diary: "book.closed"
         case .countdown: "hourglass"
         case .mood: "chart.bar"
-        case .memory: "photo"
+        case .memory: "photo.stack"
+        case .photo: "photo"
         }
     }
 
@@ -40,6 +43,8 @@ struct HomeView: View {
     @AppStorage(Prefs.homeWidgets) private var widgetsRaw = HomeWidget.defaults.map(\.rawValue).joined(separator: ",")
     @AppStorage(Prefs.nickname) private var nickname = ""
     @State private var showGallery = false
+    @State private var pickPhoto = false
+    @State private var photoItem: PhotosPickerItem?
 
     private var widgets: [HomeWidget] {
         widgetsRaw.split(separator: ",").compactMap { HomeWidget(rawValue: String($0)) }
@@ -103,9 +108,19 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showGallery) {
             WidgetGallery(added: Set(widgets)) { add($0) }
-                .presentationDetents([.height(360)])
+                .presentationDetents([.height(500), .large])
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
+        }
+        .photosPicker(isPresented: $pickPhoto, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    withAnimation(Motion.spring) { WidgetPhotoStore.save(data) }
+                }
+                photoItem = nil
+            }
         }
         .onChange(of: router.tab) { _, tab in if tab != .home { setEditing(false) } }
     }
@@ -174,6 +189,13 @@ struct HomeView: View {
             widgetsRaw = (widgets + [widget]).map(\.rawValue).joined(separator: ",")
         }
         showGallery = false
+        // 刚加上照片组件、还没有照片时，直接让你选一张
+        if widget == .photo, WidgetPhotoStore.image == nil {
+            Task {
+                try? await Task.sleep(for: .milliseconds(450))
+                pickPhoto = true
+            }
+        }
     }
 
     private func open(_ widget: HomeWidget) {
@@ -186,6 +208,8 @@ struct HomeView: View {
             }
         case .todo, .diary, .countdown, .mood:
             withAnimation(Motion.spring) { router.tab = .todo }
+        case .photo:
+            pickPhoto = true
         }
     }
 }
@@ -261,6 +285,7 @@ private struct WidgetCell: View {
         case .countdown: CountdownWidget()
         case .mood: MoodWidget()
         case .memory: MemoryWidget()
+        case .photo: PhotoWidget()
         }
     }
 }
@@ -479,11 +504,67 @@ private struct MemoryWidget: View {
     }
 }
 
+/// 照片小组件里自己选的那张照片
+enum WidgetPhotoStore {
+    static let stampKey = "widgetPhotoStamp"
+
+    private static var url: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("widget-photo.jpg")
+    }
+
+    private static var cache: UIImage?
+    private static var loaded = false
+
+    static var image: UIImage? {
+        if !loaded {
+            loaded = true
+            cache = (try? Data(contentsOf: url)).flatMap { UIImage(data: $0) }
+        }
+        return cache
+    }
+
+    static func save(_ data: Data) {
+        guard let jpeg = ImageUtil.downscale(data, maxSide: 1200) else { return }
+        try? jpeg.write(to: url, options: .atomic)
+        cache = UIImage(data: jpeg)
+        loaded = true
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
+    }
+}
+
+/// 照片：放一张你自己选的照片，点一下可以换
+private struct PhotoWidget: View {
+    @AppStorage(WidgetPhotoStore.stampKey) private var stamp = 0.0
+
+    var body: some View {
+        ZStack {
+            if let image = WidgetPhotoStore.image {
+                Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill() }
+                    .transition(.opacity)
+            } else {
+                Palette.fill
+                VStack(spacing: 6) {
+                    Image(systemName: "photo.badge.plus").font(.system(size: 24, weight: .light))
+                    Text("点一下选照片").font(.system(size: 12))
+                }
+                .foregroundStyle(Palette.inkSoft)
+            }
+        }
+        .id(stamp)
+        .frame(maxWidth: .infinity, minHeight: 136, maxHeight: 136)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 14, y: 5)
+    }
+}
+
 private struct WidgetGallery: View {
     let added: Set<HomeWidget>
     let onAdd: (HomeWidget) -> Void
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: Space.section) {
             Text("小组件").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink).padding(.horizontal, 4)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
@@ -510,7 +591,9 @@ private struct WidgetGallery: View {
             }
         }
         .padding(.horizontal, Space.card)
-        .padding(.top, 24)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, 28)
+        .padding(.bottom, Space.page)
+        }
+        .scrollIndicators(.hidden)
     }
 }

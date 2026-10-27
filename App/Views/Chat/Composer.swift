@@ -12,9 +12,15 @@ struct Composer: View {
     let busy: Bool
     let onSend: (String, MessageKind, [OutgoingAttachment]) -> Void
     let onStop: () -> Void
+    /// 输入框获得焦点或打开面板时通知外面（聊天滚到最底下）
+    var onExpand: () -> Void = {}
+    /// 外面每加一次，就收起面板（滑动聊天记录时）
+    var collapse: Int = 0
 
     @Environment(\.modelContext) private var context
     @State private var panel: Panel?
+    @State private var panelDrag: CGFloat = 0
+    @State private var panelAtTop = true
     @State private var dictation = Dictation()
     @State private var dictationBase = ""
     @State private var alert: String?
@@ -45,20 +51,51 @@ struct Composer: View {
                                   onLibrary: { showPhotos = true }, onFile: { showFiles = true },
                                   onNote: { showNote = true }, onMention: { draft += "@"; self.panel = nil; focused = true })
                     case .stickers:
-                        StickerPanel(onKaomoji: { draft += $0 }, onSticker: sendSticker)
+                        StickerPanel(onKaomoji: { draft += $0 }, onSticker: sendSticker, atTop: $panelAtTop)
                     }
                 }
+                .offset(y: panelDrag)
+                // 往下拉一段，面板自己收回去
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { v in
+                            guard panelAtTop, v.translation.height > 0,
+                                  v.translation.height > abs(v.translation.width) else { return }
+                            panelDrag = v.translation.height * 0.55
+                        }
+                        .onEnded { v in
+                            if panelDrag > 44 || (panelAtTop && panelDrag > 0 && v.predictedEndTranslation.height > 200) {
+                                withAnimation(Motion.spring) {
+                                    panel = nil
+                                    panelDrag = 0
+                                }
+                            } else {
+                                withAnimation(Motion.settle) { panelDrag = 0 }
+                            }
+                        }
+                )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .padding(.horizontal, Space.item)
         .padding(.top, 6)
         .padding(.bottom, Space.tight)
-        .background { FooterFade() }
         .animation(Motion.spring, value: panel)
         .animation(Motion.spring, value: mentionOpen)
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
-        .onChange(of: focused) { _, f in if f { withAnimation(Motion.spring) { panel = nil } } }
+        .onChange(of: focused) { _, f in
+            if f {
+                withAnimation(Motion.spring) { panel = nil }
+                onExpand()
+            }
+        }
+        .onChange(of: collapse) {
+            if panel != nil { withAnimation(Motion.spring) { panel = nil } }
+        }
+        .onChange(of: panel) { _, p in
+            panelAtTop = true
+            if p != nil { onExpand() }
+        }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 9, matching: .images)
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
@@ -120,15 +157,18 @@ struct Composer: View {
                 .padding(.vertical, 11)
                 .padding(.leading, Space.card)
             Button { toggle(.stickers) } label: {
-                Group {
-                    if panel == .stickers {
-                        Image(systemName: "keyboard").font(.system(size: 17)).foregroundStyle(Palette.ink)
-                    } else {
-                        StickerGlyph(size: 21)
-                    }
+                // 两个图标一直都在，只是交替淡入淡出：跟着输入框一起移动，不会留在原地叠在一起
+                ZStack {
+                    StickerGlyph(size: 21)
+                        .opacity(panel == .stickers ? 0 : 1)
+                        .scaleEffect(panel == .stickers ? 0.7 : 1)
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 17))
+                        .foregroundStyle(Palette.ink)
+                        .opacity(panel == .stickers ? 1 : 0)
+                        .scaleEffect(panel == .stickers ? 1 : 0.7)
                 }
                 .frame(width: 36, height: Space.control)
-                .contentTransition(.opacity)
             }
             .accessibilityLabel(panel == .stickers ? "键盘" : "表情")
             .padding(.trailing, 4)

@@ -6,6 +6,8 @@ struct RootView: View {
     @Environment(Router.self) private var router
     @Environment(BannerCenter.self) private var banners
     @State private var keyboardShown = false
+    @State private var shownTab: AppTab = .home
+    @State private var revealed = true
 
     var body: some View {
         @Bindable var router = router
@@ -38,6 +40,8 @@ struct RootView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .onAppear { shownTab = router.tab }
+        .onChange(of: router.tab) { _, new in switchTab(to: new) }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(Motion.snappy) { keyboardShown = true }
         }
@@ -48,14 +52,26 @@ struct RootView: View {
 
     /// 三个页面常驻，切换时保留滚动位置
     private func tabPage<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
-        let active = router.tab == tab
-        // 切换时旧页轻轻退后、新页缓缓浮现
+        let active = shownTab == tab
+        let visible = active && revealed
+        // 先让旧页退场，再让新页浮现：两页不会同时叠在屏幕上
         return content()
-            .opacity(active ? 1 : 0)
-            .scaleEffect(active ? 1 : 0.985)
-            .offset(y: active ? 0 : 8)
+            .opacity(visible ? 1 : 0)
+            .offset(y: visible ? 0 : 10)
             .allowsHitTesting(active)
             .accessibilityHidden(!active)
+    }
+
+    private func switchTab(to new: AppTab) {
+        guard new != shownTab else { return }
+        withAnimation(.easeIn(duration: 0.13)) { revealed = false }
+        Task {
+            try? await Task.sleep(for: .milliseconds(130))
+            // 连续点得很快时，只显示最后点的那个
+            guard router.tab == new else { return }
+            shownTab = new
+            withAnimation(Motion.spring) { revealed = true }
+        }
     }
 }
 

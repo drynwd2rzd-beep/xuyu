@@ -20,7 +20,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.defaultCodexEffort) private var codexEffort = ""
     @AppStorage(MyAvatarStore.stampKey) private var avatarStamp = 0.0
     @State private var avatarItem: PhotosPickerItem?
-    @State private var showModels = false
+    @State private var modelEngine: Engine?
     @State private var showQuiet = false
 
     var body: some View {
@@ -41,15 +41,6 @@ struct SettingsView: View {
                     Button { router.open(.personas) } label: {
                         SettingRow(title: "角色") {
                             Text("\(personas.count) 位").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                            Chevron()
-                        }
-                    }
-                    .buttonStyle(PressableRowStyle())
-                    Hairline()
-                    Button { showModels = true } label: {
-                        SettingRow(title: "默认模型") {
-                            Text(ModelNames.summary(claudeModel, claudeEffort, engine: .claude, status: relay.status))
-                                .font(.system(size: 14)).foregroundStyle(Palette.inkSoft).lineLimit(1)
                             Chevron()
                         }
                     }
@@ -94,8 +85,10 @@ struct SettingsView: View {
         .safeAreaInset(edge: .top, spacing: 0) { SubpageHeader(title: "设置") }
         .background(Palette.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showModels) {
-            ModelPicker(claude: $claudeModel, codex: $codexModel, claudeEffort: $claudeEffort, codexEffort: $codexEffort,
+        .sheet(item: $modelEngine) { engine in
+            ModelPicker(engine: engine,
+                        selection: engine == .claude ? $claudeModel : $codexModel,
+                        effort: engine == .claude ? $claudeEffort : $codexEffort,
                         status: relay.status)
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Radius.sheet)
@@ -206,24 +199,34 @@ struct SettingsView: View {
         .contentShape(Rectangle())
     }
 
+    /// Claude / Codex 一行：显示它的默认模型，点进去选模型和推理强度
     private func engineRow(_ engine: Engine) -> some View {
         let s = engine == .claude ? relay.status?.claude : relay.status?.codex
-        return HStack(spacing: Space.item) {
-            EngineLogo(engine: engine, size: 18)
-                .frame(width: 34, height: 34)
-                .background(Palette.fill, in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(engine.label).font(.system(size: 16)).foregroundStyle(Palette.ink)
-                Text(s.map { $0.installed ? "订阅账号 · \($0.version)" : "电脑上还没有安装" } ?? "连接电脑后显示")
-                    .font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).lineLimit(1)
-            }
-            Spacer()
-            StatusDot(ok: s?.installed == true && relay.isConnected)
-            // 占住箭头的位置，和上面「电脑中继」的点对齐成一列
-            Chevron().hidden()
+        let model = engine == .claude ? claudeModel : codexModel
+        let effort = engine == .claude ? claudeEffort : codexEffort
+        let subtitle: String = if s?.installed == false {
+            "电脑上还没有安装"
+        } else {
+            "默认模型 · " + ModelNames.summary(model, effort, engine: engine, status: relay.status)
         }
-        .padding(.horizontal, Space.card)
-        .frame(height: Space.rowTall)
+        return Button { modelEngine = engine } label: {
+            HStack(spacing: Space.item) {
+                EngineLogo(engine: engine, size: 18)
+                    .frame(width: 34, height: 34)
+                    .background(Palette.fill, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(engine.label).font(.system(size: 16)).foregroundStyle(Palette.ink)
+                    Text(subtitle).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                }
+                Spacer()
+                StatusDot(ok: s?.installed == true && relay.isConnected)
+                Chevron()
+            }
+            .padding(.horizontal, Space.card)
+            .frame(height: Space.rowTall)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableRowStyle())
     }
 
     static func short(_ model: String) -> String {
@@ -263,38 +266,32 @@ enum ModelNames {
     }
 }
 
-/// 默认模型和推理强度：Claude 和 Codex 各选一套
+/// 某一个引擎（Claude 或 Codex）的默认模型和推理强度
 struct ModelPicker: View {
-    @Binding var claude: String
-    @Binding var codex: String
-    @Binding var claudeEffort: String
-    @Binding var codexEffort: String
+    let engine: Engine
+    @Binding var selection: String
+    @Binding var effort: String
     let status: RelayStatus?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.section) {
-                HStack {
-                    Text("默认模型").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink)
+                HStack(spacing: Space.tight) {
+                    EngineLogo(engine: engine, size: 18)
+                    Text("\(engine.label) 默认模型").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink)
                     Spacer()
                     Button("完成") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.ink)
                 }
-                group(.claude, selection: $claude, effort: $claudeEffort)
-                group(.codex, selection: $codex, effort: $codexEffort)
+                group(selection: $selection, effort: $effort)
             }
             .padding(Space.page)
         }
     }
 
-    private func group(_ engine: Engine, selection: Binding<String>, effort: Binding<String>) -> some View {
+    private func group(selection: Binding<String>, effort: Binding<String>) -> some View {
         let models = status?.catalog(for: engine) ?? []
         return VStack(alignment: .leading, spacing: Space.tight) {
-            HStack(spacing: 6) {
-                EngineLogo(engine: engine, size: 14)
-                Text(engine.label).font(Typo.serif(13.5)).foregroundStyle(Palette.inkSoft)
-            }
-            .padding(.leading, 6)
             VStack(spacing: 0) {
                 row("自动", subtitle: "账号默认的模型", value: "", selection: selection)
                 ForEach(models) { m in

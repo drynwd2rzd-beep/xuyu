@@ -38,11 +38,6 @@ enum WallpaperStore {
         return own >= 0 ? (own, convoID) : (global, nil)
     }
 
-    static func backdrop(index: Int, owner: UUID?) -> Backdrop {
-        if index == 3, image(for: owner) != nil { return .photo }
-        return .color(ChatWallpaper.swatches[min(max(index, 0), 2)].1)
-    }
-
     private static var cache: [UUID?: UIImage] = [:]
 
     static func image(for owner: UUID? = nil) -> UIImage? {

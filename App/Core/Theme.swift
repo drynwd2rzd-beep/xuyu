@@ -103,103 +103,50 @@ enum Space {
     static let top: CGFloat = 16
 }
 
-/// 页面底色：纯色，或者照片（照片上用渐隐的毛玻璃代替纯色，过渡自然）
-enum Backdrop: Equatable {
-    case color(Color)
-    case photo
-}
-
-private struct BackdropKey: EnvironmentKey {
-    static let defaultValue: Backdrop = .color(Palette.paper)
-}
-
-extension EnvironmentValues {
-    var backdrop: Backdrop {
-        get { self[BackdropKey.self] }
-        set { self[BackdropKey.self] = newValue }
-    }
-}
-
-/// 照片上的毛玻璃：越靠边越实，向内慢慢化开，没有硬边
-private struct SoftGlass: View {
-    let stops: [Gradient.Stop]
-    let start: UnitPoint
-    let end: UnitPoint
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            Palette.paper.opacity(0.28)
-        }
-        .mask { LinearGradient(stops: stops, startPoint: start, endPoint: end) }
-    }
-}
-
-/// 页头背景：页头本身是底色，下方再延伸一段柔和淡出，内容滚上来不会和标题叠在一起
+/// 页头背景：页头本身是纸色，下方再延伸一段柔和淡出，内容滚上来不会和标题叠在一起
 struct HeaderFade: View {
     var fade: CGFloat = 28
-    @Environment(\.backdrop) private var backdrop
 
     var body: some View {
-        Group {
-            switch backdrop {
-            case .color(let color):
-                VStack(spacing: 0) {
-                    color
-                    LinearGradient(colors: [color, color.opacity(0)], startPoint: .top, endPoint: .bottom)
-                        .frame(height: fade)
-                }
-                .padding(.bottom, -fade)
-            case .photo:
-                SoftGlass(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.55), .init(color: .clear, location: 1)],
-                          start: .top, end: .bottom)
-                    .padding(.bottom, -fade * 2)
-            }
+        VStack(spacing: 0) {
+            Palette.paper
+            LinearGradient(colors: [Palette.paper, Palette.paper.opacity(0)], startPoint: .top, endPoint: .bottom)
+                .frame(height: fade)
         }
+        .padding(.bottom, -fade)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
 }
 
-/// 底栏背景：从透明渐变到底色；照片上用渐隐的毛玻璃
-struct FooterFade: View {
-    @Environment(\.backdrop) private var backdrop
-
-    var body: some View {
-        Group {
-            switch backdrop {
-            case .color(let color):
-                LinearGradient(stops: [.init(color: color.opacity(0), location: 0), .init(color: color, location: 0.35)],
-                               startPoint: .top, endPoint: .bottom)
-            case .photo:
-                SoftGlass(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)],
-                          start: .top, end: .bottom)
-                    .padding(.top, -24)
-            }
-        }
-        .ignoresSafeArea(edges: .bottom)
-        .allowsHitTesting(false)
-    }
-}
-
-/// 照片背景上的小字（名字、时间分隔）垫一层淡淡的毛玻璃，纯色背景上不变
-struct PhotoChip: ViewModifier {
-    @Environment(\.backdrop) private var backdrop
+/// 滚动内容在页头、底栏附近自己慢慢变淡，露出后面的背景；不盖底色、不用毛玻璃，换什么背景都自然
+struct EdgeFade: ViewModifier {
+    var top: CGFloat = 56
+    var bottom: CGFloat = 18
 
     func body(content: Content) -> some View {
-        if backdrop == .photo {
-            content
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.ultraThinMaterial, in: Capsule())
-        } else {
-            content
+        content.mask {
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    // 页头、底栏所在的位置（safeAreaInset 撑出来的安全区）里内容不显示
+                    Color.clear.frame(height: max(0, geo.safeAreaInsets.top - top * 0.35))
+                    LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.35), location: 0.45),
+                                           .init(color: .black, location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: top)
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: bottom)
+                    Color.clear.frame(height: max(0, geo.safeAreaInsets.bottom - bottom * 0.5))
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 }
 
 extension View {
-    func photoChip() -> some View { modifier(PhotoChip()) }
+    func edgeFade(top: CGFloat = 56, bottom: CGFloat = 18) -> some View { modifier(EdgeFade(top: top, bottom: bottom)) }
 }
 
 /// 统一的弹簧动画
@@ -431,9 +378,14 @@ enum Fmt {
         return f
     }
 
-    static let hm = make("HH:mm")
+    /// 时间跟着手机的 12/24 小时制和语言走（12 小时制显示上午/下午或 AM/PM）
+    static let hm: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("jmm")
+        return f
+    }()
     static let md = make("M月d日")
-    static let mdhm = make("M月d日 HH:mm")
     static let weekday = make("EEE")
     static let weekdayMD = make("EEE · M月d日")
     static let enLong = make("EEEE, MMMM d", en)
@@ -458,7 +410,7 @@ extension Date {
         let cal = Calendar.current
         if cal.isDateInToday(self) { return "今天 " + Fmt.hm.string(from: self) }
         if cal.isDateInYesterday(self) { return "昨天 " + Fmt.hm.string(from: self) }
-        return Fmt.mdhm.string(from: self)
+        return Fmt.md.string(from: self) + " " + Fmt.hm.string(from: self)
     }
 
     var startOfDay: Date { Calendar.current.startOfDay(for: self) }

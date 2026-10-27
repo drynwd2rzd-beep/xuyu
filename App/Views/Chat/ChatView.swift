@@ -24,6 +24,8 @@ struct ChatView: View {
     @State private var visibleLimit = 120
     @State private var atBottom = true
     @State private var keyboardShown = false
+    @State private var pinBottom = 0
+    @State private var collapsePanel = 0
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -39,9 +41,7 @@ struct ChatView: View {
 
     var body: some View {
         let paper = wallpaper
-        let backdrop = WallpaperStore.backdrop(index: paper.index, owner: paper.owner)
         content(paper: paper)
-            .environment(\.backdrop, backdrop)
             // 「夜墨」背景下整页按深色排版，文字和气泡才看得清
             .environment(\.colorScheme, paper.index == 2 ? .dark : systemScheme)
     }
@@ -145,7 +145,6 @@ struct ChatView: View {
         }
         .padding(.horizontal, Space.tight)
         .padding(.bottom, Space.tight)
-        .background { HeaderFade() }
         .animation(Motion.spring, value: engine.typing[convo.id])
     }
 
@@ -164,7 +163,6 @@ struct ChatView: View {
                         Button("查看更早的消息") { visibleLimit += 120 }
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.inkSoft)
-                            .photoChip()
                             .padding(.vertical, Space.item)
                     }
                     ForEach(rows) { row in
@@ -173,7 +171,6 @@ struct ChatView: View {
                             Text(date.separatorStamp)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Palette.inkSoft)
-                                .photoChip()
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, Space.item)
                         case .message(let m, let first):
@@ -197,6 +194,29 @@ struct ChatView: View {
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
+            // 消息滚到页头、输入栏附近时自己淡出，后面的背景自然露出来
+            .edgeFade()
+            // 手指一碰聊天记录，表情/加号面板就收起（和键盘一样）
+            .onScrollPhaseChange { _, phase in
+                if phase == .interacting { collapsePanel += 1 }
+            }
+            .onAppear {
+                // 打开聊天就停在最新的消息；图片解码后高度会变，稍后再对齐一次
+                proxy.scrollTo("bottom", anchor: .bottom)
+                Task {
+                    try? await Task.sleep(for: .milliseconds(60))
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                    try? await Task.sleep(for: .milliseconds(350))
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            .onChange(of: pinBottom) {
+                // 点输入框、打开表情或加号面板：聊天跟着到最底下
+                Task {
+                    try? await Task.sleep(for: .milliseconds(30))
+                    withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+            }
             .onScrollGeometryChange(for: Bool.self) { geo in
                 geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height + geo.contentInsets.bottom - 80
             } action: { _, value in
@@ -207,8 +227,8 @@ struct ChatView: View {
                 guard atBottom || messages.last?.role == .user else { return }
                 withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            .onChange(of: keyboardShown) {
-                if atBottom { withAnimation(Motion.snappy) { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: keyboardShown) { _, shown in
+                if shown { withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
@@ -291,7 +311,7 @@ struct ChatView: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else {
             Composer(draft: $draft, convo: convo, members: members, busy: engine.isBusy(convo),
-                     onSend: send, onStop: { engine.stop(convo) })
+                     onSend: send, onStop: { engine.stop(convo) }, onExpand: { pinBottom += 1 }, collapse: collapsePanel)
         }
     }
 
