@@ -238,6 +238,26 @@ struct PersonaEditor: View {
                         }
                         .transition(.opacity)
                     }
+                    Hairline()
+                    SettingRow(title: "没回消息会来追问", subtitle: "TA 发的消息你一直没回，过一阵子会来问你") {
+                        Menu {
+                            ForEach([1, 2, 3, 0], id: \.self) { option in
+                                Button {
+                                    persona.followUp = option
+                                } label: {
+                                    let title = Self.followUpLabel(option)
+                                    if persona.followUp == option { Label(title, systemImage: "checkmark") } else { Text(title) }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(Self.followUpLabel(persona.followUp))
+                                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
+                            }
+                            .font(.system(size: 15))
+                            .foregroundStyle(Palette.ink2)
+                        }
+                    }
                 }
                 .card()
                 .animation(Motion.spring, value: persona.proactive)
@@ -319,6 +339,15 @@ struct PersonaEditor: View {
         }
     }
 
+    static func followUpLabel(_ setting: Int) -> String {
+        switch setting {
+        case 0: "关闭"
+        case 2: "1～3 小时"
+        case 3: "3～6 小时"
+        default: "20 分钟～1 小时"
+        }
+    }
+
     private var models: [ModelInfo] {
         relay.status?.catalog(for: persona.engine) ?? []
     }
@@ -381,7 +410,7 @@ struct PersonaEditor: View {
                         EngineLogo(engine: persona.engine, size: 14)
                         Text(persona.name).font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
                     }
-                    TimedText(text: "你好呀，我是\(persona.name)。今天想聊点什么？( ˘ᵕ˘ )", time: Fmt.hm.string(from: .now))
+                    TimedText(text: "你好呀，我是\(persona.name)。今天想聊点什么？", time: Fmt.hm.string(from: .now))
                         .padding(.horizontal, 13)
                         .padding(.top, 9)
                         .padding(.bottom, 7)

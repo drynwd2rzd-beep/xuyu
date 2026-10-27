@@ -106,10 +106,12 @@ struct ChatView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
-            if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect, frame.height > 200 {
-                keyboardHeight = frame.height
-            }
+        // 实时记下键盘高度：中文输入法的候选栏会让键盘变高变矮，面板跟着一样高，切换时才不会跳
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+            guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            let screen = UIScreen.main.bounds.height
+            let visible = screen - frame.minY
+            if visible > 200 && abs(visible - keyboardHeight) > 1 { keyboardHeight = visible }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
             keyboardShown = true
@@ -126,6 +128,8 @@ struct ChatView: View {
             convo.lastReadAt = .now
             draft = convo.draft
             withAnimation(.spring(duration: 0.6, bounce: 0.08).delay(0.08)) { entered = true }
+            // 截图：直接打开表情面板
+            if DemoMode.isOn && DemoMode.screen == "stickers" { panel = .stickers }
         }
         .onDisappear {
             // 离开聊天时把键盘和面板收好，回到列表或别的页面不会残留
@@ -214,6 +218,9 @@ struct ChatView: View {
                                 .foregroundStyle(Palette.inkSoft)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, Space.item)
+                        case .message(let m, _) where m.recalled:
+                            RecalledLine(message: m, onEdit: actions.edit)
+                                .id(m.id)
                         case .message(let m, let first):
                             MessageRow(message: m,
                                        persona: m.personaID.flatMap { personaMap[$0] },
@@ -334,6 +341,22 @@ struct ChatView: View {
                 case .note, .text: m.content
                 }
                 withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
+                pinBottom += 1
+            },
+            recall: { m in
+                // 撤回：留一行「你撤回了一条消息」；TA 还没开口的话会重新看一遍再回
+                withAnimation(Motion.spring) { m.recalled = true }
+                try? context.save()
+                engine.reconsider(convo, members: members, context: context)
+            },
+            edit: { m in
+                // 编辑：把原话放回输入框，原消息去掉，改好再发
+                withAnimation(Motion.spring) {
+                    draft = m.content
+                    context.delete(m)
+                }
+                try? context.save()
+                engine.reconsider(convo, members: members, context: context)
                 pinBottom += 1
             }
         )

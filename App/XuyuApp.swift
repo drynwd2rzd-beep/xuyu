@@ -14,14 +14,27 @@ struct XuyuApp: App {
     private let container: ModelContainer
 
     init() {
+        container = Self.openStore()
+        Seeder.prepare(container.mainContext)
+    }
+
+    /// 打开数据库。万一升级旧数据失败：先把旧数据库整份挪进「数据库备份」文件夹，再用新库启动，App 不会打不开
+    private static func openStore() -> ModelContainer {
         let schema = Schema(Schema1.models)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: DemoMode.isOn)
-        do {
-            container = try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            fatalError("无法打开数据库：\(error)")
+        if let container = try? ModelContainer(for: schema, configurations: [config]) { return container }
+        let store = config.url
+        let dir = store.deletingLastPathComponent()
+        let backup = dir.appendingPathComponent("数据库备份-\(Int(Date.now.timeIntervalSince1970))", isDirectory: true)
+        try? FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        for suffix in ["", "-shm", "-wal"] {
+            let file = URL(fileURLWithPath: store.path + suffix)
+            try? FileManager.default.moveItem(at: file, to: backup.appendingPathComponent(file.lastPathComponent))
         }
-        Seeder.prepare(container.mainContext)
+        UserDefaults.standard.set(backup.path, forKey: "lastStoreRescue")
+        if let container = try? ModelContainer(for: schema, configurations: [config]) { return container }
+        // 实在不行就先用内存里的临时库，至少能打开
+        return try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
     }
 
     var body: some Scene {
@@ -53,6 +66,14 @@ struct XuyuApp: App {
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
             guard !DemoMode.isOn else { return }
+            if phase == .background {
+                // 离开 App 时：把「没回消息会来追问」提前准备好，App 关掉了也能按时收到
+                let task = UIApplication.shared.beginBackgroundTask(withName: "followUps")
+                Task {
+                    await Companion.followUps(context: container.mainContext, relay: relay, personas: container.mainContext.allPersonas())
+                    UIApplication.shared.endBackgroundTask(task)
+                }
+            }
             if phase == .active {
                 relay.wake()
                 Task { await engine.recover(context: container.mainContext) }

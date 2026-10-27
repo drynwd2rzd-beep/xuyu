@@ -6,7 +6,7 @@ struct TodoView: View {
     @Environment(Router.self) private var router
     @Query(sort: \TodoItem.createdAt) private var items: [TodoItem]
     @State private var selectedDay = Date.now.startOfDay
-    @State private var monthOpen = false
+    @State private var monthOpen = DemoMode.isOn && DemoMode.screen == "calendar"
     @State private var newTitle = ""
     @State private var editing: TodoItem?
     @FocusState private var addFocused: Bool
@@ -77,6 +77,7 @@ struct TodoView: View {
                 .padding(.leading, Space.tight)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("monthToggle")
             FoldingCalendar(selected: $selectedDay, marked: markedDays, open: monthOpen)
         }
         .padding(Space.tight)

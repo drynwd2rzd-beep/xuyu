@@ -23,6 +23,8 @@ const defaultWorkDir = fs.existsSync('D:\\') ? 'D:\\絮语工作区' : oldWorkDi
 const defaults = {
   port: 51888,
   workDir: defaultWorkDir,
+  // 手机的聊天备份放这里（和工作区分开，AI 碰不到）
+  backupDir: fs.existsSync('D:\\') ? 'D:\\絮语备份' : path.join(os.homedir(), '絮语备份'),
   token: '',
   models: {
     claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
@@ -56,6 +58,7 @@ export function loadConfig() {
   // 之前默认放在 C 盘用户目录，有 D 盘时改到 D 盘
   if (config.workDir === oldWorkDir) config.workDir = defaultWorkDir;
   for (const d of Object.values(workPaths(config))) fs.mkdirSync(d, { recursive: true });
+  fs.mkdirSync(config.backupDir, { recursive: true });
   saveConfig(config);
   return config;
 }

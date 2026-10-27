@@ -66,5 +66,7 @@ jobs:
         if: failure()
         with:
           name: sim-build-log
-          path: sim-build.log
+          path: |
+            sim-build.log
+            ui-test.log
           retention-days: 7

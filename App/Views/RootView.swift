@@ -200,6 +200,12 @@ struct RouteView: View {
             PersonasView()
         case .persona(let id):
             if let persona = context.persona(id) { PersonaEditor(persona: persona) } else { missing }
+        case .notifications:
+            NotificationSettingsView()
+        case .appearance:
+            AppearanceSettingsView()
+        case .backup:
+            BackupView()
         }
     }
 

@@ -81,7 +81,9 @@ class EngineError extends Error {}
 // 工作模式下 Claude 能用的工具，以及明确不许运行的危险命令
 const WORK_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'Bash', 'TodoWrite', 'WebSearch', 'WebFetch'];
 const WORK_DENY = ['Bash(rm -rf:*)', 'Bash(rmdir:*)', 'Bash(del /s:*)', 'Bash(format:*)', 'Bash(shutdown:*)',
-  'Bash(Remove-Item -Recurse:*)', 'Bash(reg:*)', 'Bash(diskpart:*)'];
+  'Bash(Remove-Item -Recurse:*)', 'Bash(reg:*)', 'Bash(diskpart:*)', 'Bash(Stop-Computer:*)', 'Bash(Restart-Computer:*)',
+  'Bash(Set-ExecutionPolicy:*)', 'Bash(net user:*)', 'Bash(schtasks:*)', 'Bash(sc :*)', 'Bash(bcdedit:*)', 'Bash(takeown:*)',
+  'Bash(icacls:*)', 'Bash(cipher:*)', 'Bash(vssadmin:*)', 'Bash(wmic:*)'];
 
 function claudeArgs({ model, effort, system, allowRead, work }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',

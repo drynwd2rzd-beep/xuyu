@@ -164,6 +164,7 @@ function workGuide() {
   return [
     `你现在可以在用户电脑上的工作文件夹「${w.root}」里读写文件、运行命令，帮用户把事情做完。`,
     '只在这个文件夹里操作，不要读写或修改文件夹外面的东西，不要删除用户没让你删的文件，不要安装软件或改系统设置。',
+    '删除、覆盖、移动文件，或者运行会改动系统、联网下载、安装东西的命令之前，先停下来用一两句话告诉用户你要做什么，等用户回复「可以」后再做；读取文件和新建文件不用问。',
     `用户从手机发来的文件在「${w.inbox}」。`,
     `要把做好的文件发到用户手机上，就把文件保存（或复制）到「${w.outbox}」，系统会自动发过去。`,
     '做完后用一两句口语化的话告诉用户结果。',
@@ -262,6 +263,11 @@ async function handleRun(ws, msg) {
     return;
   }
   const work = msg.work === true;
+  // 工作模式只接受可信线路：家里局域网、Tailscale、本机
+  if (work && !trustedAddress(ws.remoteAddress)) {
+    send(ws, { type: 'error', id, message: '为了安全，「操作电脑」只能在家里的 Wi-Fi 或 Tailscale 下使用。' });
+    return;
+  }
   const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController() };
   jobs.set(id, job);
   const saved = saveAttachments(id.replace(/[^\w-]/g, ''), msg.attachments, work);
@@ -312,13 +318,78 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 * 1024 });
 
+// ---- 手机聊天备份：存在 D:\絮语备份，只留最近 30 份 ----
+function backupName(name) {
+  const safe = path.basename(String(name || '')).replace(/[^\w.\-一-龥]/g, '_');
+  return safe.endsWith('.json') ? safe : '';
+}
+
+function saveBackup(name, data) {
+  const safe = backupName(name);
+  if (!safe || !data) return false;
+  try {
+    fs.writeFileSync(path.join(config.backupDir, safe), Buffer.from(String(data), 'base64'));
+    const all = listBackups();
+    for (const old of all.slice(30)) fs.rmSync(path.join(config.backupDir, old.name), { force: true });
+    console.log(`已保存手机备份：${safe}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function listBackups() {
+  try {
+    return fs.readdirSync(config.backupDir)
+      .filter((n) => n.endsWith('.json'))
+      .map((name) => {
+        const st = fs.statSync(path.join(config.backupDir, name));
+        return { name, size: st.size, at: st.mtimeMs };
+      })
+      .sort((a, b) => b.at - a.at);
+  } catch {
+    return [];
+  }
+}
+
+function readBackup(name) {
+  const safe = backupName(name);
+  try {
+    return safe ? fs.readFileSync(path.join(config.backupDir, safe)).toString('base64') : '';
+  } catch {
+    return '';
+  }
+}
+
+// ---- 安全：防止有人反复猜配对码；工作模式只接受可信线路 ----
+const failures = new Map();
+
+/** 家里局域网、Tailscale、本机 */
+function trustedAddress(ip) {
+  const [p, q] = String(ip || '').split('.').map(Number);
+  return ip === '127.0.0.1' || ip === '::1' || p === 10 || p === 192 && q === 168 || p === 172 && q >= 16 && q <= 31
+    || p === 100 && q >= 64 && q <= 127;
+}
+
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url, 'http://relay');
+  const from = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  const record = failures.get(from);
+  if (record && record.until > Date.now()) {
+    ws.close(4003, 'locked');
+    return;
+  }
   if ((url.searchParams.get('token') || '').toUpperCase() !== config.token) {
+    // 同一个地址连续输错 5 次：封 15 分钟
+    const count = (record?.count || 0) + 1;
+    const until = count >= 5 ? Date.now() + 15 * 60 * 1000 : 0;
+    failures.set(from, { count: until ? 0 : count, until });
+    if (until) console.log(`⚠ ${from} 连续输错配对码，已暂时拒绝它 15 分钟`);
     ws.close(4001, 'bad token');
     return;
   }
-  const from = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  failures.delete(from);
+  ws.remoteAddress = from;
   console.log(`iPhone 已连接（${from}${from.startsWith('100.') ? '，出门线路' : ''}）`);
 
   ws.on('message', async (raw) => {
@@ -345,6 +416,15 @@ wss.on('connection', (ws, req) => {
         break;
       case 'cancel':
         jobs.get(String(msg.id))?.controller.abort();
+        break;
+      case 'backup':
+        send(ws, { type: 'backupSaved', id: msg.id, ok: saveBackup(msg.name, msg.data) });
+        break;
+      case 'backups':
+        send(ws, { type: 'backups', id: msg.id, list: listBackups() });
+        break;
+      case 'fetchBackup':
+        send(ws, { type: 'backupData', id: msg.id, data: readBackup(msg.name) });
         break;
       case 'ping':
         send(ws, { type: 'pong', id: msg.id });

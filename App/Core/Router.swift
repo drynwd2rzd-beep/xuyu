@@ -9,6 +9,9 @@ enum Route: Hashable {
     case connection
     case personas
     case persona(UUID)
+    case notifications
+    case appearance
+    case backup
 }
 
 @Observable
@@ -67,11 +70,15 @@ enum DemoMode {
         router.demoApplied = true
         switch screen {
         case "chats": router.tab = .chats
-        case "todo": router.tab = .todo
+        case "todo", "calendar": router.tab = .todo
         case "settings":
             router.tab = .todo
             router.open(.settings)
-        case "chat", "group":
+        case "backup":
+            router.tab = .todo
+            router.open(.settings)
+            router.open(.backup)
+        case "chat", "group", "stickers":
             router.tab = .chats
             let all = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
             let matching = all.filter { $0.isGroup == (screen == "group") }

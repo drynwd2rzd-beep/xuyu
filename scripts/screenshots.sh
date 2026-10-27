@@ -47,4 +47,20 @@ for mode in light dark; do
   shoot "$mode-5-todo" todo
   shoot "$mode-6-settings" settings
   shoot "$mode-7-persona" persona
+  shoot "$mode-8-stickers" stickers
+  shoot "$mode-9-calendar" calendar
+  shoot "$mode-10-backup" backup
 done
+xcrun simctl ui "$UDID" appearance light
+
+# 自动操作测试：把主要流程点一遍（闪退会让这一步失败）
+set +e
+xcodebuild test -project Xuyu.xcodeproj -scheme Xuyu -destination "id=$UDID" -derivedDataPath build-sim \
+  CODE_SIGNING_ALLOWED=NO > ui-test.log 2>&1
+test_status=$?
+set -e
+grep -E "Test Case|error:|failed|闪退|没有出现" ui-test.log | tail -40 || true
+if [ $test_status -ne 0 ]; then
+  echo "自动操作测试没通过"
+  exit $test_status
+fi

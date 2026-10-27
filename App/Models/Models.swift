@@ -25,6 +25,8 @@ final class Persona {
     var proactive: Bool = false
     /// 0 偶尔 · 1 每天 · 2 常常
     var proactiveFreq: Int = 1
+    /// 你没回 TA 的消息时，TA 多久后来追问：0 不追问 · 1 20 分钟～1 小时 · 2 1～3 小时 · 3 3～6 小时
+    var followUp: Int = 1
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 
@@ -114,6 +116,10 @@ final class Message {
     var quote: String = ""
     /// 主动消息：提前生成，createdAt 是送达时间
     var isProactive: Bool = false
+    /// 你发的消息被 TA「看到」的时间（显示已读双勾）
+    var readAt: Date?
+    /// 你撤回了这条消息
+    var recalled: Bool = false
     var createdAt: Date = Date()
     var conversation: Conversation?
     @Relationship(deleteRule: .cascade, inverse: \Attachment.message) var attachments: [Attachment]? = []

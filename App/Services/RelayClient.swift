@@ -286,7 +286,12 @@ final class RelayClient {
                     self.receive(on: task)
                 case .failure(let error):
                     let code = task.closeCode
-                    self.fail(task, reason: code.rawValue == 4001 ? "配对码不对" : Self.describe(error))
+                    let reason = switch code.rawValue {
+                    case 4001: "配对码不对"
+                    case 4003: "配对码输错太多次，请 15 分钟后再试"
+                    default: Self.describe(error)
+                    }
+                    self.fail(task, reason: reason)
                 }
             }
         }
@@ -322,7 +327,7 @@ final class RelayClient {
         waiters.forEach { $0.resume(throwing: RelayError.unreachable) }
         waiters = []
         // 配对码错误时不自动重连
-        guard reason != "配对码不对" else { return }
+        guard !reason.contains("配对码") else { return }
         // 还有别的地址（比如出门用的）就马上试下一个
         if candidateIndex + 1 < candidates.count {
             candidateIndex += 1
@@ -358,6 +363,11 @@ final class RelayClient {
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = obj["type"] as? String else { return }
         let id = obj["id"] as? String ?? ""
+        // 备份相关的请求：按 id 交还给等待的地方
+        if ["backupSaved", "backups", "backupData"].contains(type) {
+            replies.removeValue(forKey: id)?.resume(returning: obj)
+            return
+        }
         switch type {
         case "status":
             if let decoded = try? JSONDecoder().decode(RelayStatus.self, from: data) { status = decoded }
@@ -428,6 +438,53 @@ final class RelayClient {
     /// 让电脑开机时自动启动（或不再自动启动）中继；电脑回复新的状态
     func setAutostart(_ on: Bool) {
         sendJSON(["type": "autostart", "id": UUID().uuidString, "on": on])
+    }
+
+    // MARK: - 备份（存到电脑 / 从电脑取回）
+
+    @ObservationIgnored private var replies: [String: CheckedContinuation<[String: Any], Never>] = [:]
+
+    /// 发一个请求，等电脑按同一个 id 回复（最多等 60 秒）
+    private func ask(_ payload: [String: Any]) async -> [String: Any] {
+        guard isConnected else { return [:] }
+        let id = UUID().uuidString
+        var body = payload
+        body["id"] = id
+        return await withCheckedContinuation { c in
+            replies[id] = c
+            sendJSON(body)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(60))
+                self.replies.removeValue(forKey: id)?.resume(returning: [:])
+            }
+        }
+    }
+
+    func saveBackup(name: String, data: Data) async -> Bool {
+        let reply = await ask(["type": "backup", "name": name, "data": data.base64EncodedString()])
+        return reply["ok"] as? Bool == true
+    }
+
+    struct BackupInfo: Identifiable, Hashable {
+        let name: String
+        let size: Int
+        let at: Date
+        var id: String { name }
+    }
+
+    func listBackups() async -> [BackupInfo] {
+        let reply = await ask(["type": "backups"])
+        let list = reply["list"] as? [[String: Any]] ?? []
+        return list.compactMap { item in
+            guard let name = item["name"] as? String else { return nil }
+            return BackupInfo(name: name, size: item["size"] as? Int ?? 0,
+                              at: Date(timeIntervalSince1970: (item["at"] as? Double ?? 0) / 1000))
+        }
+    }
+
+    func fetchBackup(_ name: String) async -> Data? {
+        let reply = await ask(["type": "fetchBackup", "name": name])
+        return (reply["data"] as? String).flatMap { Data(base64Encoded: $0) }
     }
 
     private func waitUntilConnected() async throws {

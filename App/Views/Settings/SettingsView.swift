@@ -8,7 +8,6 @@ struct SettingsView: View {
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @AppStorage(Prefs.nickname) private var nickname = ""
     @AppStorage(Prefs.inAppBanner) private var inAppBanner = true
-    @AppStorage(Prefs.showEngineLogo) private var showEngineLogo = true
     @AppStorage(Prefs.todoReminders) private var todoReminders = true
     @AppStorage(Prefs.diaryReminder) private var diaryReminder = true
     @AppStorage(Prefs.quietStart) private var quietStart = 23
@@ -21,7 +20,6 @@ struct SettingsView: View {
     @AppStorage(MyAvatarStore.stampKey) private var avatarStamp = 0.0
     @State private var avatarItem: PhotosPickerItem?
     @State private var modelEngine: Engine?
-    @State private var showQuiet = false
 
     var body: some View {
         ScrollView {
@@ -47,35 +45,16 @@ struct SettingsView: View {
                     .buttonStyle(PressableRowStyle())
                     Hairline()
                     meRow
-                    Hairline()
-                    SettingRow(title: "名字旁显示模型图标") { InkToggle(isOn: $showEngineLogo, label: "名字旁显示模型图标") }
                 }
 
-                section("通知") {
-                    SettingRow(title: "App 内消息提示", subtitle: "在别的页面时，回复会从顶部滑下") {
-                        InkToggle(isOn: $inAppBanner, label: "App 内消息提示")
-                    }
+                // 不常改的放进二级页面，主页面保持简短
+                section("更多") {
+                    navRow("通知", detail: inAppBanner || todoReminders || diaryReminder
+                           ? String(format: "免打扰 %02d–%02d", quietStart, quietEnd) : "已关闭", route: .notifications)
                     Hairline()
-                    SettingRow(title: "待办提醒") { InkToggle(isOn: $todoReminders, label: "待办提醒") }
+                    navRow("外观与背景", detail: Appearance(rawValue: appearance)?.label ?? "", route: .appearance)
                     Hairline()
-                    SettingRow(title: "日记提醒", subtitle: "每晚 22:00") { InkToggle(isOn: $diaryReminder, label: "日记提醒") }
-                    Hairline()
-                    Button { showQuiet = true } label: {
-                        SettingRow(title: "免打扰") {
-                            Text(String(format: "%02d:00 – %02d:00", quietStart, quietEnd)).font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                            Chevron()
-                        }
-                    }
-                    .buttonStyle(PressableRowStyle())
-                }
-
-                section("外观") {
-                    VStack(alignment: .leading, spacing: Space.section) {
-                        Segmented(items: Appearance.allCases.map { ($0.rawValue, $0.label) }, selection: $appearance)
-                        Text("聊天背景").font(.system(size: 14)).foregroundStyle(Palette.ink)
-                        WallpaperPicker(owner: nil)
-                    }
-                    .padding(Space.card)
+                    navRow("备份与恢复", detail: backupLine, route: .backup)
                 }
             }
             .padding(.horizontal, Space.page)
@@ -94,12 +73,6 @@ struct SettingsView: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
-        .sheet(isPresented: $showQuiet) {
-            QuietHoursSheet(start: $quietStart, end: $quietEnd)
-                .presentationDetents([.height(320)])
-                .presentationCornerRadius(Radius.sheet)
-                .presentationBackground(Palette.paper)
-        }
         .onChange(of: avatarItem) { _, item in
             guard let item else { return }
             Task {
@@ -109,15 +82,25 @@ struct SettingsView: View {
                 avatarItem = nil
             }
         }
-        .onChange(of: todoReminders) { _, _ in resyncTodos() }
-        .onChange(of: diaryReminder) { _, on in
-            Reminders.syncDiaryReminder()
-            if on { Task { _ = await Reminders.ensureAuthorized() } }
-        }
         .onAppear { relay.refreshStatus() }
     }
 
     @Environment(\.modelContext) private var context
+    @AppStorage(Backup.lastBackupKey) private var lastBackup = 0.0
+
+    private var backupLine: String {
+        lastBackup > 0 ? "上次 " + Date(timeIntervalSince1970: lastBackup).listStamp : "还没有备份"
+    }
+
+    private func navRow(_ title: String, detail: String, route: Route) -> some View {
+        Button { router.open(route) } label: {
+            SettingRow(title: title) {
+                Text(detail).font(.system(size: 14)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                Chevron()
+            }
+        }
+        .buttonStyle(PressableRowStyle())
+    }
 
     /// 自己：头像（点一下从相册换，长按可恢复成文字头像）+ 称呼
     private var meRow: some View {
@@ -154,11 +137,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, Space.card)
         .frame(height: Space.rowTall)
-    }
-
-    private func resyncTodos() {
-        let all = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
-        all.forEach(Reminders.sync)
     }
 
     private var relayLine: String {

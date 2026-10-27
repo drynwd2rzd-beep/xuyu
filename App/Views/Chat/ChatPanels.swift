@@ -177,12 +177,8 @@ struct KaomojiGroup: Codable, Identifiable, Equatable {
 enum KaomojiStore {
     static let key = "kaomojiGroups"
 
-    static let defaults: [KaomojiGroup] = [
-        KaomojiGroup(name: "开心", items: ["(≧▽≦)", "(*^▽^*)", "(＾▽＾)", "ヾ(≧▽≦*)o", "(・∀・)", "(￣▽￣)~*", "( ˘ᵕ˘ )", "(｡•̀ᴗ-)✧"]),
-        KaomojiGroup(name: "难过", items: ["(´；ω；`)", "(｡•́︿•̀｡)", "(T_T)", "(╥﹏╥)", "(っ˘ω˘ς)", "(；へ：)"]),
-        KaomojiGroup(name: "动作", items: ["(ง •_•)ง", "(๑•̀ㅂ•́)و✧", "╮(╯▽╰)╭", "(*/ω＼*)", "(｀・ω・´)", "ヽ(✿ﾟ▽ﾟ)ノ"]),
-        KaomojiGroup(name: "猫猫", items: ["(=^･ω･^=)", "ฅ^•ﻌ•^ฅ", "(=①ω①=)", "ʕ•ᴥ•ʔ", "(=ↀωↀ=)"]),
-    ]
+    /// 默认不带颜文字分类；想要的话在表情面板的「+」里自己建
+    static let defaults: [KaomojiGroup] = []
 
     static func decode(_ data: Data) -> [KaomojiGroup] {
         (try? JSONDecoder().decode([KaomojiGroup].self, from: data)) ?? defaults

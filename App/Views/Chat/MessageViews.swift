@@ -12,6 +12,8 @@ struct MessageActions {
     var openImages: ([Attachment], Int) -> Void
     var retry: (Message) -> Void
     var quote: (Message) -> Void
+    var recall: (Message) -> Void
+    var edit: (Message) -> Void
 }
 
 struct MessageRow: View {
@@ -91,6 +93,8 @@ struct MessageRow: View {
                 }
                 content(isUser: false)
                     .animation(Motion.spring, value: isThinking)
+                // TA 引用了你说过的话
+                if !message.quote.isEmpty { QuoteChip(text: message.quote) }
                 if message.status == .error { errorLine }
             }
             Spacer(minLength: 28)
@@ -181,7 +185,7 @@ struct MessageRow: View {
                             timeLabel
                         }
                     } else {
-                        TimedText(text: text, time: time)
+                        TimedText(text: text, time: time, read: isUser && message.readAt != nil)
                     }
                 }
             }
@@ -189,7 +193,7 @@ struct MessageRow: View {
             ImageStack(attachments: message.sortedAttachments) { actions.openImages(message.sortedAttachments, $0) }
                 .contextMenu { menu }
             if !message.content.isEmpty {
-                bubble(isUser: isUser) { TimedText(text: message.content, time: time) }
+                bubble(isUser: isUser) { TimedText(text: message.content, time: time, read: isUser && message.readAt != nil) }
             }
         case .sticker:
             if let a = message.sortedAttachments.first, let image = cachedImage(a.data, key: a.id.uuidString) {
@@ -231,6 +235,12 @@ struct MessageRow: View {
         Button { actions.quote(message) } label: { Label("引用", systemImage: "quote.bubble") }
         if !message.content.isEmpty {
             Button { actions.copy(message.content) } label: { Label("复制", systemImage: "doc.on.doc") }
+        }
+        if message.role == .user {
+            if message.kind == .text {
+                Button { actions.edit(message) } label: { Label("编辑", systemImage: "pencil") }
+            }
+            Button { actions.recall(message) } label: { Label("撤回", systemImage: "arrow.uturn.backward") }
         }
         Button { actions.select(message) } label: { Label("多选", systemImage: "checkmark.circle") }
         if message.role == .assistant && message.kind == .text {
@@ -284,15 +294,22 @@ struct TimedText: View {
     let text: String
     let time: String
     var fontSize: CGFloat = 15.5
+    /// 你发的消息被 TA 看到了：时间后面显示已读双勾
+    var read = false
 
     var body: some View {
-        (Text(text) + Text("  " + time).font(Self.stampFont).foregroundColor(.clear))
+        (Text(text) + Text("  " + time + (read ? "   " : "")).font(Self.stampFont).foregroundColor(.clear))
             .font(.system(size: fontSize))
             .lineSpacing(3)
             .foregroundStyle(Palette.ink)
             .fixedSize(horizontal: false, vertical: true)
             .overlay(alignment: .bottomTrailing) {
-                Text(time).font(Self.stampFont).foregroundStyle(Self.stampColor).offset(y: 1)
+                HStack(spacing: 3) {
+                    Text(time).font(Self.stampFont).foregroundStyle(Self.stampColor)
+                    if read { ReadTicks().transition(.opacity.combined(with: .scale(scale: 0.6))) }
+                }
+                .offset(y: 1)
+                .animation(Motion.spring, value: read)
             }
             .textSelection(.disabled)
     }
@@ -300,6 +317,39 @@ struct TimedText: View {
     /// 气泡里的时间：小一点、数字等宽、颜色淡一点，更精致
     static let stampFont = Font.system(size: 9.5, weight: .medium).monospacedDigit()
     static let stampColor = Palette.inkSoft.opacity(0.8)
+}
+
+/// 已读：两个叠在一起的小勾
+struct ReadTicks: View {
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Image(systemName: "checkmark")
+            Image(systemName: "checkmark").offset(x: 4.5)
+        }
+        .font(.system(size: 8, weight: .bold))
+        .foregroundStyle(TimedText.stampColor)
+        .frame(width: 13, alignment: .leading)
+        .accessibilityLabel("已读")
+    }
+}
+
+/// 撤回的消息：中间一行浅灰色小字；你撤回的文字可以点「重新编辑」放回输入框
+struct RecalledLine: View {
+    let message: Message
+    let onEdit: (Message) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("你撤回了一条消息").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+            if message.kind == .text, !message.content.isEmpty, Date.now.timeIntervalSince(message.createdAt) < 600 {
+                Button("重新编辑") { onEdit(message) }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.ink2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+    }
 }
 
 struct TypingDots: View {

@@ -43,7 +43,7 @@ enum DemoData {
         }
         add(context, chat, .user, "周六拍的，帮我挑一张当壁纸", at: ago(3))
         add(context, chat, .assistant, "选第二张。", persona: claude, at: ago(1.2))
-        add(context, chat, .assistant, "银杏的黄和天空的蓝很干净，上方留白正好放时间，主体不会被挡住。^^", persona: claude, at: ago(1.1))
+        add(context, chat, .assistant, "银杏的黄和天空的蓝很干净，上方留白正好放时间，主体不会被挡住。", persona: claude, at: ago(1.1))
 
         let codexChat = Conversation(isGroup: false, memberIDs: [codex.id])
         codexChat.updatedAt = ago(40)
@@ -97,6 +97,17 @@ enum DemoData {
             let past = DiaryEntry(day: today.adding(days: -(i + 1)), author: .ai, text: "……", mood: mood)
             context.insert(past)
         }
+        let mine = DiaryEntry(day: today, author: .me, text: "周末终于可以慢下来了，读书笔记整理了一半，剩下的明天再说。", mood: "惬意")
+        mine.reply = "整理一半已经很棒啦。明天的你会感谢今天没把自己逼太紧的你，剩下的我们周六下午慢慢弄。"
+        mine.replyPersonaID = claude.id
+        context.insert(mine)
+
+        // 截图用的几张表情包
+        for (i, hex) in [0xF2D6A2, 0xC9DDF2, 0xF2C9D4, 0xD4E8C9, 0xE8D4F2, 0xF2E3C9].enumerated() {
+            let sticker = Sticker(pack: i < 4 ? "猫猫" : "日常", data: placeholder(hex: UInt32(hex), symbol: i, size: 240, png: true))
+            if i < 3 { sticker.lastUsedAt = ago(Double(i)) }
+            context.insert(sticker)
+        }
         try? context.save()
     }
 
@@ -112,21 +123,21 @@ enum DemoData {
         return m
     }
 
-    static func placeholder(hex: UInt32, symbol: Int) -> Data {
-        let size = CGSize(width: 900, height: 900)
+    static func placeholder(hex: UInt32, symbol: Int, size side: CGFloat = 900, png: Bool = false) -> Data {
+        let size = CGSize(width: side, height: side)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             UIColor(hex: hex).setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
-            let names = ["leaf", "cloud.sun", "tree"]
-            let config = UIImage.SymbolConfiguration(pointSize: 260, weight: .ultraLight)
+            let names = ["leaf", "cloud.sun", "tree", "cat", "heart", "star"]
+            let config = UIImage.SymbolConfiguration(pointSize: side * 0.29, weight: .ultraLight)
             if let symbol = UIImage(systemName: names[symbol % names.count], withConfiguration: config)?
                 .withTintColor(UIColor.black.withAlphaComponent(0.35), renderingMode: .alwaysOriginal) {
                 let s = symbol.size
                 symbol.draw(in: CGRect(x: (size.width - s.width) / 2, y: (size.height - s.height) / 2, width: s.width, height: s.height))
             }
         }
-        return image.jpegData(compressionQuality: 0.8) ?? Data()
+        return (png ? image.pngData() : image.jpegData(compressionQuality: 0.8)) ?? Data()
     }
 }

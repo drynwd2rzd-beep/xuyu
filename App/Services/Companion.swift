@@ -30,8 +30,60 @@ enum Companion {
         guard let main = personas.first else { return }
         await whisper(context: context, relay: relay, persona: main)
         await writeDiaries(context: context, relay: relay)
+        await followUps(context: context, relay: relay, personas: personas)
         await proactive(context: context, relay: relay, personas: personas)
         Reminders.syncDiaryReminder()
+        await Backup.autoBackupIfNeeded(context: context, relay: relay)
+    }
+
+    // MARK: - 没回消息会来追问
+
+    /// 追问的等待时间：1 = 20 分钟～1 小时，2 = 1～3 小时，3 = 3～6 小时（0 = 不追问）
+    static func followUpRange(_ setting: Int) -> ClosedRange<Double> {
+        switch setting {
+        case 2: 3600...10800
+        case 3: 10800...21600
+        default: 1200...3600
+        }
+    }
+
+    /// 最后一条是 TA 发的、你一直没回：过一阵子 TA 会来问你怎么不回了，或者接着刚才的话题。每段话题只追问一次
+    static func followUps(context: ModelContext, relay: RelayClient, personas: [Persona]) async {
+        guard !DemoMode.isOn, relay.isConnected else { return }
+        let now = Date.now
+        for persona in personas where persona.followUp > 0 {
+            let convo = context.chat(for: persona)
+            let visible = convo.visibleMessages(at: now)
+            guard let last = visible.last, last.role == .assistant, last.status == .done, !last.isProactive,
+                  now.timeIntervalSince(last.createdAt) < 12 * 3600 else { continue }
+            let planned = (convo.messages ?? []).contains { $0.isProactive && $0.createdAt > now }
+            guard !planned else { continue }
+            var deliver = last.createdAt.addingTimeInterval(Double.random(in: followUpRange(persona.followUp)))
+            // 已经过了该追问的时间（比如刚打开 App）：过两三分钟再来
+            if deliver < now.addingTimeInterval(90) { deliver = now.addingTimeInterval(Double.random(in: 120...300)) }
+            guard !Prefs.isQuiet(deliver) else { continue }
+            let names = [persona.id: persona.name]
+            let memory = convo.memory.trimmed
+            let gap = Fmt.duration(deliver.timeIntervalSince(last.createdAt))
+            let prompt = """
+            \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")下面是你们最近的聊天记录：
+
+            \(PromptBuilder.transcript(Array(visible.suffix(20)), names: names))
+
+            你最后发的那条，\(PromptBuilder.userName)已经过了\(gap)还没回。像真人朋友一样再发一条：可以俏皮或关心地问 TA 怎么不回消息、是不是在忙，或者接着刚才没聊完的话题再说一句。一两句话，口语化，不要重复你上一条说过的话。只输出消息内容。
+            """
+            guard let text = try? await relay.complete(request(persona, prompt)), !text.trimmed.isEmpty else { continue }
+            // 生成的这段时间里你回了消息：就不用追问了
+            guard convo.visibleMessages().last?.id == last.id else { continue }
+            let message = Message(role: .assistant, content: text.trimmed, personaID: persona.id)
+            message.isProactive = true
+            message.createdAt = deliver
+            message.conversation = convo
+            context.insert(message)
+            try? context.save()
+            Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id,
+                                        title: persona.name, body: text.trimmed, at: deliver)
+        }
     }
 
     /// 日记由你在待办页选的那位角色来写，没选就是第一位。待办页打开时、以及 App 开着时每隔一会儿都会检查一次
@@ -181,11 +233,12 @@ enum Companion {
 
     private static func proactive(context: ModelContext, relay: RelayClient, personas: [Persona]) async {
         let now = Date.now
+        let habits = activeHours(context: context)
         for persona in personas where persona.proactive {
             let convo = context.chat(for: persona)
             let planned = (convo.messages ?? []).contains { $0.isProactive && $0.createdAt > now }
             guard !planned else { continue }
-            let deliver = nextSlot(after: now, frequency: persona.proactiveFreq)
+            let deliver = nextSlot(after: now, frequency: persona.proactiveFreq, habits: habits)
             let history = convo.visibleMessages(at: now)
             let names = [persona.id: persona.name]
             let todos = todayTodos(context).map(\.title).prefix(5).joined(separator: "、")
@@ -211,15 +264,39 @@ enum Companion {
         }
     }
 
-    /// 根据频率挑一个合适的时间，避开免打扰和深夜
-    static func nextSlot(after now: Date, frequency: Int) -> Date {
+    /// 你平时几点爱聊天：最近 30 天你发的消息按小时数一数
+    static func activeHours(context: ModelContext) -> [Int: Int] {
+        let since = Date.now.adding(days: -30)
+        let user = MessageRole.user.rawValue
+        let messages = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.roleRaw == user && $0.createdAt >= since }))) ?? []
+        var counts: [Int: Int] = [:]
+        for m in messages { counts[Calendar.current.component(.hour, from: m.createdAt), default: 0] += 1 }
+        return counts
+    }
+
+    /// 根据频率挑一个合适的时间：尽量落在你平时爱聊天的时段，避开免打扰和深夜
+    static func nextSlot(after now: Date, frequency: Int, habits: [Int: Int] = [:]) -> Date {
         let hours: ClosedRange<Double> = switch frequency {
         case 0: 26...44
         case 2: 3...6
         default: 10...20
         }
-        var date = now.addingTimeInterval(Double.random(in: hours) * 3600)
         let cal = Calendar.current
+        var date = now.addingTimeInterval(Double.random(in: hours) * 3600)
+        // 聊天记录够多时，按你的习惯挑那一天里的某个钟点（聊得越多的钟点越容易被选中）
+        let usable = habits.filter { $0.key >= 9 && $0.key < 22 && $0.value > 0 }
+        if usable.values.reduce(0, +) >= 20 {
+            let total = usable.values.reduce(0, +)
+            var pick = Int.random(in: 0..<total)
+            var hour = 20
+            for (h, n) in usable.sorted(by: { $0.key < $1.key }) {
+                if pick < n { hour = h; break }
+                pick -= n
+            }
+            var candidate = date.startOfDay.addingTimeInterval(Double(hour) * 3600 + Double.random(in: 0..<3600))
+            if candidate < now.addingTimeInterval(hours.lowerBound * 3600 * 0.6) { candidate = candidate.adding(days: 1) }
+            date = candidate
+        }
         for _ in 0..<4 {
             let h = cal.component(.hour, from: date)
             if h >= 9 && h < 22 && !Prefs.isQuiet(date) { break }

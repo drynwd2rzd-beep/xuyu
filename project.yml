@@ -51,6 +51,20 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
+  # 云端自动操作测试：在模拟器里把主要流程点一遍，闪退就会失败
+  XuyuUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Xuyu
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.xuyu.ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
 schemes:
   Xuyu:
     build:
@@ -58,5 +72,9 @@ schemes:
         Xuyu: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - XuyuUITests
     archive:
       config: Release

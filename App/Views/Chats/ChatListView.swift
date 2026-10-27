@@ -63,6 +63,7 @@ struct ChatListView: View {
                                         typing: engine.isBusy(convo))
                     }
                     .buttonStyle(PressableRowStyle())
+                    .accessibilityIdentifier("chatRow")
                 }
                 .contextMenu {
                     Button { togglePin(convo) } label: {

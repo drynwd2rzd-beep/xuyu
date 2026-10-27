@@ -371,6 +371,15 @@ enum Fmt {
     static let ymd = make("yyyy.M.d")
     static let full = make("yyyy年M月d日 EEEE HH:mm")
     static let day = make("yyyy年M月d日 EEEE")
+
+    /// 一段时间说成口语：「40 分钟」「2 个小时」「3 天」
+    static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "\(max(1, minutes)) 分钟" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours) 个小时" }
+        return "\(hours / 24) 天"
+    }
 }
 
 extension Date {

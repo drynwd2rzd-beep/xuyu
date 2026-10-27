@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Observation
+import SwiftUI
 import UIKit
 
 /// 正在生成中的消息。单独成对象，流式刷新时只重绘这一条。
@@ -72,6 +73,25 @@ final class ChatEngine {
         run(responders, in: convo, members: members, context: context, react: true)
     }
 
+    /// 你撤回或编辑了消息：TA 还没开口就重新看一遍再回；已经在说了就算了
+    func reconsider(_ convo: Conversation, members: [Persona], context: ModelContext) {
+        guard busy.contains(convo.id), !speaking.contains(convo.id) else { return }
+        let last = convo.visibleMessages().last { $0.role == .user && !$0.recalled }
+        pending[convo.id] = Self.responders(for: last?.content ?? "", convo: convo, members: members)
+        tasks[convo.id]?.cancel()
+    }
+
+    /// TA 开始看你的消息了：你发的消息显示已读双勾
+    private func markRead(_ convo: Conversation, context: ModelContext) {
+        let now = Date.now
+        var changed = false
+        for m in convo.messages ?? [] where m.role == .user && m.readAt == nil && m.createdAt <= now {
+            m.readAt = now
+            changed = true
+        }
+        if changed { try? context.save() }
+    }
+
     func regenerate(_ message: Message, in convo: Conversation, members: [Persona], context: ModelContext) {
         guard !isBusy(convo), message.role == .assistant else { return }
         let persona = members.first { $0.id == message.personaID } ?? (convo.isGroup ? nil : members.first)
@@ -104,7 +124,14 @@ final class ChatEngine {
         let rounds = convo.isGroup ? max(1, convo.discussRounds) : 1
         tasks[convoID] = Task { [weak self] in
             // 像真人一样，看到消息后过一小会儿才开始回（每次不一样）；这期间你又发了，就一起看、一起回
-            if react { try? await Task.sleep(for: .seconds(Double.random(in: 0.6...2.5))) }
+            if react {
+                // 先「已读」，过一会儿才开始打字
+                try? await Task.sleep(for: .seconds(Double.random(in: 0.3...0.9)))
+                if !Task.isCancelled { withAnimation(Motion.spring) { self?.markRead(convo, context: context) } }
+                try? await Task.sleep(for: .seconds(Double.random(in: 0.4...1.8)))
+            } else {
+                self?.markRead(convo, context: context)
+            }
             rounds: for round in 0..<rounds {
                 for persona in round == 0 ? responders : members {
                     guard let self, !Task.isCancelled, self.pending[convoID] == nil else { break rounds }
@@ -158,7 +185,9 @@ final class ChatEngine {
                        discussing: Bool = false) async {
         let history = convo.visibleMessages()
         let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing,
-                                            diaryNotes: Companion.myDiaryNotes(context: context))
+                                            diaryNotes: Companion.myDiaryNotes(context: context),
+                                            sharedMemory: sharedMemory(of: persona, besides: convo, context: context),
+                                            stickerCategories: Self.stickerCategories(context: context))
         let relayID = UUID().uuidString
         var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
         try? context.save()
@@ -193,10 +222,16 @@ final class ChatEngine {
                 // 带格式或特别长的一段：是认真的回答，整段放一条，不拆
                 if Self.looksRich(head) || head.count > 140 { becomeRich(); return }
                 await pace(for: head)
-                message.content = head
-                message.status = .done
+                let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
                 buffers[message.id] = nil
-                sent.append(head)
+                if cleaned.isEmpty {
+                    // 这一段只有一个表情：表情已经单独发出，空气泡不要了
+                    context.delete(message)
+                } else {
+                    message.content = cleaned
+                    message.status = .done
+                    sent.append(cleaned)
+                }
                 speaking.insert(convo.id)
                 lastCommit = .now
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
@@ -255,7 +290,9 @@ final class ChatEngine {
         }
 
         buffers[message.id] = nil
-        message.content = buffer.text.trimmed
+        message.content = message.status == .done
+            ? applyMarkers(buffer.text.trimmed, to: message, persona: persona, convo: convo, context: context)
+            : buffer.text.trimmed
         message.reasoning = buffer.reasoning.trimmed
         message.steps = buffer.steps.joined(separator: "\n")
         if message.status == .done && message.content.isEmpty && message.steps.isEmpty {
@@ -269,6 +306,59 @@ final class ChatEngine {
         convo.updatedAt = .now
         if router?.openConversation == convo.id { convo.lastReadAt = .now }
         try? context.save()
+    }
+
+    /// TA 能发的表情分类：只用你的图片表情包（不用颜文字）
+    static func stickerCategories(context: ModelContext) -> [String] {
+        let stickers = (try? context.fetch(FetchDescriptor<Sticker>())) ?? []
+        var names: [String] = []
+        for s in stickers where !names.contains(s.pack) { names.append(s.pack) }
+        return names
+    }
+
+    /// 处理 TA 回复里的小标记，返回去掉标记后的文字：
+    /// 【引用:…】把你说过的那句话挂在 TA 这条消息下面；【表情:分类】从你的表情库里挑一个发出来
+    private func applyMarkers(_ text: String, to message: Message, persona: Persona, convo: Conversation,
+                              context: ModelContext) -> String {
+        var body = text
+        if let regex = try? Regex("【引用[:：](.+?)】"), let match = body.firstMatch(of: regex),
+           let key = match.output[1].substring.map({ String($0).trimmed }) {
+            body.removeSubrange(match.range)
+            let candidates = convo.visibleMessages().reversed().filter { $0.role == .user && !$0.recalled && !$0.content.isEmpty }
+            if let quoted = candidates.first(where: { $0.content.contains(key) || key.contains($0.content.prefix(8)) }) {
+                let line = quoted.content.replacingOccurrences(of: "\n", with: " ")
+                message.quote = "你：" + (line.count > 60 ? String(line.prefix(60)) + "…" : line)
+            }
+        }
+        while let regex = try? Regex("【表情[:：](.+?)】"), let match = body.firstMatch(of: regex) {
+            let name = match.output[1].substring.map { String($0).trimmed } ?? ""
+            body.removeSubrange(match.range)
+            let stickers = ((try? context.fetch(FetchDescriptor<Sticker>())) ?? []).filter { $0.pack == name }
+            // 图片表情：单独一条表情消息，跟在这条后面；找不到这个分类就不发
+            if let pick = stickers.randomElement() {
+                let sticker = Message(role: .assistant, kind: .sticker, content: "", personaID: persona.id)
+                sticker.createdAt = .now.addingTimeInterval(0.001)
+                sticker.conversation = convo
+                context.insert(sticker)
+                let a = Attachment(kind: "image", fileName: "sticker.png", data: pick.data, order: 0)
+                a.message = sticker
+                context.insert(a)
+            }
+        }
+        return body.trimmed
+    }
+
+    /// 记忆打通：在群里也记得你们私聊的事，私聊时也记得群里聊过的事
+    private func sharedMemory(of persona: Persona, besides convo: Conversation, context: ModelContext) -> String {
+        let all = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
+        let others = all.filter { $0.id != convo.id && $0.memberIDs.contains(persona.id) && !$0.memory.trimmed.isEmpty }
+        let personas = context.allPersonas()
+        return others.prefix(3).map { c in
+            let members = c.memberIDs.compactMap { id in personas.first { $0.id == id } }
+            let place = c.isGroup ? "在群聊「\(c.displayTitle(members))」里" : "你们私下聊天时"
+            let memory = c.memory.trimmed
+            return "\(place)记得的事：\n" + (memory.count > 500 ? String(memory.prefix(500)) + "…" : memory)
+        }.joined(separator: "\n\n")
     }
 
     /// 电脑发回来的文件：图片显示成照片，其他显示成文件卡片
@@ -380,12 +470,12 @@ enum PromptBuilder {
         persona.effort.isEmpty ? Prefs.defaultEffort(for: persona.engine) : persona.effort
     }
 
-    static func system(for persona: Persona, convo: Conversation?, members: [Persona]) -> String {
+    static func system(for persona: Persona, convo: Conversation?, members: [Persona], stickerCategories: [String] = []) -> String {
         var parts: [String] = []
         let base = persona.systemPrompt.trimmed
         parts.append(base.isEmpty ? "你是「\(persona.name)」。" : base)
         parts.append("""
-        你在一个手机聊天 App 里和\(userName)聊天。像发消息一样自然、口语化地回复，不要长篇大论；想分几条说的时候用空行隔开，每段一两句话。只有内容复杂时才用 Markdown。
+        你在一个手机聊天 App 里和\(userName)聊天。像发消息一样自然、口语化地回复，不要长篇大论；想分几条说的时候用空行隔开，每段一两句话。只有内容复杂时才用 Markdown。不要用颜文字（比如 (≧▽≦)、^^ 这种）。
         """)
         if let convo, convo.isGroup {
             let others = members.filter { $0.id != persona.id }.map(\.name)
@@ -393,6 +483,12 @@ enum PromptBuilder {
             parts.append("""
             你正在群聊「\(convo.displayTitle(members))」里，你的名字是「\(persona.name)」。群成员：\(roster)。
             只以「\(persona.name)」的身份说话，不要替别人发言，不要在开头写自己的名字。
+            """)
+        }
+        if !stickerCategories.isEmpty {
+            parts.append("""
+            想发表情包时，单独一段只写【表情:分类名】，可以用的分类：\(stickerCategories.joined(separator: "、"))。偶尔用一下就好，不要每次都发。
+            想针对\(userName)之前说的某句话回应时，可以在那一段开头写【引用:那句话里的几个字】，像聊天软件里的引用回复；同样偶尔用。
             """)
         }
         if let memory = convo?.memory.trimmed, !memory.isEmpty {
@@ -419,6 +515,7 @@ enum PromptBuilder {
         case .sticker: body = "[发了一个表情]"
         }
         if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
+        if m.recalled { body = "（撤回了一条消息）" }
         return "[\(Fmt.time24.string(from: m.createdAt))] \(who)：\(body)"
     }
 
@@ -437,19 +534,29 @@ enum PromptBuilder {
     }
 
     static func request(for persona: Persona, convo: Conversation, members: [Persona], history: [Message],
-                        discussing: Bool = false, diaryNotes: String = "") -> RelayRequest {
+                        discussing: Bool = false, diaryNotes: String = "", sharedMemory: String = "",
+                        stickerCategories: [String] = []) -> RelayRequest {
         let names = Dictionary(members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        let shared = sharedMemory.isEmpty ? "" : "\(sharedMemory)\n\n"
+        // 感知聊天间隔：隔了很久你再来找 TA，TA 会自然地说「好久没聊了」
+        var gapLine = ""
+        let visible = history.filter { $0.status != .error && !$0.recalled }
+        if let latest = visible.last, latest.role == .user,
+           let previous = visible.dropLast().last(where: { $0.createdAt < latest.createdAt.addingTimeInterval(-1) }) {
+            let gap = latest.createdAt.timeIntervalSince(previous.createdAt)
+            if gap > 6 * 3600 { gapLine = "（距离你们上一次聊天已经过去了\(Fmt.duration(gap))。）" }
+        }
         let ask = discussing
             ? "大家正在讨论，请以「\(persona.name)」的身份接着说：可以回应其他人的观点、补充或提出不同看法，不要重复别人说过的。"
             : "请以「\(persona.name)」的身份回复。"
         // 你最近写的日记：TA 会记在心上，合适的时候自然地关心，但不要生硬地复述
         let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
         let prompt = """
-        \(diary)下面是你们最近的聊天记录：
+        \(shared)\(diary)下面是你们最近的聊天记录：
 
         \(transcript(recent(history, convo: convo), names: names))
 
-        现在是 \(Fmt.time24.string(from: .now))。\(ask)直接输出要说的话，不要加名字或时间。
+        现在是 \(Fmt.time24.string(from: .now))。\(gapLine)\(ask)直接输出要说的话，不要加名字或时间。
         """
         // 最后一次 AI 回复之后用户发的附件
         let lastAI = history.lastIndex { $0.role == .assistant } ?? -1
@@ -462,7 +569,8 @@ enum PromptBuilder {
             }
         }
         return RelayRequest(engine: persona.engine.rawValue, model: model(for: persona), effort: effort(for: persona),
-                            system: system(for: persona, convo: convo, members: members),
+                            system: system(for: persona, convo: convo, members: members,
+                                           stickerCategories: persona.canWork ? [] : stickerCategories),
                             prompt: prompt, attachments: attachments, work: persona.canWork)
     }
 }
