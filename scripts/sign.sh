@@ -40,7 +40,7 @@ case "$PROFILE_BUNDLE" in
   *'*') BUNDLE="${PROFILE_BUNDLE%\*}xuyu" ;;
   *) BUNDLE="$PROFILE_BUNDLE" ;;
 esac
-echo "签名包名：$BUNDLE（团队 $TEAM）"
+echo "签名包名：${BUNDLE}（团队 ${TEAM}）"
 
 plutil -replace CFBundleIdentifier -string "$BUNDLE" "$APP/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :application-identifier $TEAM.$BUNDLE" "$TMP/entitlements.plist"
@@ -52,5 +52,5 @@ done
 codesign --force --sign "$IDENTITY" --entitlements "$TMP/entitlements.plist" --timestamp=none --generate-entitlement-der "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 EXPIRES=$(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$TMP/profile.plist")
-echo "签名完成。描述文件到期时间：$EXPIRES"
+echo "签名完成。描述文件到期时间：${EXPIRES}"
 security delete-keychain "$KC" || true
