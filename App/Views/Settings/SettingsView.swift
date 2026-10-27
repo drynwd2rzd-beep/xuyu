@@ -7,7 +7,6 @@ struct SettingsView: View {
     @Environment(Router.self) private var router
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @AppStorage(Prefs.nickname) private var nickname = ""
-    @AppStorage(Prefs.showReasoning) private var showReasoning = true
     @AppStorage(Prefs.inAppBanner) private var inAppBanner = true
     @AppStorage(Prefs.todoReminders) private var todoReminders = true
     @AppStorage(Prefs.diaryReminder) private var diaryReminder = true
@@ -47,8 +46,6 @@ struct SettingsView: View {
                     .buttonStyle(PressableRowStyle())
                     Hairline()
                     meRow
-                    Hairline()
-                    SettingRow(title: "显示思考过程") { InkToggle(isOn: $showReasoning, label: "显示思考过程") }
                 }
 
                 section("通知") {

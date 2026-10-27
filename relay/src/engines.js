@@ -1,9 +1,6 @@
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 
-// Claude Code 在纯聊天时不需要的工具；有附件时放开 Read 让它看图片/文件
-const CLAUDE_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch',
-  'Task', 'TodoWrite', 'Glob', 'Grep', 'LS', 'Read'];
 
 /**
  * 运行一次 CLI，把输出转换成统一事件：
@@ -79,9 +76,9 @@ function claudeArgs({ model, effort, system, allowRead }) {
   if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
   if (system) args.push('--system-prompt', system);
-  const blocked = allowRead ? CLAUDE_TOOLS.filter((t) => t !== 'Read') : CLAUDE_TOOLS;
-  // 可变参数放最后，提示词从 stdin 读取
-  args.push('--disallowedTools', ...blocked);
+  // 聊天不带任何工具和 MCP：否则每条消息都会附上几万字的工具说明，又慢又耗额度。
+  // 有附件时只开 Read，让它看图片/文件。提示词从 stdin 读取
+  args.push('--strict-mcp-config', '--tools', allowRead ? 'Read' : '');
   return args;
 }
 
