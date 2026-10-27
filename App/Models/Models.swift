@@ -104,6 +104,8 @@ final class Message {
     var statusRaw: String = MessageStatus.done.rawValue
     var errorText: String?
     var modelLabel: String = ""
+    /// 这条回复在电脑中继上的编号：App 被关掉后再打开，凭它取回没收完的回复
+    var relayID: String = ""
     /// 主动消息：提前生成，createdAt 是送达时间
     var isProactive: Bool = false
     var createdAt: Date = Date()

@@ -71,17 +71,21 @@ enum Reminders {
     // MARK: - 主动消息
 
     static func scheduleProactive(messageID: UUID, conversationID: UUID, title: String, body: String, at date: Date) {
-        guard UserDefaults.standard.object(forKey: Prefs.inAppBanner) as? Bool ?? true else { return }
         schedule(id: "proactive-" + messageID.uuidString, title: title, body: body, at: date,
                  userInfo: ["conversation": conversationID.uuidString])
     }
 
-    /// App 在后台时回复好了：马上发一条本地通知
+    /// App 在后台时回复好了：马上发一条本地通知；免打扰时段里静悄悄地放进通知中心，不响不亮屏
     static func notifyReply(conversationID: UUID, title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = .default
+        if Prefs.isQuiet(.now) {
+            content.sound = nil
+            content.interruptionLevel = .passive
+        } else {
+            content.sound = .default
+        }
         content.userInfo = ["conversation": conversationID.uuidString]
         center.add(UNNotificationRequest(identifier: "reply-" + UUID().uuidString, content: content, trigger: nil),
                    withCompletionHandler: nil)

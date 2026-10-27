@@ -329,7 +329,7 @@ private struct WhisperWidget: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(20)
+        .padding(Space.card + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.noir, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .shadow(color: .black.opacity(0.14), radius: 16, y: 10)
@@ -567,7 +567,7 @@ private struct WidgetGallery: View {
         ScrollView {
         VStack(alignment: .leading, spacing: Space.section) {
             Text("小组件").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink).padding(.horizontal, 4)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.item), count: 3), spacing: Space.item) {
                 ForEach(HomeWidget.allCases) { w in
                     let isAdded = added.contains(w)
                     Button { if !isAdded { onAdd(w) } } label: {

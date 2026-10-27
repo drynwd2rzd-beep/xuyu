@@ -12,6 +12,8 @@ export const paths = {
   // 让 CLI 在一个空目录里运行，不碰你的其他文件
   workspace: path.join(dir, 'workspace'),
   uploads: path.join(dir, 'uploads'),
+  // 写好的回复存 24 小时：App 被关掉后再打开，可以把没收到的回复取回来
+  replies: path.join(dir, 'replies'),
 };
 
 const defaults = {
@@ -32,7 +34,7 @@ function newToken() {
 }
 
 export function loadConfig() {
-  for (const d of [paths.dir, paths.workspace, paths.uploads]) fs.mkdirSync(d, { recursive: true });
+  for (const d of [paths.dir, paths.workspace, paths.uploads, paths.replies]) fs.mkdirSync(d, { recursive: true });
   let saved = {};
   try {
     saved = JSON.parse(fs.readFileSync(paths.config, 'utf8'));

@@ -39,7 +39,7 @@ struct Composer: View {
         VStack(spacing: Space.tight) {
             if mentionOpen { mentionList.transition(.move(edge: .bottom).combined(with: .opacity)) }
             if !staged.isEmpty { stagedRow.transition(.move(edge: .bottom).combined(with: .opacity)) }
-            HStack(spacing: 10) {
+            HStack(spacing: Space.tight + 2) {
                 plusButton
                 field
                 actionButton

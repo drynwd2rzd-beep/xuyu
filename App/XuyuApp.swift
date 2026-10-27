@@ -36,7 +36,10 @@ struct XuyuApp: App {
                     engine.attach(relay: relay, banners: banners, router: router)
                     AppDelegate.router = router
                     DemoMode.apply(router: router, context: container.mainContext)
-                    if !DemoMode.isOn { relay.connectIfConfigured() }
+                    if !DemoMode.isOn {
+                        relay.connectIfConfigured()
+                        Task { await engine.recover(context: container.mainContext) }
+                    }
                 }
         }
         .modelContainer(container)
@@ -44,6 +47,7 @@ struct XuyuApp: App {
             guard !DemoMode.isOn else { return }
             if phase == .active {
                 relay.wake()
+                Task { await engine.recover(context: container.mainContext) }
                 Task { await Companion.refresh(context: container.mainContext, relay: relay) }
             }
         }
@@ -163,6 +167,8 @@ enum Seeder {
         }
         let streaming = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.statusRaw == "streaming" }))) ?? []
         for m in streaming {
+            // 有回复编号的先留着，连上电脑后去取回完整内容（ChatEngine.recover）
+            if !m.relayID.isEmpty { continue }
             if m.content.isEmpty {
                 m.status = .error
                 m.errorText = "回复被中断"

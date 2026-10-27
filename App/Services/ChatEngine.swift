@@ -134,10 +134,12 @@ final class ChatEngine {
         UIApplication.shared.endBackgroundTask(task)
     }
 
-    private func newBubble(_ persona: Persona, in convo: Conversation, context: ModelContext, label: String) -> (Message, StreamBuffer) {
+    private func newBubble(_ persona: Persona, in convo: Conversation, context: ModelContext, label: String,
+                           relayID: String) -> (Message, StreamBuffer) {
         let message = Message(role: .assistant, content: "", personaID: persona.id)
         message.status = .streaming
         message.modelLabel = label
+        message.relayID = relayID
         message.conversation = convo
         context.insert(message)
         let buffer = StreamBuffer()
@@ -149,7 +151,9 @@ final class ChatEngine {
                        discussing: Bool = false) async {
         let history = convo.visibleMessages()
         let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing)
-        var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model)
+        let relayID = UUID().uuidString
+        var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
+        try? context.save()
         var sent: [String] = []
         var rich = false
         typing[convo.id] = persona.id
@@ -165,7 +169,7 @@ final class ChatEngine {
                 message.status = .done
                 buffers[message.id] = nil
                 sent.append(head)
-                (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model)
+                (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
                 buffer.text = rest
                 try? context.save()
             }
@@ -176,7 +180,7 @@ final class ChatEngine {
             var pendingText = ""
             var pendingReasoning = ""
             var lastFlush = ContinuousClock.now
-            for try await event in relay.run(request) {
+            for try await event in relay.run(request, id: relayID) {
                 switch event {
                 case .text(let s): pendingText += s
                 case .reasoning(let s): pendingReasoning += s
@@ -220,6 +224,57 @@ final class ChatEngine {
         convo.updatedAt = .now
         if router?.openConversation == convo.id { convo.lastReadAt = .now }
         try? context.save()
+    }
+
+    // MARK: - 取回中断的回复
+
+    @ObservationIgnored private var recovering = false
+
+    /// App 被关掉时还没收完的回复：电脑上其实已经写好了，连上后按编号取回，补成完整的几条消息
+    func recover(context: ModelContext) async {
+        guard !recovering, let relay else { return }
+        recovering = true
+        defer { recovering = false }
+        let all = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.statusRaw == "streaming" }))) ?? []
+        let orphans = all.filter { !$0.relayID.isEmpty && buffers[$0.id] == nil }
+        let groups = Dictionary(grouping: orphans, by: \.relayID)
+        for (relayID, stuck) in groups {
+            guard let convo = stuck.first?.conversation, !busy.contains(convo.id) else { continue }
+            // 同一次回复里已经发出去的几条
+            let siblings = (convo.messages ?? []).filter { $0.relayID == relayID }.sorted { $0.createdAt < $1.createdAt }
+            guard let first = siblings.first else { continue }
+            var text = ""
+            do {
+                for try await event in relay.resume(relayID) {
+                    if case .text(let s) = event { text += s }
+                }
+            } catch {
+                for m in stuck {
+                    m.status = .error
+                    m.errorText = (error as? LocalizedError)?.errorDescription ?? "回复被中断"
+                }
+                try? context.save()
+                continue
+            }
+            // 按和实时一样的规则重新分成几条：说完一段就是一条，带格式的整段一条
+            let parts = Self.looksRich(text) ? [text.trimmed]
+                : text.components(separatedBy: "\n\n").map(\.trimmed).filter { !$0.isEmpty }
+            guard !parts.isEmpty else { continue }
+            let start = first.createdAt
+            let personaID = first.personaID
+            let label = first.modelLabel
+            for m in siblings { context.delete(m) }
+            for (i, part) in parts.enumerated() {
+                let m = Message(role: .assistant, content: part, personaID: personaID)
+                m.modelLabel = label
+                m.relayID = relayID
+                m.createdAt = start.addingTimeInterval(Double(i) * 0.001)
+                m.conversation = convo
+                context.insert(m)
+            }
+            convo.updatedAt = .now
+            try? context.save()
+        }
     }
 
     /// 回复好了：在别的页面时顶部滑下提示；App 在后台时发系统通知

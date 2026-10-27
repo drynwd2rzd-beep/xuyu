@@ -72,7 +72,7 @@ struct ChatListView: View {
                         Label(convo.isGroup ? "删除群聊" : "清空聊天记录", systemImage: "trash")
                     }
                 }
-                if convo.id != items.last?.id { Hairline(inset: 76) }
+                if convo.id != items.last?.id { Hairline(inset: 50 + Space.item + Space.card) }
             }
             if items.isEmpty && !query.trimmed.isEmpty {
                 Text("没有找到「\(query.trimmed)」")
@@ -166,7 +166,7 @@ struct ConversationRow: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Space.card)
             .padding(.vertical, 13)
             .contentShape(Rectangle())
         }

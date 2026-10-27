@@ -128,8 +128,13 @@ function send(ws, obj) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
 
-// ---- 回复任务：手机断开也继续跑，结果保留 10 分钟，重新连上后接着收 ----
+// ---- 回复任务：手机断开也继续跑；写好的回复在内存和硬盘各存 24 小时，重新连上或重新打开 App 后接着收 ----
 const jobs = new Map();
+const KEEP = 24 * 60 * 60 * 1000;
+
+function replyFile(id) {
+  return path.join(paths.replies, `${String(id).replace(/[^\w-]/g, '')}.json`);
+}
 
 function publish(job, obj) {
   job.events.push(obj);
@@ -140,19 +145,39 @@ function publish(job, obj) {
 function finishJob(job, obj) {
   job.final = obj;
   for (const ws of job.subscribers) send(ws, obj);
-  setTimeout(() => jobs.delete(job.id), 10 * 60 * 1000);
+  // 存到硬盘：中继重启了也能取回
+  fs.writeFile(replyFile(job.id), JSON.stringify({ events: job.events, final: obj, at: Date.now() }), () => {});
+  setTimeout(() => jobs.delete(job.id), KEEP);
 }
 
 function resumeJob(ws, id, from) {
-  const job = jobs.get(id);
+  let job = jobs.get(id);
   if (!job) {
-    send(ws, { type: 'error', id, message: '这条回复已经过期，请重新发送。' });
-    return;
+    try {
+      const saved = JSON.parse(fs.readFileSync(replyFile(id), 'utf8'));
+      job = { id, events: saved.events || [], final: saved.final, subscribers: new Set() };
+    } catch {
+      send(ws, { type: 'error', id, message: '这条回复已经过期，可以点重试。' });
+      return;
+    }
   }
   job.subscribers.add(ws);
   job.events.slice(from).forEach((e, i) => send(ws, { ...e, seq: from + i + 1 }));
   if (job.final) send(ws, job.final);
 }
+
+// 清理超过 24 小时的回复
+function pruneReplies() {
+  fs.readdir(paths.replies, (err, names) => {
+    if (err) return;
+    for (const name of names) {
+      const file = path.join(paths.replies, name);
+      fs.stat(file, (e, st) => { if (!e && Date.now() - st.mtimeMs > KEEP) fs.rm(file, { force: true }, () => {}); });
+    }
+  });
+}
+pruneReplies();
+setInterval(pruneReplies, 60 * 60 * 1000);
 
 async function handleRun(ws, msg) {
   const id = String(msg.id || '');

@@ -431,9 +431,28 @@ final class RelayClient {
 
     // MARK: - 调用
 
-    func run(_ request: RelayRequest) -> AsyncThrowingStream<RelayEvent, Error> {
+    /// 取回一条之前的回复（从头开始收）：App 被关掉期间电脑上写好的内容
+    func resume(_ id: String) -> AsyncThrowingStream<RelayEvent, Error> {
         AsyncThrowingStream { continuation in
-            let id = UUID().uuidString
+            let work = Task { @MainActor in
+                do {
+                    try await self.waitUntilConnected()
+                    self.streams[id] = continuation
+                    self.received[id] = 0
+                    self.sendJSON(["type": "resume", "id": id, "from": 0])
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                work.cancel()
+                Task { @MainActor in self.streams.removeValue(forKey: id) }
+            }
+        }
+    }
+
+    func run(_ request: RelayRequest, id: String = UUID().uuidString) -> AsyncThrowingStream<RelayEvent, Error> {
+        AsyncThrowingStream { continuation in
             let work = Task { @MainActor in
                 do {
                     try await self.waitUntilConnected()
