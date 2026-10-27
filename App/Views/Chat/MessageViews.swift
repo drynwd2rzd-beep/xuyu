@@ -13,11 +13,11 @@ struct MessageActions {
     var retry: (Message) -> Void
     var quote: (Message) -> Void
     var recall: (Message) -> Void
-    var edit: (Message) -> Void
     /// 点引用：跳到被引用的原文
     var openQuote: (Message) -> Void
     /// 长按「选择文字」：可以框选其中一部分
     var selectText: (String) -> Void
+    var edit: (Message) -> Void
 }
 
 struct MessageRow: View {

@@ -364,24 +364,27 @@ struct StickerPanel: View {
         try? context.save()
     }
 
-    // MARK: 内容：所有分类连成一条长列表
+    // MARK: 内容：每个分类单独一页，左右滑动切换
 
     private var content: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(categories) { section in
-                    sectionView(section).id(section.id)
+        TabView(selection: $current) {
+            ForEach(categories) { section in
+                ScrollView {
+                    sectionView(section)
+                        .padding(.horizontal, Space.item)
+                        .padding(.bottom, Space.section)
                 }
+                .scrollIndicators(.hidden)
+                // 告诉外面这一页是不是在最上面：在最上面再往下拉，就收起面板
+                .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 1 } action: { _, top in
+                    if current == section.id { atTop = top }
+                }
+                .tag(Optional(section.id))
             }
-            .scrollTargetLayout()
-            .padding(.horizontal, Space.item)
-            .padding(.bottom, Space.section)
         }
-        .scrollIndicators(.hidden)
-        .scrollPosition(id: $current, anchor: .top)
+        .tabViewStyle(.page(indexDisplayMode: .never))
         .frame(maxHeight: .infinity)
-        // 告诉外面表情是不是已经翻到最上面：在最上面再往下拉，就收起面板
-        .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 1 } action: { _, top in atTop = top }
+        .animation(Motion.spring, value: current)
     }
 
     private func sectionView(_ section: Category) -> some View {
