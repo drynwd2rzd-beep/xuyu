@@ -179,6 +179,7 @@ struct StickerPanel: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPicker = false
     @State private var bounce: UUID?
+    @Namespace private var tabNS
 
     static let kaomoji = ["(≧▽≦)", "(｡•̀ᴗ-)✧", "(๑•̀ㅂ•́)و✧", "(っ˘ω˘ς)", "(´；ω；`)", "(｀・ω・´)", "╮(╯▽╰)╭", "(*/ω＼*)",
                           "ヾ(≧▽≦*)o", "(ง •_•)ง", "( ˘ᵕ˘ )", "(｡•́︿•̀｡)", "(*^▽^*)", "(＾▽＾)", "(・∀・)", "(￣▽￣)~*"]
@@ -215,7 +216,8 @@ struct StickerPanel: View {
                 }
                 .accessibilityLabel("添加表情")
             }
-            Group {
+            ScrollView {
+                Group {
                 if tab == "kao" {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                         ForEach(Self.kaomoji, id: \.self) { k in
@@ -229,19 +231,19 @@ struct StickerPanel: View {
                     }
                 } else if current.isEmpty {
                     VStack(spacing: 6) {
-                        Image(systemName: "face.smiling").font(.system(size: 26, weight: .light)).foregroundStyle(Palette.faint)
+                        StickerGlyph(size: 30).opacity(0.35)
                         Text(tab == "recent" ? "还没有用过表情" : "点右上角的 + 从相册添加").font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 150)
+                    .frame(maxWidth: .infinity, minHeight: 200)
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.tight), count: 4), spacing: Space.tight) {
                         ForEach(current) { s in
                             Button {
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) { bounce = s.id }
+                                withAnimation(.spring(response: 0.22, dampingFraction: 0.6)) { bounce = s.id }
                                 onSticker(s)
                                 Task {
-                                    try? await Task.sleep(for: .milliseconds(200))
-                                    withAnimation(Motion.spring) { bounce = nil }
+                                    try? await Task.sleep(for: .milliseconds(160))
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) { bounce = nil }
                                 }
                             } label: {
                                 Group {
@@ -263,8 +265,14 @@ struct StickerPanel: View {
                         }
                     }
                 }
+                }
+                .padding(.bottom, 4)
+                .id(tab)
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
-            .frame(maxHeight: 240)
+            .scrollIndicators(.hidden)
+            // 面板高度固定，切换分类或打开时不会挤压聊天内容
+            .frame(height: 232)
         }
         .padding(10)
         .background(Palette.card.opacity(0.94), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -290,12 +298,21 @@ struct StickerPanel: View {
     }
 
     private func tabButton<L: View>(id: String, @ViewBuilder label: () -> L) -> some View {
-        Button { tab = id } label: {
+        Button {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { tab = id }
+        } label: {
             label()
-                .foregroundStyle(Palette.ink)
+                .foregroundStyle(tab == id ? Palette.ink : Palette.inkSoft)
                 .padding(.horizontal, 10)
                 .frame(minWidth: 40, minHeight: 34)
-                .background(tab == id ? Palette.fill : Color.clear, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                .background {
+                    if tab == id {
+                        RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                            .fill(Palette.fill)
+                            .matchedGeometryEffect(id: "tab", in: tabNS)
+                    }
+                }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

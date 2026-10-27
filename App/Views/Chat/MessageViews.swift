@@ -17,7 +17,6 @@ struct MessageRow: View {
     let persona: Persona?
     let isGroup: Bool
     let first: Bool
-    let showActions: Bool
     let selecting: Bool
     let picked: Bool
     let actions: MessageActions
@@ -29,6 +28,8 @@ struct MessageRow: View {
     private var text: String { live?.text ?? message.content }
     private var reasoning: String { live?.reasoning ?? message.reasoning }
     private var time: String { Fmt.hm.string(from: message.createdAt) }
+    /// 已经开始回复、但还没有出字
+    private var isThinking: Bool { live != nil && text.isEmpty }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -65,7 +66,7 @@ struct MessageRow: View {
         HStack(alignment: .top, spacing: 10) {
             AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
             VStack(alignment: .leading, spacing: 5) {
-                if first { label }
+                if first || isThinking { label }
                 if reasoningOpen && !reasoning.isEmpty {
                     Text(reasoning)
                         .font(.system(size: 13))
@@ -78,7 +79,6 @@ struct MessageRow: View {
                 }
                 content(isUser: false)
                 if message.status == .error { errorLine }
-                if showActions && !selecting { actionRow }
             }
             Spacer(minLength: 28)
         }
@@ -91,9 +91,18 @@ struct MessageRow: View {
             withAnimation(Motion.spring) { reasoningOpen.toggle() }
         } label: {
             HStack(spacing: 6) {
-                EngineLogo(engine: persona?.engine ?? .claude, size: 14)
-                    .symbolEffect(.pulse, isActive: live != nil && text.isEmpty)
+                // 回复还没出字时，标志慢慢转动
+                TimelineView(.animation(paused: !isThinking)) { ctx in
+                    EngineLogo(engine: persona?.engine ?? .claude, size: 14)
+                        .rotationEffect(.degrees(isThinking ? ctx.date.timeIntervalSinceReferenceDate * 90 : 0))
+                }
                 Text(persona?.name ?? "已删除的角色").font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
+                if isThinking {
+                    Text(reasoning.isEmpty ? "正在输入…" : "正在思考…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.inkSoft)
+                        .transition(.opacity)
+                }
                 if !reasoning.isEmpty && showReasoning {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8.5, weight: .bold))
@@ -113,9 +122,7 @@ struct MessageRow: View {
     private func content(isUser: Bool) -> some View {
         switch message.kind {
         case .text:
-            if !isUser && live != nil && text.isEmpty {
-                TypingDots()
-            } else if !text.isEmpty {
+            if !text.isEmpty {
                 bubble(isUser: isUser) {
                     if !isUser && MarkdownParser.looksRich(text) {
                         VStack(alignment: .trailing, spacing: 2) {
@@ -194,24 +201,6 @@ struct MessageRow: View {
         .padding(.leading, 4)
     }
 
-    private var actionRow: some View {
-        HStack(spacing: 2) {
-            iconButton("doc.on.doc", "复制") { actions.copy(message.content) }
-            iconButton("arrow.clockwise", "重新生成") { actions.regenerate(message) }
-            iconButton("checkmark.circle", "加入待办") { actions.addTodo(message.content) }
-        }
-        .transition(.opacity)
-    }
-
-    private func iconButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.inkSoft)
-                .frame(width: 32, height: 30)
-        }
-        .accessibilityLabel(label)
-    }
 }
 
 /// 时间放在气泡右下角：先留出时间的位置，再把时间叠上去
@@ -265,14 +254,20 @@ struct ImageStack: View {
 
     var body: some View {
         let count = attachments.count
+        // 拖动进度：下面那张会随之慢慢升上来
+        let progress = min(abs(drag) / 150, 1)
         ZStack {
             ForEach(Array(attachments.enumerated()), id: \.element.id) { index, a in
                 let pos = (index - top + count) % count
-                if pos < 3 {
+                if pos < 3 || pos == count - 1 {
+                    let layer = pos == count - 1 && count > 3 ? 2 : pos
                     card(a)
-                        .rotationEffect(.degrees(pos == 0 ? Double(drag / 20) : (pos == 1 ? 5 : -5)))
-                        .offset(x: pos == 0 ? drag : (pos == 1 ? 10 : -9), y: pos == 0 ? 0 : (pos == 1 ? -9 : -12))
-                        .zIndex(Double(3 - pos))
+                        .scaleEffect(layer == 0 ? 1 - progress * 0.04 : (layer == 1 ? 0.97 + progress * 0.03 : 0.95))
+                        .rotationEffect(.degrees(layer == 0 ? Double(drag / 24)
+                                                 : (layer == 1 ? 5 * Double(1 - progress) : -5)))
+                        .offset(x: layer == 0 ? drag : (layer == 1 ? 10 * (1 - progress) : -9),
+                                y: layer == 0 ? 0 : (layer == 1 ? -9 * (1 - progress) : -12))
+                        .zIndex(Double(3 - layer))
                 }
             }
             if count > 1 {
@@ -302,16 +297,16 @@ struct ImageStack: View {
                 }
                 .onEnded { value in
                     guard count > 1 else { return }
-                    if abs(value.translation.width) > 60 {
-                        let dir: CGFloat = value.translation.width > 0 ? 1 : -1
-                        withAnimation(.easeOut(duration: 0.18)) { drag = dir * 260 }
-                        Task {
-                            try? await Task.sleep(for: .milliseconds(180))
+                    let dx = value.translation.width
+                    let flick = abs(value.predictedEndTranslation.width) > 180
+                    if abs(dx) > 50 || flick {
+                        // 同一个弹簧动画里：最上面那张顺着方向塞到最底下，下一张升上来
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                            top = dx < 0 ? (top + 1) % count : (top - 1 + count) % count
                             drag = 0
-                            withAnimation(Motion.spring) { top = (top + 1) % count }
                         }
                     } else {
-                        withAnimation(Motion.spring) { drag = 0 }
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { drag = 0 }
                     }
                 }
         )

@@ -124,10 +124,15 @@ struct Composer: View {
                 .padding(.vertical, 11)
                 .padding(.leading, Space.card)
             Button { toggle(.stickers) } label: {
-                Image(systemName: panel == .stickers ? "keyboard" : "face.smiling")
-                    .font(.system(size: 19))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 36, height: Space.control)
+                Group {
+                    if panel == .stickers {
+                        Image(systemName: "keyboard").font(.system(size: 17)).foregroundStyle(Palette.ink)
+                    } else {
+                        StickerGlyph(size: 21)
+                    }
+                }
+                .frame(width: 36, height: Space.control)
+                .contentTransition(.opacity)
             }
             .accessibilityLabel(panel == .stickers ? "键盘" : "表情")
             .padding(.trailing, 4)

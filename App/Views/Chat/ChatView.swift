@@ -19,6 +19,9 @@ struct ChatView: View {
     @State private var viewer: ImageViewerItem?
     @State private var toast: String?
     @State private var scrollTarget: UUID?
+    @State private var visibleLimit = 120
+    @State private var atBottom = true
+    @State private var keyboardShown = false
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -29,8 +32,9 @@ struct ChatView: View {
     var body: some View {
         ZStack {
             ChatWallpaper(index: wallpaper)
-            TimelineView(.everyMinute) { ctx in
-                messageList(now: ctx.date)
+            // 每分钟刷新一次，让提前排好的主动消息到点出现；判断用的始终是「现在」
+            TimelineView(.everyMinute) { _ in
+                messageList(now: .now)
             }
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
@@ -57,6 +61,8 @@ struct ChatView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in keyboardShown = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in keyboardShown = false }
         .onAppear {
             router.openConversation = convo.id
             convo.lastReadAt = .now
@@ -98,12 +104,7 @@ struct ChatView: View {
                         AvatarView(persona: members.first, size: 46)
                             .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                     }
-                    HStack(spacing: 5) {
-                        Text(convo.displayTitle(members)).font(Typo.serif(15, .medium)).foregroundStyle(Palette.ink)
-                        if !convo.isGroup && relay.isConnected {
-                            Circle().fill(Palette.ink).frame(width: 5, height: 5)
-                        }
-                    }
+                    Text(convo.displayTitle(members)).font(Typo.serif(15, .medium)).foregroundStyle(Palette.ink)
                     if let typingID = engine.typing[convo.id], let p = personaMap[typingID] {
                         Text(convo.isGroup ? "\(p.name) 正在输入…" : "正在输入…")
                             .font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
@@ -132,12 +133,20 @@ struct ChatView: View {
     // MARK: - 消息
 
     private func messageList(now: Date) -> some View {
-        let messages = convo.visibleMessages(at: now)
+        let all = convo.visibleMessages(at: now)
+        // 只排版最近的一段，避免懒加载估算高度导致跳动；更早的按需加载
+        let messages = Array(all.suffix(visibleLimit))
         let rows = ChatRow.build(messages)
-        let lastAI = messages.last { $0.role == .assistant && $0.status == .done }?.id
+        let live = messages.last.flatMap { engine.buffers[$0.id] }
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    if all.count > messages.count {
+                        Button("查看更早的消息") { visibleLimit += 120 }
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.inkSoft)
+                            .padding(.vertical, Space.item)
+                    }
                     ForEach(rows) { row in
                         switch row.kind {
                         case .stamp(let date):
@@ -151,29 +160,33 @@ struct ChatView: View {
                                        persona: m.personaID.flatMap { personaMap[$0] },
                                        isGroup: convo.isGroup,
                                        first: first,
-                                       showActions: m.id == lastAI && !engine.isBusy(convo),
                                        selecting: selecting,
                                        picked: picked.contains(m.id),
                                        actions: actions)
                             .padding(.top, first ? 14 : 4)
                             .id(m.id)
-                            .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                         }
                     }
                     Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
-                .animation(Motion.spring, value: messages.count)
+                // 回复逐字出现时，只有在底部才跟着往下走
+                .background { StreamFollower(buffer: live) { if atBottom { proxy.scrollTo("bottom", anchor: .bottom) } } }
             }
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: messages.count) {
-                withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height + geo.contentInsets.bottom - 80
+            } action: { _, value in
+                atBottom = value
             }
-            .task {
-                // 输入栏高度确定后再滚到底，避免最后一条被盖住
-                try? await Task.sleep(for: .milliseconds(150))
-                proxy.scrollTo("bottom", anchor: .bottom)
+            .onChange(of: messages.last?.id) {
+                // 自己发的消息总是滚到底；对方的消息只在你本来就在底部时才滚
+                guard atBottom || messages.last?.role == .user else { return }
+                withAnimation(.smooth(duration: 0.32)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: keyboardShown) {
+                if atBottom { withAnimation(.smooth(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
@@ -279,6 +292,18 @@ struct ChatView: View {
             try? await Task.sleep(for: .seconds(1.6))
             withAnimation(Motion.spring) { toast = nil }
         }
+    }
+}
+
+/// 只观察正在生成的那一条，字数变化时通知外面跟着滚动（不会让整个列表重绘）
+private struct StreamFollower: View {
+    let buffer: StreamBuffer?
+    let follow: () -> Void
+
+    var body: some View {
+        Color.clear
+            .onChange(of: buffer?.text.count ?? 0) { follow() }
+            .onChange(of: buffer?.reasoning.count ?? 0) { follow() }
     }
 }
 

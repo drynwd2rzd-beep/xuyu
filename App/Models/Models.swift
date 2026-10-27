@@ -18,6 +18,8 @@ final class Persona {
     var engineRaw: String = Engine.claude.rawValue
     /// 空字符串表示使用设置里的默认模型
     var model: String = ""
+    /// 推理强度，空字符串表示使用默认
+    var effort: String = ""
     var proactive: Bool = false
     /// 0 偶尔 · 1 每天 · 2 常常
     var proactiveFreq: Int = 1

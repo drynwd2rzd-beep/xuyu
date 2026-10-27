@@ -145,7 +145,18 @@ struct HomeView: View {
         } onOpen: {
             open(widget)
         }
-        .onLongPressGesture(minimumDuration: 0.45) { setEditing(true) }
+        .modifier(Reorderable(editing: editing, widget: widget, onEdit: { setEditing(true) }, onMove: move))
+    }
+
+    /// 拖动排序：把 from 放到 to 的位置
+    private func move(_ from: HomeWidget, to: HomeWidget) {
+        var list = widgets
+        guard let source = list.firstIndex(of: from), let target = list.firstIndex(of: to), source != target else { return }
+        list.remove(at: source)
+        list.insert(from, at: target)
+        withAnimation(Motion.spring) {
+            widgetsRaw = list.map(\.rawValue).joined(separator: ",")
+        }
     }
 
     private func setEditing(_ on: Bool) {
@@ -175,6 +186,33 @@ struct HomeView: View {
             }
         case .todo, .diary, .countdown, .mood:
             withAnimation(Motion.spring) { router.tab = .todo }
+        }
+    }
+}
+
+/// 平时长按进入编辑；编辑时按住拖动可以换位置
+private struct Reorderable: ViewModifier {
+    let editing: Bool
+    let widget: HomeWidget
+    let onEdit: () -> Void
+    let onMove: (HomeWidget, HomeWidget) -> Void
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        if editing {
+            content
+                .draggable(widget.rawValue)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let raw = items.first, let from = HomeWidget(rawValue: raw), from != widget else { return false }
+                    onMove(from, widget)
+                    return true
+                } isTargeted: { on in
+                    withAnimation(Motion.snappy) { targeted = on }
+                }
+                .scaleEffect(targeted ? 0.96 : 1)
+                .opacity(targeted ? 0.7 : 1)
+        } else {
+            content.onLongPressGesture(minimumDuration: 0.45, perform: onEdit)
         }
     }
 }

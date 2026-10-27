@@ -196,17 +196,22 @@ struct PersonaEditor: View {
                     SettingRow(title: "模型") {
                         Menu {
                             Button("跟随默认") { persona.model = "" }
-                            ForEach(models, id: \.self) { m in
-                                Button(SettingsView.short(m)) { persona.model = m }
+                            ForEach(models) { m in
+                                Button(m.name) { persona.model = m.id }
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(persona.model.isEmpty ? "跟随默认" : SettingsView.short(persona.model))
+                                Text(persona.model.isEmpty ? "跟随默认" : ModelNames.name(persona.model, engine: persona.engine, status: relay.status))
                                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
                             }
                             .font(.system(size: 15))
                             .foregroundStyle(Palette.ink2)
                         }
+                    }
+                    Hairline()
+                    SettingRow(title: "推理强度") {
+                        EffortMenu(options: ModelNames.efforts(for: persona.model, engine: persona.engine, status: relay.status),
+                                   selection: $persona.effort)
                     }
                 }
                 .card()
@@ -295,9 +300,8 @@ struct PersonaEditor: View {
         }
     }
 
-    private var models: [String] {
-        persona.engine == .claude ? (relay.status?.models.claude ?? ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"])
-                                  : (relay.status?.models.codex ?? [])
+    private var models: [ModelInfo] {
+        relay.status?.catalog(for: persona.engine) ?? []
     }
 
     private var avatarSection: some View {

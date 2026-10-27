@@ -6,15 +6,51 @@ struct EngineStatus: Decodable, Equatable {
     var version: String
 }
 
+struct ModelInfo: Decodable, Equatable, Hashable, Identifiable {
+    var id: String
+    var name: String
+    var description: String
+    var efforts: [String]
+    var defaultEffort: String
+}
+
 struct RelayStatus: Decodable, Equatable {
     struct Models: Decodable, Equatable {
         var claude: [String]
         var codex: [String]
     }
+    struct Catalog: Decodable, Equatable {
+        var claude: [ModelInfo]
+        var codex: [ModelInfo]
+    }
     var host: String
     var claude: EngineStatus
     var codex: EngineStatus
     var models: Models
+    var catalog: Catalog?
+
+    func catalog(for engine: Engine) -> [ModelInfo] {
+        if let catalog { return engine == .claude ? catalog.claude : catalog.codex }
+        let ids = engine == .claude ? models.claude : models.codex
+        return ids.map { ModelInfo(id: $0, name: $0, description: "", efforts: [], defaultEffort: "") }
+    }
+}
+
+/// 推理强度的中文名
+enum EffortName {
+    static func label(_ effort: String) -> String {
+        switch effort {
+        case "minimal": "最低"
+        case "low": "低"
+        case "medium": "中"
+        case "high": "高"
+        case "xhigh": "很高"
+        case "max": "最高"
+        case "ultra": "极限"
+        case "": "默认"
+        default: effort
+        }
+    }
 }
 
 struct RelayAttachment: Encodable {
@@ -26,6 +62,7 @@ struct RelayAttachment: Encodable {
 struct RelayRequest: Encodable {
     var engine: String
     var model: String
+    var effort: String = ""
     var system: String
     var prompt: String
     var attachments: [RelayAttachment] = []
@@ -69,9 +106,24 @@ final class RelayClient {
     @ObservationIgnored private var pingTask: Task<Void, Never>?
     @ObservationIgnored private let session = URLSession(configuration: .default)
 
+    /// 在家用的局域网地址
     var address: String {
         get { UserDefaults.standard.string(forKey: Prefs.relayAddress) ?? "" }
         set { UserDefaults.standard.set(newValue.trimmed, forKey: Prefs.relayAddress) }
+    }
+
+    /// 出门用的地址（Tailscale），家里连不上时自动换它
+    var awayAddress: String {
+        get { UserDefaults.standard.string(forKey: "relayAddressAway") ?? "" }
+        set { UserDefaults.standard.set(newValue.trimmed, forKey: "relayAddressAway") }
+    }
+
+    /// 当前用的是哪个地址
+    private(set) var usingAway = false
+    @ObservationIgnored private var candidateIndex = 0
+
+    private var candidates: [String] {
+        [address, awayAddress].filter { !$0.trimmed.isEmpty }
     }
 
     var code: String {
@@ -88,7 +140,8 @@ final class RelayClient {
             state = .connected
             status = RelayStatus(host: "UP-PC", claude: .init(installed: true, version: "2.4.0"),
                                  codex: .init(installed: true, version: "0.98.0"),
-                                 models: .init(claude: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], codex: []))
+                                 models: .init(claude: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], codex: ["gpt-6.1-sol"]),
+                                 catalog: nil)
             return
         }
         switch state {
@@ -99,14 +152,18 @@ final class RelayClient {
 
     func reconnect() {
         disconnect()
+        candidateIndex = 0
         connect()
     }
 
     private func connect() {
-        guard let url = Self.url(address: address, code: code) else {
+        let list = candidates
+        if candidateIndex >= list.count { candidateIndex = 0 }
+        guard !list.isEmpty, let url = Self.url(address: list[candidateIndex], code: code) else {
             state = .notConfigured
             return
         }
+        usingAway = list[candidateIndex] == awayAddress && !awayAddress.isEmpty
         retryTask?.cancel()
         state = .connecting
         let task = session.webSocketTask(with: url)
@@ -129,7 +186,7 @@ final class RelayClient {
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         failStreams(RelayError.unreachable)
-        state = address.isEmpty ? .notConfigured : .failed("已断开")
+        state = candidates.isEmpty ? .notConfigured : .failed("已断开")
     }
 
     static func url(address: String, code: String) -> URL? {
@@ -176,6 +233,13 @@ final class RelayClient {
         waiters = []
         // 配对码错误时不自动重连
         guard reason != "配对码不对" else { return }
+        // 还有别的地址（比如出门用的）就马上试下一个
+        if candidateIndex + 1 < candidates.count {
+            candidateIndex += 1
+            connect()
+            return
+        }
+        candidateIndex = 0
         let delay = retryDelay
         retryDelay = min(retryDelay * 2, 30)
         retryTask = Task { [weak self] in
@@ -269,7 +333,7 @@ final class RelayClient {
                     self.streams[id] = continuation
                     var payload: [String: Any] = [
                         "type": "run", "id": id, "engine": request.engine, "model": request.model,
-                        "system": request.system, "prompt": request.prompt,
+                        "effort": request.effort, "system": request.system, "prompt": request.prompt,
                     ]
                     if !request.attachments.isEmpty {
                         payload["attachments"] = request.attachments.map { ["kind": $0.kind, "name": $0.name, "data": $0.data] }

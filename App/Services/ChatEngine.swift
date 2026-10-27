@@ -186,6 +186,10 @@ enum PromptBuilder {
         persona.model.isEmpty ? Prefs.defaultModel(for: persona.engine) : persona.model
     }
 
+    static func effort(for persona: Persona) -> String {
+        persona.effort.isEmpty ? Prefs.defaultEffort(for: persona.engine) : persona.effort
+    }
+
     static func system(for persona: Persona, convo: Conversation?, members: [Persona]) -> String {
         var parts: [String] = []
         let base = persona.systemPrompt.trimmed
@@ -251,7 +255,7 @@ enum PromptBuilder {
                                                    data: a.data.base64EncodedString()))
             }
         }
-        return RelayRequest(engine: persona.engine.rawValue, model: model(for: persona),
+        return RelayRequest(engine: persona.engine.rawValue, model: model(for: persona), effort: effort(for: persona),
                             system: system(for: persona, convo: convo, members: members),
                             prompt: prompt, attachments: attachments)
     }

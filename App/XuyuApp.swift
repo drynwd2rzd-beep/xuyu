@@ -103,8 +103,15 @@ enum Prefs {
 
     static var nicknameValue: String { (UserDefaults.standard.string(forKey: nickname) ?? "").trimmed }
 
+    static let defaultClaudeEffort = "defaultClaudeEffort"
+    static let defaultCodexEffort = "defaultCodexEffort"
+
     static func defaultModel(for engine: Engine) -> String {
         UserDefaults.standard.string(forKey: engine == .claude ? defaultClaudeModel : defaultCodexModel) ?? ""
+    }
+
+    static func defaultEffort(for engine: Engine) -> String {
+        UserDefaults.standard.string(forKey: engine == .claude ? defaultClaudeEffort : defaultCodexEffort) ?? ""
     }
 
     /// 免打扰时段（小时），默认 23:00–8:00

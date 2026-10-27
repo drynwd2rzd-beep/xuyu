@@ -29,10 +29,50 @@ function version(engine) {
   });
 }
 
+// ---- 模型目录：Claude 用配置里的列表，Codex 读它自己缓存的官方列表 ----
+const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CLAUDE_NAMES = {
+  'claude-fable-5-1': ['Fable 5.1', '最强，适合最难的问题'],
+  'claude-opus-5-5': ['Opus 5.5', '聪明又稳定'],
+  'claude-sonnet-5-5': ['Sonnet 5.5', '更快，适合日常聊天'],
+  'claude-haiku-5-5': ['Haiku 5.5', '最快最省'],
+};
+
+function claudeCatalog() {
+  return config.models.claude.map((id) => ({
+    id,
+    name: CLAUDE_NAMES[id]?.[0] || id,
+    description: CLAUDE_NAMES[id]?.[1] || '',
+    efforts: CLAUDE_EFFORTS,
+    defaultEffort: '',
+  }));
+}
+
+function codexCatalog() {
+  try {
+    const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+    const cache = JSON.parse(fs.readFileSync(path.join(home, 'models_cache.json'), 'utf8'));
+    return (cache.models || [])
+      .filter((m) => m.visibility === 'list')
+      .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+      .map((m) => ({
+        id: m.slug,
+        name: m.display_name || m.slug,
+        description: m.description || '',
+        efforts: (m.supported_reasoning_levels || []).map((l) => l.effort),
+        defaultEffort: m.default_reasoning_level || '',
+      }));
+  } catch {
+    return config.models.codex.map((id) => ({ id, name: id, description: '', efforts: [], defaultEffort: '' }));
+  }
+}
+
 async function status() {
   if (Date.now() - statusCache.at < 60_000 && statusCache.value) return statusCache.value;
   const [claude, codex] = await Promise.all([version('claude'), version('codex')]);
-  const value = { protocol: PROTOCOL, host: os.hostname(), claude, codex, models: config.models };
+  const catalog = { claude: claudeCatalog(), codex: codexCatalog() };
+  const models = { claude: catalog.claude.map((m) => m.id), codex: catalog.codex.map((m) => m.id) };
+  const value = { protocol: PROTOCOL, host: os.hostname(), claude, codex, models, catalog };
   statusCache = { at: Date.now(), value };
   return value;
 }
@@ -74,12 +114,13 @@ async function handleRun(ws, msg, running) {
   const controller = new AbortController();
   running.set(id, controller);
   const started = Date.now();
-  console.log(`→ ${id.slice(0, 8)} ${engine}${msg.model ? ' ' + msg.model : ''}`);
+  console.log(`→ ${id.slice(0, 8)} ${engine}${msg.model ? ' ' + msg.model : ''}${msg.effort ? ' · ' + msg.effort : ''}`);
   try {
     await runEngine({
       engine,
       command: cmd,
       model: msg.model || '',
+      effort: /^[a-z]+$/.test(String(msg.effort || '')) ? msg.effort : '',
       system: msg.system || '',
       prompt,
       files,

@@ -17,6 +17,8 @@ struct SettingsView: View {
     @AppStorage(Prefs.wallpaper) private var wallpaper = 0
     @AppStorage(Prefs.defaultClaudeModel) private var claudeModel = ""
     @AppStorage(Prefs.defaultCodexModel) private var codexModel = ""
+    @AppStorage(Prefs.defaultClaudeEffort) private var claudeEffort = ""
+    @AppStorage(Prefs.defaultCodexEffort) private var codexEffort = ""
     @State private var showModels = false
     @State private var showQuiet = false
     @State private var wallpaperItem: PhotosPickerItem?
@@ -47,7 +49,8 @@ struct SettingsView: View {
                     Hairline()
                     Button { showModels = true } label: {
                         SettingRow(title: "默认模型") {
-                            Text(Self.short(claudeModel.isEmpty ? "自动" : claudeModel)).font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                            Text(ModelNames.summary(claudeModel, claudeEffort, engine: .claude, status: relay.status))
+                                .font(.system(size: 14)).foregroundStyle(Palette.inkSoft).lineLimit(1)
                             Chevron()
                         }
                     }
@@ -118,7 +121,8 @@ struct SettingsView: View {
         .background(Palette.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showModels) {
-            ModelPicker(claude: $claudeModel, codex: $codexModel, status: relay.status)
+            ModelPicker(claude: $claudeModel, codex: $codexModel, claudeEffort: $claudeEffort, codexEffort: $codexEffort,
+                        status: relay.status)
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
@@ -247,10 +251,32 @@ struct StatusDot: View {
     }
 }
 
-/// 默认模型：Claude 和 Codex 各选一个
+enum ModelNames {
+    static func name(_ id: String, engine: Engine, status: RelayStatus?) -> String {
+        if id.isEmpty { return "自动" }
+        return status?.catalog(for: engine).first { $0.id == id }?.name ?? SettingsView.short(id)
+    }
+
+    static func summary(_ id: String, _ effort: String, engine: Engine, status: RelayStatus?) -> String {
+        let n = name(id, engine: engine, status: status)
+        return effort.isEmpty ? n : "\(n) · \(EffortName.label(effort))"
+    }
+
+    /// 某个模型能选的推理强度；不知道时给通用的一组
+    static func efforts(for id: String, engine: Engine, status: RelayStatus?) -> [String] {
+        let list = status?.catalog(for: engine) ?? []
+        if let m = list.first(where: { $0.id == id }), !m.efforts.isEmpty { return m.efforts }
+        if id.isEmpty, let first = list.first, !first.efforts.isEmpty { return first.efforts }
+        return ["low", "medium", "high", "xhigh", "max"]
+    }
+}
+
+/// 默认模型和推理强度：Claude 和 Codex 各选一套
 struct ModelPicker: View {
     @Binding var claude: String
     @Binding var codex: String
+    @Binding var claudeEffort: String
+    @Binding var codexEffort: String
     let status: RelayStatus?
     @Environment(\.dismiss) private var dismiss
 
@@ -262,35 +288,44 @@ struct ModelPicker: View {
                     Spacer()
                     Button("完成") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.ink)
                 }
-                group(.claude, models: status?.models.claude ?? ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], selection: $claude)
-                group(.codex, models: status?.models.codex ?? [], selection: $codex)
+                group(.claude, selection: $claude, effort: $claudeEffort)
+                group(.codex, selection: $codex, effort: $codexEffort)
             }
             .padding(Space.page)
         }
     }
 
-    private func group(_ engine: Engine, models: [String], selection: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: Space.tight) {
+    private func group(_ engine: Engine, selection: Binding<String>, effort: Binding<String>) -> some View {
+        let models = status?.catalog(for: engine) ?? []
+        return VStack(alignment: .leading, spacing: Space.tight) {
             HStack(spacing: 6) {
                 EngineLogo(engine: engine, size: 14)
                 Text(engine.label).font(Typo.serif(13.5)).foregroundStyle(Palette.inkSoft)
             }
             .padding(.leading, 6)
             VStack(spacing: 0) {
-                row("自动（账号默认）", value: "", selection: selection)
-                ForEach(models, id: \.self) { m in
+                row("自动", subtitle: "账号默认的模型", value: "", selection: selection)
+                ForEach(models) { m in
                     Hairline()
-                    row(SettingsView.short(m), value: m, selection: selection)
+                    row(m.name, subtitle: m.description.isEmpty ? nil : m.description, value: m.id, selection: selection)
+                }
+                Hairline()
+                SettingRow(title: "推理强度", subtitle: "越高越聪明，也越慢、越耗额度") {
+                    EffortMenu(options: ModelNames.efforts(for: selection.wrappedValue, engine: engine, status: status),
+                               selection: effort)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             .card()
+            if models.isEmpty {
+                Text("连接电脑后显示可用的模型").font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).padding(.leading, 6)
+            }
         }
     }
 
-    private func row(_ title: String, value: String, selection: Binding<String>) -> some View {
+    private func row(_ title: String, subtitle: String?, value: String, selection: Binding<String>) -> some View {
         Button { selection.wrappedValue = value } label: {
-            SettingRow(title: title) {
+            SettingRow(title: title, subtitle: subtitle) {
                 if selection.wrappedValue == value {
                     Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
                 }
@@ -298,6 +333,34 @@ struct ModelPicker: View {
         }
         .buttonStyle(PressableRowStyle())
         .sensoryFeedback(.selection, trigger: selection.wrappedValue)
+    }
+}
+
+/// 推理强度选择：默认 + 模型支持的几档
+struct EffortMenu: View {
+    let options: [String]
+    @Binding var selection: String
+
+    var body: some View {
+        Menu {
+            item("", "默认")
+            ForEach(options, id: \.self) { e in item(e, EffortName.label(e)) }
+        } label: {
+            HStack(spacing: 4) {
+                Text(EffortName.label(selection))
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
+            }
+            .font(.system(size: 15))
+            .foregroundStyle(Palette.ink2)
+        }
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    @ViewBuilder
+    private func item(_ value: String, _ title: String) -> some View {
+        Button { selection = value } label: {
+            if selection == value { Label(title, systemImage: "checkmark") } else { Text(title) }
+        }
     }
 }
 

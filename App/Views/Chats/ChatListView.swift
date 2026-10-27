@@ -112,9 +112,9 @@ struct ConversationRow: View {
     let typing: Bool
 
     var body: some View {
-        TimelineView(.everyMinute) { ctx in
-            let last = convo.lastVisible(at: ctx.date)
-            let unread = convo.hasUnread(at: ctx.date)
+        TimelineView(.everyMinute) { _ in
+            let last = convo.lastVisible(at: .now)
+            let unread = convo.hasUnread(at: .now)
             HStack(spacing: Space.item) {
                 ConversationAvatar(convo: convo, members: members, size: 50)
                     .overlay(alignment: .topTrailing) {

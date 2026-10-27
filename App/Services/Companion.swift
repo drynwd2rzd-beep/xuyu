@@ -156,7 +156,8 @@ enum Companion {
     // MARK: - 工具
 
     private static func request(_ persona: Persona, _ prompt: String) -> RelayRequest {
-        RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona),
+        // 今日一句、日记、主动消息都是轻任务，用低强度省额度
+        RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
                      system: PromptBuilder.system(for: persona, convo: nil, members: [persona]), prompt: prompt)
     }
 

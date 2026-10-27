@@ -10,10 +10,10 @@ const CLAUDE_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Web
  *   onEvent({ type: 'text' | 'reasoning', text })
  * 返回 Promise，完成时 resolve，出错时 reject(Error)。
  */
-export function runEngine({ engine, command, model, system, prompt, files, images, cwd, signal, onEvent }) {
+export function runEngine({ engine, command, model, effort = '', system, prompt, files, images, cwd, signal, onEvent }) {
   const spec = engine === 'codex'
-    ? codexArgs({ model, images })
-    : claudeArgs({ model, system, allowRead: files.length > 0 });
+    ? codexArgs({ model, effort, images })
+    : claudeArgs({ model, effort, system, allowRead: files.length > 0 });
   const input = engine === 'codex' && system ? `${system}\n\n---\n\n${prompt}` : prompt;
   const parse = engine === 'codex' ? codexParser(onEvent) : claudeParser(onEvent);
 
@@ -73,10 +73,11 @@ export function runEngine({ engine, command, model, system, prompt, files, image
 
 class EngineError extends Error {}
 
-function claudeArgs({ model, system, allowRead }) {
+function claudeArgs({ model, effort, system, allowRead }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--max-turns', allowRead ? '6' : '1'];
   if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
   if (system) args.push('--system-prompt', system);
   const blocked = allowRead ? CLAUDE_TOOLS.filter((t) => t !== 'Read') : CLAUDE_TOOLS;
   // 可变参数放最后，提示词从 stdin 读取
@@ -123,9 +124,10 @@ function claudeParser(onEvent) {
   return state;
 }
 
-function codexArgs({ model, images }) {
+function codexArgs({ model, effort, images }) {
   const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only'];
   if (model) args.push('-m', model);
+  if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
   for (const img of images) args.push('-i', img);
   args.push('-');
   return args;

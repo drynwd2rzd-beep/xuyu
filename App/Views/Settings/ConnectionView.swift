@@ -3,6 +3,7 @@ import SwiftUI
 struct ConnectionView: View {
     @Environment(RelayClient.self) private var relay
     @State private var address = ""
+    @State private var away = ""
     @State private var code = ""
     @State private var testing = false
     @State private var testResult: String?
@@ -11,7 +12,9 @@ struct ConnectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.section) {
                 VStack(spacing: 0) {
-                    field("地址", text: $address, placeholder: "192.168.1.8:51888", keyboard: .URL)
+                    field("在家", text: $address, placeholder: "192.168.1.8:51888", keyboard: .URL)
+                    Hairline()
+                    field("出门", text: $away, placeholder: "Tailscale 地址（可不填）", keyboard: .URL)
                     Hairline()
                     field("配对码", text: $code, placeholder: "电脑窗口里显示的 8 位", keyboard: .asciiCapable)
                 }
@@ -26,7 +29,7 @@ struct ConnectionView: View {
                         .background(Palette.ink, in: Capsule())
                 }
                 .buttonStyle(ScaleButtonStyle())
-                .disabled(address.trimmed.isEmpty || code.trimmed.isEmpty)
+                .disabled((address.trimmed.isEmpty && away.trimmed.isEmpty) || code.trimmed.isEmpty)
 
                 HStack(spacing: Space.tight) {
                     StatusDot(ok: relay.isConnected)
@@ -71,13 +74,14 @@ struct ConnectionView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             address = relay.address
+            away = relay.awayAddress
             code = relay.code
         }
     }
 
     private var stateText: String {
         switch relay.state {
-        case .connected: "已连接到 \(relay.status?.host ?? "电脑")"
+        case .connected: "已连接到 \(relay.status?.host ?? "电脑")" + (relay.usingAway ? "（出门线路）" : "（在家线路）")
         case .connecting: "正在连接…"
         case .notConfigured: "填写电脑上显示的地址和配对码"
         case .failed(let reason): "没连上：\(reason)"
@@ -113,6 +117,7 @@ struct ConnectionView: View {
 
     private func connect() {
         relay.address = address
+        relay.awayAddress = away
         relay.code = code
         relay.reconnect()
     }
