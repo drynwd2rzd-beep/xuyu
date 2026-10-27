@@ -188,7 +188,7 @@ struct MessageRow: View {
                             timeLabel
                         }
                     } else {
-                        TimedText(text: text, time: time, read: isUser && message.readAt != nil)
+                        TimedText(text: text, time: time)
                     }
                 }
             }
@@ -196,7 +196,7 @@ struct MessageRow: View {
             ImageStack(attachments: message.sortedAttachments) { actions.openImages(message.sortedAttachments, $0) }
                 .contextMenu { menu }
             if !message.content.isEmpty {
-                bubble(isUser: isUser) { TimedText(text: message.content, time: time, read: isUser && message.readAt != nil) }
+                bubble(isUser: isUser) { TimedText(text: message.content, time: time) }
             }
         case .sticker:
             if let a = message.sortedAttachments.first, let image = cachedImage(a.data, key: a.id.uuidString) {
@@ -211,7 +211,7 @@ struct MessageRow: View {
                 FileCard(name: a.fileName, size: a.data.count, time: time, data: a.data).contextMenu { menu }
             }
             if !message.content.isEmpty {
-                bubble(isUser: isUser) { TimedText(text: message.content, time: time, read: isUser && message.readAt != nil) }
+                bubble(isUser: isUser) { TimedText(text: message.content, time: time) }
             }
         }
     }

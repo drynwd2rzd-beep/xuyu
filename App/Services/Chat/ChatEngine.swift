@@ -162,7 +162,7 @@ final class ChatEngine {
             // 像真人一样，看到消息后过一小会儿才开始回（每次不一样）；这期间你又发了，就一起看、一起回
             if react {
                 // 先「已读」，过一会儿才开始打字
-                try? await Task.sleep(for: .seconds(Double.random(in: 0.3...0.9)))
+                try? await Task.sleep(for: .seconds(Double.random(in: 0.9...2.2)))
                 if !Task.isCancelled { withAnimation(Motion.spring) { self?.markRead(convo, context: context) } }
                 try? await Task.sleep(for: .seconds(Double.random(in: 0.4...1.8)))
             } else {
@@ -353,7 +353,7 @@ final class ChatEngine {
 
     /// 处理 TA 回复里的小标记，返回去掉标记后的文字：
     /// 【引用:…】把你说过的那句话挂在 TA 这条消息下面；【表情:分类】从你的表情库里挑一个，单独一条跟在后面
-    private func applyMarkers(_ text: String, to message: Message, persona: Persona, convo: Conversation,
+    func applyMarkers(_ text: String, to message: Message, persona: Persona, convo: Conversation,
                               context: ModelContext) -> String {
         let markers = ReplyText.markers(in: text)
         if let key = markers.quoteKey, let quoted = ReplyText.quoted(key, in: convo.visibleMessages()) {

@@ -149,6 +149,8 @@ struct DiaryCard: View {
     @AppStorage(Prefs.showMyDiary) private var showMine = true
     @State private var myText = ""
     @State private var expanded = false
+    @State private var fullHeight: CGFloat = 0
+    @State private var shortHeight: CGFloat = 0
     @FocusState private var focused: Bool
 
     static let moods = ["开心", "惬意", "平静", "累了", "低落"]
@@ -182,13 +184,7 @@ struct DiaryCard: View {
                 options
             }
             if tab == .ai {
-                Text(aiEntry?.text ?? placeholder)
-                    .font(.system(size: 15))
-                    .lineSpacing(6)
-                    .foregroundStyle(aiEntry == nil ? Palette.inkSoft : Palette.ink)
-                    .lineLimit(expanded ? nil : 3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onTapGesture { withAnimation(Motion.spring) { expanded.toggle() } }
+                foldingText(aiEntry?.text ?? placeholder, color: aiEntry == nil ? Palette.inkSoft : Palette.ink)
                     .transition(.opacity)
             } else {
                 TextField("今天过得怎么样？随便写几句…", text: $myText, axis: .vertical)
@@ -230,6 +226,45 @@ struct DiaryCard: View {
             myText = myEntry?.text ?? ""
             expanded = false
         }
+    }
+
+    /// 日记正文：平时显示三行，点一下高度平滑地长出全文（下面的内容被柔和地推开），再点一下缩回去。
+    /// 收起时最后一行轻轻淡出，提示还有下文
+    private func foldingText(_ text: String, color: Color) -> some View {
+        let canFold = fullHeight > shortHeight + 1
+        let folded = canFold && !expanded
+        return Text(text)
+            .font(.system(size: 15))
+            .lineSpacing(6)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+            .background(alignment: .top) {
+                // 量一下三行有多高
+                Text(text)
+                    .font(.system(size: 15))
+                    .lineSpacing(6)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shortHeight = $0 }
+            }
+            .frame(height: fullHeight == 0 ? nil : (folded ? shortHeight : fullHeight), alignment: .top)
+            .clipped()
+            .mask {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .black.opacity(folded ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 22)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard canFold else { return }
+                withAnimation(.spring(duration: 0.5, bounce: 0)) { expanded.toggle() }
+            }
+            .sensoryFeedback(.selection, trigger: expanded)
     }
 
     /// 你的日记下面：TA 的回信，像交换日记一样

@@ -20,10 +20,14 @@ final class AppLock {
         if enabled { locked = true }
     }
 
+    /// 现在发给会操作电脑的角色，要不要先确认（没开保护、或 5 分钟内确认过就不用）
+    var needsWorkConfirm: Bool {
+        UserDefaults.standard.bool(forKey: Prefs.workAuth) && !DemoMode.isOn && Date.now.timeIntervalSince(workConfirmedAt) >= 300
+    }
+
     /// 让 TA 操作电脑前确认是你本人；确认过后 5 分钟内连着发不再问
     func confirmWork() async -> Bool {
-        guard UserDefaults.standard.bool(forKey: Prefs.workAuth), !DemoMode.isOn else { return true }
-        if Date.now.timeIntervalSince(workConfirmedAt) < 300 { return true }
+        guard needsWorkConfirm else { return true }
         guard await Self.authenticate("让 TA 操作你的电脑") else { return false }
         workConfirmedAt = .now
         return true

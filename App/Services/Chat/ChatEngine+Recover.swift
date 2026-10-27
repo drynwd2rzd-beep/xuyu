@@ -41,19 +41,27 @@ extension ChatEngine {
             let persona = first.personaID.flatMap { id in context.allPersonas().first { $0.id == id } }
             let parts = ReplyText.paragraphs(text, whole: persona?.canWork == true)
             guard !parts.isEmpty || !files.isEmpty else { continue }
+            // 沿用已经发出去的那几条（编号不变，引用它们的地方还能找到原文），不够再补新的
             let start = first.createdAt
-            let personaID = first.personaID
-            let label = first.modelLabel
-            for m in siblings { context.delete(m) }
             for (i, part) in parts.enumerated() {
-                let m = Message(role: .assistant, content: part, personaID: personaID)
-                m.modelLabel = label
-                m.relayID = relayID
+                let m: Message
+                if i < siblings.count {
+                    m = siblings[i]
+                } else {
+                    m = Message(role: .assistant, content: "", personaID: first.personaID)
+                    m.modelLabel = first.modelLabel
+                    m.relayID = relayID
+                    m.createdAt = start.addingTimeInterval(Double(i) * 0.001)
+                    m.conversation = convo
+                    context.insert(m)
+                }
+                m.status = .done
+                m.errorText = nil
                 m.steps = i == 0 ? steps.joined(separator: "\n") : ""
-                m.createdAt = start.addingTimeInterval(Double(i) * 0.001)
-                m.conversation = convo
-                context.insert(m)
+                m.content = persona.map { applyMarkers(part, to: m, persona: $0, convo: convo, context: context) } ?? part
+                if m.content.isEmpty && m.steps.isEmpty { context.delete(m) }
             }
+            for extra in siblings.dropFirst(parts.count) { context.delete(extra) }
             if let persona {
                 for (name, data) in files { deliver(file: name, data: data, from: persona, in: convo, context: context) }
             }

@@ -55,6 +55,21 @@ enum ReplyText {
             .first { $0.content.contains(key) || key.contains($0.content.prefix(8)) }
     }
 
+    /// 点引用时找原文：先按编号找；旧消息没有编号（或原文被重新整理过）就按引用的文字找最近的那条
+    static func source(ofQuote quote: String, id: UUID?, in messages: [Message]) -> Message? {
+        let alive = messages.filter { !$0.recalled }
+        if let id, let hit = alive.first(where: { $0.id == id }) { return hit }
+        // 引用是「谁：内容」，去掉前面的名字和结尾的省略号
+        var body = quote
+        if let colon = body.firstIndex(of: "：") { body = String(body[body.index(after: colon)...]) }
+        body = body.trimmingCharacters(in: CharacterSet(charactersIn: "…")).trimmed
+        guard !body.isEmpty else { return nil }
+        return alive.last { m in
+            let flat = m.content.replacingOccurrences(of: "\n", with: " ")
+            return !flat.isEmpty && (flat.contains(body) || body.contains(flat))
+        }
+    }
+
     /// 引用条上那一行：「你：…」，太长就截断
     static func quoteLine(for message: Message) -> String {
         let line = message.content.replacingOccurrences(of: "\n", with: " ")

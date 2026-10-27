@@ -1,8 +1,6 @@
 import SwiftUI
 import SwiftData
-import Photos
 import PhotosUI
-import UIKit
 
 /// 表情面板：和键盘一样高。上面一排分类（最近使用、各个图片表情包，最右边 + 新建表情包）；
 /// 下面每个分类一页，左右滑动切换
@@ -18,9 +16,7 @@ struct StickerPanel: View {
     @State private var addingTo: String?
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPicker = false
-    @State private var creating = false
-    @State private var nameDraft = ""
-    @State private var renaming: Category?
+    @State private var naming: Naming?
     @Namespace private var tabNS
 
     /// 一个分类：最近使用 / 某个图片表情包
@@ -36,6 +32,18 @@ struct StickerPanel: View {
         }
     }
 
+    /// 正在起名字：新建表情包，或者给某个表情包改名
+    enum Naming: Identifiable {
+        case create
+        case rename(String)
+        var id: String {
+            switch self {
+            case .create: "create"
+            case .rename(let p): "rename:\(p)"
+            }
+        }
+    }
+
     private var packs: [String] {
         var seen: [String] = []
         for s in stickers where !seen.contains(s.pack) { seen.append(s.pack) }
@@ -47,7 +55,7 @@ struct StickerPanel: View {
     private var recent: [Sticker] {
         stickers.filter { $0.lastUsedAt != nil }
             .sorted { ($0.lastUsedAt ?? .distantPast) > ($1.lastUsedAt ?? .distantPast) }
-            .prefix(8).map { $0 }
+            .prefix(12).map { $0 }
     }
 
     private var categories: [Category] {
@@ -69,15 +77,14 @@ struct StickerPanel: View {
         .onAppear { if current == nil { current = categories.first?.id } }
         .photosPicker(isPresented: $showPicker, selection: $pickerItems, maxSelectionCount: 20, matching: .images)
         .onChange(of: pickerItems) { _, items in addStickers(items) }
-        .alert("新建表情包", isPresented: $creating) {
-            TextField("名字，比如：猫猫", text: $nameDraft)
-            Button("取消", role: .cancel) { nameDraft = "" }
-            Button("新建") { createPack() }
-        }
-        .alert("重命名分类", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("新名字", text: $nameDraft)
-            Button("取消", role: .cancel) { nameDraft = "" }
-            Button("好") { rename() }
+        // 起名字用一张从下面升起的小卡片：输入框贴在键盘上方，不会和聊天页的键盘、面板互相挤
+        .sheet(item: $naming) { naming in
+            switch naming {
+            case .create:
+                PackNameSheet(title: "新建表情包", action: "新建", name: "") { createPack($0) }
+            case .rename(let old):
+                PackNameSheet(title: "重命名", action: "好", name: old) { rename(old, to: $0) }
+            }
         }
     }
 
@@ -98,7 +105,7 @@ struct StickerPanel: View {
                     withAnimation(Motion.spring) { proxy.scrollTo(id, anchor: .center) }
                 }
             }
-            Button { creating = true } label: {
+            Button { naming = .create } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Palette.ink2)
@@ -143,20 +150,13 @@ struct StickerPanel: View {
 
     @ViewBuilder
     private func categoryMenu(_ section: Category) -> some View {
-        if section.kind == .recent {
+        switch section.kind {
+        case .recent:
             Button(role: .destructive) { clearRecent() } label: { Label("清空最近使用", systemImage: "clock.arrow.circlepath") }
-        } else {
-            Button { nameDraft = section.name; renaming = section } label: { Label("重命名", systemImage: "pencil") }
-            Button(role: .destructive) { delete(section) } label: { Label("删除分类", systemImage: "trash") }
+        case .pack(let p):
+            Button { naming = .rename(p) } label: { Label("重命名", systemImage: "pencil") }
+            Button(role: .destructive) { delete(pack: p) } label: { Label("删除表情包", systemImage: "trash") }
         }
-    }
-
-    private func clearRecent() {
-        withAnimation(Motion.spring) {
-            for s in stickers where s.lastUsedAt != nil { s.lastUsedAt = nil }
-            current = categories.first?.id
-        }
-        try? context.save()
     }
 
     // MARK: 内容：每个分类单独一页，左右滑动切换
@@ -192,70 +192,106 @@ struct StickerPanel: View {
                 .contextMenu { categoryMenu(section) }
             switch section.kind {
             case .recent:
-                stickerGrid(recent, addTo: nil, inRecent: true)
+                stickerGrid(recent, pack: nil)
             case .pack(let p):
-                stickerGrid(stickers.filter { $0.pack == p }, addTo: p)
+                stickerGrid(stickers.filter { $0.pack == p }, pack: p)
             }
         }
     }
 
-    private func stickerGrid(_ items: [Sticker], addTo pack: String?, inRecent: Bool = false) -> some View {
+    /// 一页表情：点一下发出去；长按放大看，还能移到别的表情包、删除；表情包最后一格是「+」
+    private func stickerGrid(_ items: [Sticker], pack: String?) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.tight), count: 4), spacing: Space.tight) {
             ForEach(items) { s in
-                Button {
-                    withAnimation(Motion.pressIn) { bounce = s.id }
-                    onSticker(s)
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(140))
-                        withAnimation(Motion.pressOut) { bounce = nil }
-                    }
-                } label: {
-                    Group {
-                        if let image = cachedImage(s.data, key: s.id.uuidString) {
-                            Image(uiImage: image).resizable().scaledToFit().padding(6)
-                        }
-                    }
-                    .frame(maxWidth: .infinity).frame(height: 74)
-                    .background(Palette.paper, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-                    .scaleEffect(bounce == s.id ? 0.86 : 1)
+                Button { send(s) } label: {
+                    stickerImage(s)
+                        .padding(6)
+                        .frame(maxWidth: .infinity).frame(height: 74)
+                        .background(Palette.paper, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+                        .scaleEffect(bounce == s.id ? 0.86 : 1)
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    if inRecent {
-                        Button {
-                            withAnimation(Motion.spring) { s.lastUsedAt = nil }
-                            try? context.save()
-                        } label: { Label("从最近使用中移除", systemImage: "clock.badge.xmark") }
-                    }
-                    Button(role: .destructive) {
-                        withAnimation(Motion.spring) { context.delete(s) }
-                        try? context.save()
-                    } label: { Label("删除表情", systemImage: "trash") }
+                    stickerMenu(s, inRecent: pack == nil)
+                } preview: {
+                    stickerImage(s).frame(width: 220, height: 220).padding(Space.section)
                 }
             }
-            if let pack {
-                addCell(height: 74) {
-                    addingTo = pack
-                    showPicker = true
-                }
-            }
+            if let pack { addCell(to: pack) }
         }
+    }
+
+    @ViewBuilder
+    private func stickerImage(_ s: Sticker) -> some View {
+        if let image = cachedImage(s.data, key: s.id.uuidString) {
+            Image(uiImage: image).resizable().scaledToFit()
+        }
+    }
+
+    @ViewBuilder
+    private func stickerMenu(_ s: Sticker, inRecent: Bool) -> some View {
+        if inRecent {
+            Button {
+                withAnimation(Motion.spring) { s.lastUsedAt = nil }
+                try? context.save()
+            } label: { Label("从最近使用中移除", systemImage: "clock.badge.xmark") }
+        }
+        let others = packs.filter { $0 != s.pack }
+        if !others.isEmpty {
+            Menu {
+                ForEach(others, id: \.self) { p in
+                    Button(p) {
+                        withAnimation(Motion.spring) { s.pack = p }
+                        try? context.save()
+                    }
+                }
+            } label: { Label("移到表情包", systemImage: "folder") }
+        }
+        Button(role: .destructive) {
+            withAnimation(Motion.spring) { context.delete(s) }
+            try? context.save()
+        } label: { Label("删除表情", systemImage: "trash") }
     }
 
     /// 每个表情包最后的「+」：往这个包里加
-    private func addCell(height: CGFloat, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func addCell(to pack: String) -> some View {
+        Button {
+            addingTo = pack
+            showPicker = true
+        } label: {
             Image(systemName: "plus")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Palette.faint)
-                .frame(maxWidth: .infinity).frame(height: height)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Palette.inkSoft)
+                .frame(maxWidth: .infinity).frame(height: 74)
+                .background(Palette.paper.opacity(0.5), in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                        .strokeBorder(Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(ScaleButtonStyle())
-        .accessibilityLabel("添加")
+        .accessibilityLabel("添加表情")
     }
 
     // MARK: 动作
+
+    private func send(_ s: Sticker) {
+        withAnimation(Motion.pressIn) { bounce = s.id }
+        onSticker(s)
+        Task {
+            try? await Task.sleep(for: .milliseconds(140))
+            withAnimation(Motion.pressOut) { bounce = nil }
+        }
+    }
+
+    private func clearRecent() {
+        withAnimation(Motion.spring) {
+            for s in stickers where s.lastUsedAt != nil { s.lastUsedAt = nil }
+            current = categories.first?.id
+        }
+        try? context.save()
+    }
 
     private func addStickers(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
@@ -273,37 +309,84 @@ struct StickerPanel: View {
         }
     }
 
-    private func createPack() {
-        let name = nameDraft.trimmed
-        nameDraft = ""
-        guard !name.isEmpty, !packs.contains(name) else { return }
-        extraPacks = (extraPacks.isEmpty ? "" : extraPacks + "\n") + name
+    /// 新建表情包：建好就切过去，接着打开相册往里加表情
+    private func createPack(_ name: String) {
+        if !packs.contains(name) {
+            extraPacks = (extraPacks.isEmpty ? "" : extraPacks + "\n") + name
+        }
+        withAnimation(Motion.spring) { current = "pack:\(name)" }
+        addingTo = name
+        Task {
+            // 等起名字的卡片收下去再打开相册
+            try? await Task.sleep(for: .milliseconds(450))
+            showPicker = true
+        }
+    }
+
+    private func rename(_ old: String, to name: String) {
+        guard name != old else { return }
+        for s in stickers where s.pack == old { s.pack = name }
+        extraPacks = extraPacks.split(separator: "\n").map { $0 == old ? name : String($0) }.joined(separator: "\n")
+        try? context.save()
         withAnimation(Motion.spring) { current = "pack:\(name)" }
     }
 
-    private func rename() {
-        let name = nameDraft.trimmed
-        nameDraft = ""
-        guard !name.isEmpty, let section = renaming else { return }
-        switch section.kind {
-        case .recent: break
-        case .pack(let old):
-            for s in stickers where s.pack == old { s.pack = name }
-            extraPacks = extraPacks.split(separator: "\n").map { $0 == old ? name : String($0) }.joined(separator: "\n")
-            try? context.save()
-        }
-    }
-
-    private func delete(_ section: Category) {
+    private func delete(pack p: String) {
         withAnimation(Motion.spring) {
-            switch section.kind {
-            case .recent: break
-            case .pack(let p):
-                for s in stickers where s.pack == p { context.delete(s) }
-                extraPacks = extraPacks.split(separator: "\n").filter { $0 != p }.joined(separator: "\n")
-                try? context.save()
-            }
+            for s in stickers where s.pack == p { context.delete(s) }
+            extraPacks = extraPacks.split(separator: "\n").filter { $0 != p }.joined(separator: "\n")
+            try? context.save()
             current = categories.first?.id
         }
+    }
+}
+
+/// 给表情包起名字（新建、改名共用）：从下面升起的一张小卡片，弹出来就能直接打字
+struct PackNameSheet: View {
+    let title: String
+    let action: String
+    @State var name: String
+    let onDone: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: Space.section) {
+            HStack {
+                Button("取消") { dismiss() }
+                    .foregroundStyle(Palette.inkSoft)
+                Spacer()
+                Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.ink)
+                Spacer()
+                Button(action, action: done)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(name.trimmed.isEmpty ? Palette.faint : Palette.ink)
+                    .disabled(name.trimmed.isEmpty)
+            }
+            .font(.system(size: 15))
+            TextField("名字，比如：猫猫", text: $name)
+                .font(.system(size: 16))
+                .focused($focused)
+                .submitLabel(.done)
+                .onSubmit(done)
+                .padding(.horizontal, Space.card)
+                .frame(height: 48)
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+        }
+        .padding(.horizontal, Space.page)
+        .padding(.top, Space.page)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.height(150)])
+        .presentationCornerRadius(Radius.sheet)
+        .presentationBackground(Palette.paper)
+        .onAppear { focused = true }
+    }
+
+    private func done() {
+        let n = name.trimmed
+        guard !n.isEmpty else { return }
+        onDone(n)
+        dismiss()
     }
 }

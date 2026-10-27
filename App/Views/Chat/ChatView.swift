@@ -262,6 +262,9 @@ struct ChatView: View {
                             .id(m.id)
                         }
                     }
+                    if let last = messages.last, last.role == .user, !last.recalled, last.readAt != nil {
+                        ReadReceipt()
+                    }
                     Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
@@ -393,13 +396,19 @@ struct ChatView: View {
             },
             openQuote: { m in
                 // 点引用：跳到原文并让它亮一下；原文太早没加载时先把更早的消息加载出来
-                guard let id = m.quoteID, let target = convo.messages?.first(where: { $0.id == id }), !target.recalled else {
+                let all = convo.visibleMessages()
+                let earlier = all.filter { $0.createdAt < m.createdAt }
+                guard let target = ReplyText.source(ofQuote: m.quote, id: m.quoteID, in: earlier) else {
                     flash("原消息已经不在了")
                     return
                 }
-                let all = convo.visibleMessages()
+                let id = target.id
                 if let index = all.firstIndex(where: { $0.id == id }) { visibleLimit = max(visibleLimit, all.count - index + 10) }
-                scrollTarget = id
+                // 等更早的消息排好版再滚过去
+                Task {
+                    try? await Task.sleep(for: .milliseconds(60))
+                    scrollTarget = id
+                }
                 withAnimation(Motion.spring) { highlighted = id }
                 Task {
                     try? await Task.sleep(for: .seconds(1.4))
@@ -482,7 +491,7 @@ struct ChatView: View {
         withAnimation(Motion.spring) { quoting = nil }
         quotingID = nil
         let deliver = { engine.send(text, kind: kind, attachments: attachments, quote: quote, quoteID: quoteID, in: convo, members: members, context: context) }
-        guard members.contains(where: \.canWork) else { return deliver() }
+        guard members.contains(where: \.canWork), AppLock.shared.needsWorkConfirm else { return deliver() }
         // 会操作电脑的角色：开了保护就先确认是你本人；没通过就把话放回输入框
         Task {
             if await AppLock.shared.confirmWork() {

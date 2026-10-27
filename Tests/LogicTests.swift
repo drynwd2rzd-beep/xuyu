@@ -70,6 +70,19 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(ReplyText.quoteLine(for: hotpot), "你：今晚吃火锅吗")
     }
 
+    func testQuoteSourceByIDThenByText() throws {
+        let context = try makeContext()
+        let convo = Conversation(isGroup: false, memberIDs: [])
+        context.insert(convo)
+        let now = Date.now
+        let original = message(.assistant, "银杏的黄和天空的蓝很干净", at: now.addingTimeInterval(-30), in: convo, context: context)
+        let all = convo.visibleMessages()
+        XCTAssertEqual(ReplyText.source(ofQuote: "Claude：随便", id: original.id, in: all)?.id, original.id)
+        // 没有编号（旧消息）：按文字找，名字前缀和省略号不影响
+        XCTAssertEqual(ReplyText.source(ofQuote: "Claude：银杏的黄和天空…", id: nil, in: all)?.id, original.id)
+        XCTAssertNil(ReplyText.source(ofQuote: "我：完全没说过的话", id: UUID(), in: all))
+    }
+
     // MARK: - 谁来回复
 
     func testResponders() {

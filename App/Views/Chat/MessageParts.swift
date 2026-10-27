@@ -40,13 +40,11 @@ struct QuoteChip: View {
     }
 }
 
-/// 时间放在气泡右下角：先留出时间的位置，再把时间叠上去
+/// 时间放在气泡右下角：先留出时间的位置，再把时间叠上去。气泡发出后大小不再变
 struct TimedText: View {
     let text: String
     let time: String
     var fontSize: CGFloat = 15.5
-    /// 你发的消息被 TA 看到了：时间后面显示已读双勾
-    var read = false
 
     var body: some View {
         (Text(text) + reserve)
@@ -55,25 +53,17 @@ struct TimedText: View {
             .foregroundStyle(Palette.ink)
             .fixedSize(horizontal: false, vertical: true)
             .overlay(alignment: .bottomTrailing) {
-                HStack(spacing: 3) {
-                    Text(time).font(Self.stampFont).foregroundStyle(Self.stampColor)
-                    if read { ReadTicks().transition(.opacity.combined(with: .scale(scale: 0.6))) }
-                }
-                .offset(y: 1)
-                .animation(Motion.spring, value: read)
+                Text(time).font(Self.stampFont).foregroundStyle(Self.stampColor).offset(y: 1)
             }
             .textSelection(.disabled)
     }
 
-    /// 末行留给时间和已读勾的透明占位：用同样的字和勾图标排出来，宽度和右下角真正显示的一样，文字不会压到时间上。
+    /// 末行留给时间的透明占位：用同样的字排出来，宽度和右下角真正显示的一样，文字不会压到时间上。
     /// 用不换行空格，时间不会被拆到两行
     private var reserve: Text {
-        var stamp = Text("\u{00A0}\u{00A0}" + time.replacingOccurrences(of: " ", with: "\u{00A0}")).font(Self.stampFont)
-        if read {
-            let tick = Text(Image(systemName: "checkmark")).font(.system(size: 8, weight: .bold))
-            stamp = stamp + Text("\u{00A0}") + tick + tick
-        }
-        return stamp.foregroundColor(.clear)
+        Text("\u{00A0}\u{00A0}" + time.replacingOccurrences(of: " ", with: "\u{00A0}"))
+            .font(Self.stampFont)
+            .foregroundColor(.clear)
     }
 
     /// 气泡里的时间：小一点、数字等宽、颜色淡一点，更精致
@@ -81,17 +71,17 @@ struct TimedText: View {
     static let stampColor = Palette.inkSoft.opacity(0.8)
 }
 
-/// 已读：两个叠在一起的小勾
-struct ReadTicks: View {
+/// 已读：像 iMessage 一样，一行小字放在你最后一条消息下面；TA 开始回复后就不再显示
+struct ReadReceipt: View {
     var body: some View {
-        ZStack(alignment: .leading) {
-            Image(systemName: "checkmark")
-            Image(systemName: "checkmark").offset(x: 4.5)
-        }
-        .font(.system(size: 8, weight: .bold))
-        .foregroundStyle(TimedText.stampColor)
-        .frame(width: 13, alignment: .leading)
-        .accessibilityLabel("已读")
+        Text("已读")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(TimedText.stampColor)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            // 和你的气泡右边对齐（让出头像的位置）
+            .padding(.trailing, 34 + Space.tight + 4)
+            .padding(.top, 5)
+            .transition(.opacity.combined(with: .offset(y: -3)))
     }
 }
 
