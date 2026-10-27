@@ -239,11 +239,11 @@ struct StickerPanel: View {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.tight), count: 4), spacing: Space.tight) {
                         ForEach(current) { s in
                             Button {
-                                withAnimation(.spring(response: 0.22, dampingFraction: 0.6)) { bounce = s.id }
+                                withAnimation(Motion.pressIn) { bounce = s.id }
                                 onSticker(s)
                                 Task {
-                                    try? await Task.sleep(for: .milliseconds(160))
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) { bounce = nil }
+                                    try? await Task.sleep(for: .milliseconds(140))
+                                    withAnimation(Motion.pressOut) { bounce = nil }
                                 }
                             } label: {
                                 Group {
@@ -299,7 +299,7 @@ struct StickerPanel: View {
 
     private func tabButton<L: View>(id: String, @ViewBuilder label: () -> L) -> some View {
         Button {
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { tab = id }
+            withAnimation(Motion.spring) { tab = id }
         } label: {
             label()
                 .foregroundStyle(tab == id ? Palette.ink : Palette.inkSoft)

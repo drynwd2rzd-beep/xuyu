@@ -302,12 +302,12 @@ struct ImageStack: View {
                     let flick = abs(value.predictedEndTranslation.width) > 180
                     if abs(dx) > 50 || flick {
                         // 同一个弹簧动画里：最上面那张顺着方向塞到最底下，下一张升上来
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) {
+                        withAnimation(Motion.settle) {
                             top = dx < 0 ? (top + 1) % count : (top - 1 + count) % count
                             drag = 0
                         }
                     } else {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { drag = 0 }
+                        withAnimation(Motion.settle) { drag = 0 }
                     }
                 }
         )

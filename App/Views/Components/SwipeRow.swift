@@ -82,7 +82,7 @@ struct SwipeRow<Content: View>: View {
 
     private func ended(_ t: CGFloat, _ velocity: CGFloat) {
         let x = offset
-        withAnimation(Motion.spring) {
+        withAnimation(Motion.settle) {
             if x >= trigger || (x > 30 && velocity > 900) {
                 offset = 0
                 leading?.action()

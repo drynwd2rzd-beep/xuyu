@@ -39,18 +39,21 @@ struct RootView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            withAnimation(.easeOut(duration: 0.2)) { keyboardShown = true }
+            withAnimation(Motion.snappy) { keyboardShown = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            withAnimation(.easeOut(duration: 0.2)) { keyboardShown = false }
+            withAnimation(Motion.snappy) { keyboardShown = false }
         }
     }
 
     /// 三个页面常驻，切换时保留滚动位置
     private func tabPage<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
         let active = router.tab == tab
+        // 切换时旧页轻轻退后、新页缓缓浮现
         return content()
             .opacity(active ? 1 : 0)
+            .scaleEffect(active ? 1 : 0.985)
+            .offset(y: active ? 0 : 8)
             .allowsHitTesting(active)
             .accessibilityHidden(!active)
     }

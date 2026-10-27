@@ -204,8 +204,18 @@ extension View {
 
 /// 统一的弹簧动画
 enum Motion {
-    static let spring = Animation.spring(response: 0.42, dampingFraction: 0.82)
-    static let snappy = Animation.snappy(duration: 0.3)
+    /// 主动画：稍慢、几乎不回弹，温柔地落位
+    static let spring = Animation.spring(duration: 0.52, bounce: 0.06)
+    /// 小切换（分段、筛选、按钮图标）：短一点，同样不弹
+    static let snappy = Animation.spring(duration: 0.36, bounce: 0)
+    /// 滚动、背景这类大面积变化：平滑淡入淡出
+    static let glide = Animation.smooth(duration: 0.48)
+    /// 按下：很快地沉下去
+    static let pressIn = Animation.spring(duration: 0.2, bounce: 0)
+    /// 松手：慢慢地回弹
+    static let pressOut = Animation.spring(duration: 0.5, bounce: 0.18)
+    /// 拖动松手后的归位：跟着手势速度，柔和收尾
+    static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
 }
 
 struct CardStyle: ViewModifier {
@@ -223,18 +233,45 @@ extension View {
     func card(radius: CGFloat = Radius.card) -> some View { modifier(CardStyle(radius: radius)) }
 }
 
+/// 列表行：按下时底色淡淡浮现，松手后慢慢退去
 struct PressableRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.background(configuration.isPressed ? Palette.fill : Color.clear)
+        configuration.label
+            .background(Palette.fill.opacity(configuration.isPressed ? 1 : 0))
+            .animation(configuration.isPressed ? .easeOut(duration: 0.1) : .easeOut(duration: 0.42), value: configuration.isPressed)
     }
 }
 
+/// 按钮、卡片：按下轻轻缩一点，松手柔和弹回
 struct ScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.965 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(configuration.isPressed ? Motion.pressIn : Motion.pressOut, value: configuration.isPressed)
     }
+}
+
+/// 新出现的内容（刚发出/刚收到的消息）从下方轻轻浮起；旧内容直接显示，不重播
+struct RiseIn: ViewModifier {
+    let fresh: Bool
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        let on = !fresh || shown
+        content
+            .opacity(on ? 1 : 0)
+            .offset(y: on ? 0 : 14)
+            .scaleEffect(on ? 1 : 0.97, anchor: .bottom)
+            .onAppear {
+                guard fresh, !shown else { return }
+                withAnimation(Motion.spring) { shown = true }
+            }
+    }
+}
+
+extension View {
+    func riseIn(fresh: Bool) -> some View { modifier(RiseIn(fresh: fresh)) }
 }
 
 /// 根页面的大标题

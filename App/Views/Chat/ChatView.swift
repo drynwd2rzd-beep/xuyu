@@ -184,6 +184,7 @@ struct ChatView: View {
                                        selecting: selecting,
                                        picked: picked.contains(m.id),
                                        actions: actions)
+                            .riseIn(fresh: now.timeIntervalSince(m.createdAt) < 3)
                             .padding(.top, first ? 14 : 4)
                             .id(m.id)
                         }
@@ -204,10 +205,10 @@ struct ChatView: View {
             .onChange(of: messages.last?.id) {
                 // 自己发的消息总是滚到底；对方的消息只在你本来就在底部时才滚
                 guard atBottom || messages.last?.role == .user else { return }
-                withAnimation(.smooth(duration: 0.32)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) {
-                if atBottom { withAnimation(.smooth(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                if atBottom { withAnimation(Motion.snappy) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
