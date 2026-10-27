@@ -7,12 +7,6 @@ struct SettingsView: View {
     @Environment(Router.self) private var router
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @AppStorage(Prefs.nickname) private var nickname = ""
-    @AppStorage(Prefs.inAppBanner) private var inAppBanner = true
-    @AppStorage(Prefs.todoReminders) private var todoReminders = true
-    @AppStorage(Prefs.diaryReminder) private var diaryReminder = true
-    @AppStorage(Prefs.quietStart) private var quietStart = 23
-    @AppStorage(Prefs.quietEnd) private var quietEnd = 8
-    @AppStorage(Prefs.appearance) private var appearance = 0
     @AppStorage(Prefs.defaultClaudeModel) private var claudeModel = ""
     @AppStorage(Prefs.defaultCodexModel) private var codexModel = ""
     @AppStorage(Prefs.defaultClaudeEffort) private var claudeEffort = ""
@@ -49,12 +43,11 @@ struct SettingsView: View {
 
                 // 不常改的放进二级页面，主页面保持简短
                 section("更多") {
-                    navRow("通知", detail: inAppBanner || todoReminders || diaryReminder
-                           ? String(format: "免打扰 %02d–%02d", quietStart, quietEnd) : "已关闭", route: .notifications)
+                    navRow("通知", route: .notifications)
                     Hairline()
-                    navRow("外观与背景", detail: Appearance(rawValue: appearance)?.label ?? "", route: .appearance)
+                    navRow("外观与背景", route: .appearance)
                     Hairline()
-                    navRow("备份与恢复", detail: backupLine, route: .backup)
+                    navRow("备份与恢复", route: .backup)
                 }
             }
             .padding(.horizontal, Space.page)
@@ -86,18 +79,11 @@ struct SettingsView: View {
     }
 
     @Environment(\.modelContext) private var context
-    @AppStorage(Backup.lastBackupKey) private var lastBackup = 0.0
 
-    private var backupLine: String {
-        lastBackup > 0 ? "上次 " + Date(timeIntervalSince1970: lastBackup).listStamp : "还没有备份"
-    }
-
-    private func navRow(_ title: String, detail: String, route: Route) -> some View {
+    /// 二级页面入口：只有名字和箭头，右边不放多余的信息
+    private func navRow(_ title: String, route: Route) -> some View {
         Button { router.open(route) } label: {
-            SettingRow(title: title) {
-                Text(detail).font(.system(size: 14)).foregroundStyle(Palette.inkSoft).lineLimit(1)
-                Chevron()
-            }
+            SettingRow(title: title) { Chevron() }
         }
         .buttonStyle(PressableRowStyle())
     }

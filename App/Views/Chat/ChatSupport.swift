@@ -22,6 +22,7 @@ enum WallpaperStore {
         guard let jpeg = ImageUtil.downscale(data, maxSide: 2000, quality: 0.85) else { return }
         try? jpeg.write(to: url(owner), options: .atomic)
         cache[owner] = nil
+        brightness[owner] = nil
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
     }
 
@@ -29,6 +30,7 @@ enum WallpaperStore {
     static func remove(for owner: UUID) {
         try? FileManager.default.removeItem(at: url(owner))
         cache[owner] = nil
+        brightness[owner] = nil
         UserDefaults.standard.removeObject(forKey: key(owner))
     }
 
@@ -49,6 +51,28 @@ enum WallpaperStore {
     }
 
     private static var cache: [UUID?: UIImage] = [:]
+    private static var brightness: [UUID?: Double] = [:]
+
+    /// 照片背景有多亮（0 黑 … 1 白），算上你调的明暗；用来决定聊天页用深色还是浅色的字
+    static func luminance(for owner: UUID?) -> Double? {
+        guard let image = image(for: owner) else { return nil }
+        let base: Double
+        if let cached = brightness[owner] {
+            base = cached
+        } else {
+            guard let cg = image.cgImage else { return nil }
+            var pixel = [UInt8](repeating: 0, count: 4)
+            let space = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            ctx.interpolationQuality = .medium
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            base = (0.299 * Double(pixel[0]) + 0.587 * Double(pixel[1]) + 0.114 * Double(pixel[2])) / 255
+            brightness[owner] = base
+        }
+        let dim = adjustments(for: owner).dim
+        return dim >= 0 ? base + (1 - base) * dim : base * (1 + dim)
+    }
 
     static func image(for owner: UUID? = nil) -> UIImage? {
         if let hit = cache[owner] { return hit }
@@ -278,6 +302,52 @@ struct WallpaperPicker: View {
     }
 }
 
+struct SelectableTextItem: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
+/// 选择文字：把一条消息放大显示，可以随意拖动框选其中一部分来复制
+struct SelectableTextSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.section) {
+            HStack {
+                Text("选择文字").font(Typo.serif(18, .medium)).foregroundStyle(Palette.ink)
+                Spacer()
+                Button("完成") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.ink)
+            }
+            SelectableTextView(text: text)
+                .padding(Space.item)
+                .card(radius: Radius.tile)
+        }
+        .padding(Space.page)
+    }
+}
+
+private struct SelectableTextView: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.backgroundColor = .clear
+        view.font = .systemFont(ofSize: 17)
+        view.textColor = UIColor(Palette.ink)
+        view.text = text
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        if view.text != text { view.text = text }
+    }
+}
+
 /// 记忆：它从更早的聊天里记住的事，可以直接改或删
 struct MemoryEditor: View {
     @Binding var memory: String
@@ -468,8 +538,8 @@ struct GroupInfoSheet: View {
                     VStack(alignment: .leading, spacing: Space.tight) {
                         SectionLabel(text: "自动讨论")
                         VStack(alignment: .leading, spacing: Space.tight) {
-                            Segmented(items: [(1, "不讨论"), (2, "2 轮"), (3, "3 轮"), (5, "5 轮")], selection: $convo.discussRounds)
-                            Text("你说一句后，大家会接着彼此的话聊几轮；你随时插话就会停下来听你说。")
+                            Segmented(items: [(1, "不讨论"), (-1, "偶尔"), (2, "2 轮"), (3, "3 轮"), (5, "5 轮")], selection: $convo.discussRounds)
+                            Text("你说一句后，大家会接着彼此的话聊几轮；「偶尔」是有时聊上两三轮、有时各回一句。你随时插话就会停下来听你说。")
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Palette.inkSoft)
                                 .padding(.horizontal, 4)

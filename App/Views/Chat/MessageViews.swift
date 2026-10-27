@@ -14,6 +14,10 @@ struct MessageActions {
     var quote: (Message) -> Void
     var recall: (Message) -> Void
     var edit: (Message) -> Void
+    /// 点引用：跳到被引用的原文
+    var openQuote: (Message) -> Void
+    /// 长按「选择文字」：可以框选其中一部分
+    var selectText: (String) -> Void
 }
 
 struct MessageRow: View {
@@ -67,7 +71,7 @@ struct MessageRow: View {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 6) {
                 content(isUser: true)
-                if !message.quote.isEmpty { QuoteChip(text: message.quote) }
+                if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
             }
             UserAvatar(size: 34).opacity(first ? 1 : 0)
         }
@@ -94,7 +98,7 @@ struct MessageRow: View {
                 content(isUser: false)
                     .animation(Motion.spring, value: isThinking)
                 // TA 引用了你说过的话
-                if !message.quote.isEmpty { QuoteChip(text: message.quote) }
+                if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 if message.status == .error { errorLine }
             }
             Spacer(minLength: 28)
@@ -207,6 +211,9 @@ struct MessageRow: View {
             ForEach(message.sortedAttachments) { a in
                 FileCard(name: a.fileName, size: a.data.count, time: time, data: a.data).contextMenu { menu }
             }
+            if !message.content.isEmpty {
+                bubble(isUser: isUser) { TimedText(text: message.content, time: time, read: isUser && message.readAt != nil) }
+            }
         }
     }
 
@@ -235,6 +242,7 @@ struct MessageRow: View {
         Button { actions.quote(message) } label: { Label("引用", systemImage: "quote.bubble") }
         if !message.content.isEmpty {
             Button { actions.copy(message.content) } label: { Label("复制", systemImage: "doc.on.doc") }
+            Button { actions.selectText(message.content) } label: { Label("选择文字", systemImage: "selection.pin.in.out") }
         }
         if message.role == .user {
             if message.kind == .text {

@@ -114,6 +114,8 @@ final class Message {
     var steps: String = ""
     /// 长按「引用」时带上的那句话，例如「Claude：周六去植物园吧」
     var quote: String = ""
+    /// 引用的原消息：点一下引用可以跳到原文
+    var quoteID: UUID?
     /// 主动消息：提前生成，createdAt 是送达时间
     var isProactive: Bool = false
     /// 你发的消息被 TA「看到」的时间（显示已读双勾）

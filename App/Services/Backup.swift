@@ -41,6 +41,7 @@ enum Backup {
         var id: UUID, roleRaw: String, kindRaw: String, content: String, reasoning: String, personaID: UUID?
         var statusRaw: String, errorText: String?, modelLabel: String, steps: String, quote: String
         var isProactive: Bool, readAt: Date?, recalled: Bool, createdAt: Date
+        var quoteID: UUID?
         var attachments: [AttachmentDTO]
     }
 
@@ -96,7 +97,7 @@ enum Backup {
                                     MessageDTO(id: m.id, roleRaw: m.roleRaw, kindRaw: m.kindRaw, content: m.content, reasoning: m.reasoning,
                                                personaID: m.personaID, statusRaw: m.statusRaw, errorText: m.errorText, modelLabel: m.modelLabel,
                                                steps: m.steps, quote: m.quote, isProactive: m.isProactive, readAt: m.readAt,
-                                               recalled: m.recalled, createdAt: m.createdAt,
+                                               recalled: m.recalled, createdAt: m.createdAt, quoteID: m.quoteID,
                                                attachments: m.sortedAttachments.map {
                                                    AttachmentDTO(kindRaw: $0.kindRaw, fileName: $0.fileName, order: $0.order, data: $0.data)
                                                })
@@ -158,7 +159,7 @@ enum Backup {
                                 content: md.content, personaID: md.personaID)
                 m.id = md.id; m.reasoning = md.reasoning; m.statusRaw = md.statusRaw; m.errorText = md.errorText
                 m.modelLabel = md.modelLabel; m.steps = md.steps; m.quote = md.quote; m.isProactive = md.isProactive
-                m.readAt = md.readAt; m.recalled = md.recalled; m.createdAt = md.createdAt
+                m.readAt = md.readAt; m.recalled = md.recalled; m.createdAt = md.createdAt; m.quoteID = md.quoteID
                 m.conversation = c
                 context.insert(m)
                 for ad in md.attachments {

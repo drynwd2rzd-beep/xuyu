@@ -27,8 +27,14 @@ struct ChatView: View {
     @State private var pinBottom = 0
     @State private var entered = false
     @State private var panel: Composer.Panel?
+    @State private var inputFocused = false
+    /// 点引用跳到原文时，原文闪一下
+    @State private var highlighted: UUID?
+    /// 长按「选择文字」时要框选的那段话
+    @State private var selectableText: SelectableTextItem?
     /// 正在引用的那句话（长按消息 → 引用）
     @State private var quoting: String?
+    @State private var quotingID: UUID?
     /// 是否跟着最新消息走：你往上翻看记录时不打扰，回到底部或发消息后重新跟随
     @State private var follow = true
     /// 键盘高度：表情 / 加号面板做成一样高，切换时输入框不跳
@@ -49,8 +55,17 @@ struct ChatView: View {
     var body: some View {
         let paper = wallpaper
         content(paper: paper)
-            // 「夜墨」背景下整页按深色排版，文字和气泡才看得清
-            .environment(\.colorScheme, paper.index == 2 ? .dark : systemScheme)
+            // 背景决定文字深浅：「夜墨」和暗的照片按深色排版，亮的照片按浅色排版，名字和时间才看得清
+            .environment(\.colorScheme, scheme(for: paper))
+    }
+
+    private func scheme(for paper: (index: Int, owner: UUID?)) -> ColorScheme {
+        if paper.index == 2 { return .dark }
+        if paper.index == 3, let light = WallpaperStore.luminance(for: paper.owner) {
+            if light > 0.62 { return .light }
+            if light < 0.38 { return .dark }
+        }
+        return systemScheme
     }
 
     private func content(paper: (index: Int, owner: UUID?)) -> some View {
@@ -115,8 +130,9 @@ struct ChatView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
             keyboardShown = true
-            // 键盘已经升到和面板一样高：悄悄撤掉面板，看起来就是面板直接变成了键盘
-            if panel != nil {
+            // 键盘已经升到和面板一样高：悄悄撤掉面板，看起来就是面板直接变成了键盘。
+            // 只在键盘是给输入框弹的时候才撤（表情面板里新建分类弹出的输入框不算，否则面板会被关掉）
+            if panel != nil && inputFocused {
                 var t = Transaction()
                 t.disablesAnimations = true
                 withTransaction(t) { panel = nil }
@@ -146,6 +162,12 @@ struct ChatView: View {
                 .presentationBackground(Palette.paper)
         }
         .fullScreenCover(item: $viewer) { ImageViewer(item: $0) }
+        .sheet(item: $selectableText) { item in
+            SelectableTextSheet(text: item.text)
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(Radius.sheet)
+                .presentationBackground(Palette.paper)
+        }
     }
 
     // MARK: - 页头
@@ -230,6 +252,12 @@ struct ChatView: View {
                                        picked: picked.contains(m.id),
                                        actions: actions)
                             .riseIn(fresh: now.timeIntervalSince(m.createdAt) < 3)
+                            // 从引用跳过来时，原文这一条轻轻亮一下
+                            .background {
+                                RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                                    .fill(Palette.highlight.opacity(highlighted == m.id ? 0.6 : 0))
+                                    .padding(-4)
+                            }
                             .padding(.top, first ? 14 : 4)
                             .id(m.id)
                         }
@@ -251,14 +279,15 @@ struct ChatView: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             })
-            .onScrollPhaseChange { _, phase in
+            .onScrollPhaseChange { old, phase in
                 switch phase {
                 case .interacting:
                     // 手指一碰聊天记录，表情/加号面板就收起（和键盘一样）
                     if panel != nil { withAnimation(Motion.spring) { panel = nil } }
                 case .idle:
-                    // 停下来时在底部附近就继续跟随，翻到上面就不打扰
-                    follow = atBottom
+                    // 只有你自己翻动后停下来才重新判断：在底部附近就继续跟随，翻到上面就不打扰
+                    //（程序自动滚动、键盘升降引起的滚动不算，免得误以为你往上翻了）
+                    if old == .interacting || old == .decelerating { follow = atBottom }
                 default:
                     break
                 }
@@ -294,10 +323,22 @@ struct ChatView: View {
                 withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) { _, shown in
-                if shown { withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                // 键盘升起：一定回到最新；键盘收起：在跟随时也贴回底部，不会留下一大片空白
+                if shown { follow = true }
+                guard follow else { return }
+                withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: panel == nil) { _, closed in
+                // 表情/加号面板收起后，在跟随时贴回底部
+                guard closed, follow else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(60))
+                    withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
+                follow = false
                 withAnimation(Motion.spring) { proxy.scrollTo(target, anchor: .center) }
                 scrollTarget = nil
             }
@@ -341,6 +382,7 @@ struct ChatView: View {
                 case .note, .text: m.content
                 }
                 withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
+                quotingID = m.id
                 pinBottom += 1
             },
             recall: { m in
@@ -349,6 +391,22 @@ struct ChatView: View {
                 try? context.save()
                 engine.reconsider(convo, members: members, context: context)
             },
+            openQuote: { m in
+                // 点引用：跳到原文并让它亮一下；原文太早没加载时先把更早的消息加载出来
+                guard let id = m.quoteID, let target = convo.messages?.first(where: { $0.id == id }), !target.recalled else {
+                    flash("原消息已经不在了")
+                    return
+                }
+                let all = convo.visibleMessages()
+                if let index = all.firstIndex(where: { $0.id == id }) { visibleLimit = max(visibleLimit, all.count - index + 10) }
+                scrollTarget = id
+                withAnimation(Motion.spring) { highlighted = id }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.4))
+                    withAnimation(.easeOut(duration: 0.6)) { if highlighted == id { highlighted = nil } }
+                }
+            },
+            selectText: { text in selectableText = SelectableTextItem(text: text) },
             edit: { m in
                 // 编辑：把原话放回输入框，原消息去掉，改好再发
                 withAnimation(Motion.spring) {
@@ -404,7 +462,7 @@ struct ChatView: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else {
             Composer(draft: $draft, panel: $panel, quote: $quoting, panelHeight: panelHeight, convo: convo, members: members,
-                     onSend: send, onExpand: { pinBottom += 1 })
+                     onSend: send, onExpand: { pinBottom += 1 }, inputFocused: $inputFocused)
         }
     }
 
@@ -417,8 +475,10 @@ struct ChatView: View {
 
     private func send(_ text: String, kind: MessageKind, attachments: [OutgoingAttachment]) {
         let quote = quoting ?? ""
+        let quoteID = quoting == nil ? nil : quotingID
         withAnimation(Motion.spring) { quoting = nil }
-        engine.send(text, kind: kind, attachments: attachments, quote: quote, in: convo, members: members, context: context)
+        quotingID = nil
+        engine.send(text, kind: kind, attachments: attachments, quote: quote, quoteID: quoteID, in: convo, members: members, context: context)
     }
 
     private func deleteMessages(_ ids: Set<UUID>) {

@@ -342,6 +342,26 @@ struct StickerPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(section.name)
+        // 长按上面的分类图标也能改名、删除（比长按小标题好按）
+        .contextMenu { categoryMenu(section) }
+    }
+
+    @ViewBuilder
+    private func categoryMenu(_ section: Category) -> some View {
+        if section.kind == .recent {
+            Button(role: .destructive) { clearRecent() } label: { Label("清空最近使用", systemImage: "clock.arrow.circlepath") }
+        } else {
+            Button { nameDraft = section.name; renaming = section } label: { Label("重命名", systemImage: "pencil") }
+            Button(role: .destructive) { delete(section) } label: { Label("删除分类", systemImage: "trash") }
+        }
+    }
+
+    private func clearRecent() {
+        withAnimation(Motion.spring) {
+            for s in stickers where s.lastUsedAt != nil { s.lastUsedAt = nil }
+            current = categories.first?.id
+        }
+        try? context.save()
     }
 
     // MARK: 内容：所有分类连成一条长列表
@@ -371,15 +391,10 @@ struct StickerPanel: View {
                 .foregroundStyle(Palette.inkSoft)
                 .padding(.leading, 4)
                 .padding(.top, Space.item)
-                .contextMenu {
-                    if section.kind != .recent {
-                        Button { nameDraft = section.name; renaming = section } label: { Label("重命名", systemImage: "pencil") }
-                        Button(role: .destructive) { delete(section) } label: { Label("删除分类", systemImage: "trash") }
-                    }
-                }
+                .contextMenu { categoryMenu(section) }
             switch section.kind {
             case .recent:
-                stickerGrid(recent, addTo: nil)
+                stickerGrid(recent, addTo: nil, inRecent: true)
             case .pack(let p):
                 stickerGrid(stickers.filter { $0.pack == p }, addTo: p)
             case .kaomoji(let id):
@@ -388,7 +403,7 @@ struct StickerPanel: View {
         }
     }
 
-    private func stickerGrid(_ items: [Sticker], addTo pack: String?) -> some View {
+    private func stickerGrid(_ items: [Sticker], addTo pack: String?, inRecent: Bool = false) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.tight), count: 4), spacing: Space.tight) {
             ForEach(items) { s in
                 Button {
@@ -410,6 +425,12 @@ struct StickerPanel: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    if inRecent {
+                        Button {
+                            withAnimation(Motion.spring) { s.lastUsedAt = nil }
+                            try? context.save()
+                        } label: { Label("从最近使用中移除", systemImage: "clock.badge.xmark") }
+                    }
                     Button(role: .destructive) {
                         withAnimation(Motion.spring) { context.delete(s) }
                         try? context.save()

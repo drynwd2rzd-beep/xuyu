@@ -18,9 +18,14 @@ struct Composer: View {
     let onSend: (String, MessageKind, [OutgoingAttachment]) -> Void
     /// 输入框获得焦点或打开面板时通知外面（聊天滚到最底下）
     var onExpand: () -> Void = {}
+    /// 输入框是不是在打字：聊天页据此判断弹出的键盘是不是给输入框的
+    @Binding var inputFocused: Bool
 
     @Environment(\.modelContext) private var context
-    @State private var staged: [Data] = []
+    /// 待发的照片和文件：可以再打字，和文字一起发
+    @State private var staged: [OutgoingAttachment] = []
+    /// 正在从面板切回键盘：图标先带动画变回来（不用等键盘升起），来回都有动画
+    @State private var leaving: Panel?
     @State private var panelDrag: CGFloat = 0
     @State private var panelAtTop = true
     @State private var dictation = Dictation()
@@ -33,6 +38,9 @@ struct Composer: View {
     @State private var showNote = false
     @State private var sendTick = 0
     @FocusState private var focused: Bool
+
+    /// 图标显示的状态：正在切回键盘的那个面板，图标已经算「关上了」
+    private func showing(_ p: Panel) -> Bool { panel == p && leaving != p }
 
     private var canSend: Bool { !draft.trimmed.isEmpty || !staged.isEmpty }
     private var mentionOpen: Bool { convo.isGroup && draft.hasSuffix("@") }
@@ -63,10 +71,12 @@ struct Composer: View {
         .onChange(of: quote) { _, q in if q != nil { focused = true } }
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
         .onChange(of: focused) { _, f in
+            inputFocused = f
             // 面板开着时点输入框：面板先留着，等键盘完全升起来（和面板一样高）再无缝换掉
-            if f { onExpand() }
+            if f { onExpand() } else { leaving = nil }
         }
         .onChange(of: panel) { _, p in
+            if p == nil || p != leaving { leaving = nil }
             panelAtTop = true
             panelDrag = 0
             if p != nil { onExpand() }
@@ -148,21 +158,33 @@ struct Composer: View {
         focused = true
     }
 
-    /// 选好的照片先放在输入框上方，可以再打字，和文字一起发
+    /// 选好的照片和文件先放在输入框上方，可以再打字，和文字一起发
     private var stagedRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.tight) {
-                ForEach(Array(staged.enumerated()), id: \.offset) { index, data in
+                ForEach(Array(staged.enumerated()), id: \.offset) { index, item in
                     ZStack(alignment: .topTrailing) {
-                        Group {
-                            if let image = UIImage(data: data) {
-                                Image(uiImage: image).resizable().scaledToFill()
-                            } else {
-                                Palette.fill
+                        if item.kind == "image" {
+                            Group {
+                                if let image = UIImage(data: item.data) {
+                                    Image(uiImage: image).resizable().scaledToFill()
+                                } else {
+                                    Palette.fill
+                                }
                             }
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                        } else {
+                            // 文件：小卡片显示文件名
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.text").font(.system(size: 16)).foregroundStyle(Palette.ink)
+                                Text(item.name).font(.system(size: 12)).foregroundStyle(Palette.ink2).lineLimit(2)
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(width: 132, height: 64, alignment: .leading)
+                            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
                         }
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
                         Button {
                             withAnimation(Motion.spring) { _ = staged.remove(at: index) }
                         } label: {
@@ -173,7 +195,7 @@ struct Composer: View {
                                 .background(Color.black.opacity(0.55), in: Circle())
                         }
                         .padding(4)
-                        .accessibilityLabel("移除这张照片")
+                        .accessibilityLabel("移除")
                     }
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
@@ -208,10 +230,10 @@ struct Composer: View {
         Button { toggle(.plus) } label: {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .regular))
-                .foregroundStyle(panel == .plus ? Palette.inkInverse : Palette.ink)
-                .rotationEffect(.degrees(panel == .plus ? 45 : 0))
+                .foregroundStyle(showing(.plus) ? Palette.inkInverse : Palette.ink)
+                .rotationEffect(.degrees(showing(.plus) ? 45 : 0))
                 .frame(width: Space.control, height: Space.control)
-                .background(panel == .plus ? Palette.ink : Palette.card.opacity(0.9), in: Circle())
+                .background(showing(.plus) ? Palette.ink : Palette.card.opacity(0.9), in: Circle())
                 .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 0.5))
         }
         .buttonStyle(ScaleButtonStyle())
@@ -231,17 +253,17 @@ struct Composer: View {
                 // 两个图标一直都在，只是交替淡入淡出：跟着输入框一起移动，不会留在原地叠在一起
                 ZStack {
                     StickerGlyph(size: 21)
-                        .opacity(panel == .stickers ? 0 : 1)
-                        .scaleEffect(panel == .stickers ? 0.7 : 1)
+                        .opacity(showing(.stickers) ? 0 : 1)
+                        .scaleEffect(showing(.stickers) ? 0.7 : 1)
                     Image(systemName: "keyboard")
                         .font(.system(size: 17))
                         .foregroundStyle(Palette.ink)
-                        .opacity(panel == .stickers ? 1 : 0)
-                        .scaleEffect(panel == .stickers ? 1 : 0.7)
+                        .opacity(showing(.stickers) ? 1 : 0)
+                        .scaleEffect(showing(.stickers) ? 1 : 0.7)
                 }
                 .frame(width: 36, height: Space.control)
             }
-            .accessibilityLabel(panel == .stickers ? "键盘" : "表情")
+            .accessibilityLabel(showing(.stickers) ? "键盘" : "表情")
             .padding(.trailing, 4)
         }
         .background(Palette.card.opacity(0.9), in: RoundedRectangle(cornerRadius: Space.control / 2, style: .continuous))
@@ -318,7 +340,8 @@ struct Composer: View {
 
     private func toggle(_ p: Panel) {
         if panel == p {
-            // 面板 → 键盘：键盘升到和面板一样高后，聊天页再把面板撤掉
+            // 面板 → 键盘：图标马上带动画变回来；键盘升到和面板一样高后，聊天页再把面板撤掉
+            withAnimation(Motion.snappy) { leaving = p }
             focused = true
         } else if focused || panel != nil {
             // 键盘 → 面板（或换另一个面板）：面板和键盘一样高，在原地淡入，输入框不动
@@ -337,18 +360,23 @@ struct Composer: View {
         sendTick += 1
         if staged.isEmpty {
             onSend(text, .text, [])
-        } else {
-            let items = staged.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\($0.offset + 1).jpg", data: $0.element) }
-            withAnimation(Motion.spring) { staged = [] }
-            onSend(text, .images, items)
+            return
         }
+        // 照片和文件可以和文字一起发：有照片时文字跟着照片，只有文件时文字跟着文件
+        let images = staged.filter { $0.kind == "image" }
+        let files = staged.filter { $0.kind != "image" }
+        withAnimation(Motion.spring) { staged = [] }
+        if !images.isEmpty { onSend(text, .images, images) }
+        if !files.isEmpty { onSend(images.isEmpty ? text : "", .file, files) }
     }
 
     /// 选好的照片先放进待发区，收起面板、弹出键盘，方便再配一句话
     private func stage(_ datas: [Data]) {
         let images = datas.compactMap { ImageUtil.downscale($0) }
         guard !images.isEmpty else { return }
-        withAnimation(Motion.spring) { staged += images.prefix(max(0, 9 - staged.count)) }
+        let start = staged.count
+        let items = images.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\(start + $0.offset + 1).jpg", data: $0.element) }
+        withAnimation(Motion.spring) { staged += items.prefix(max(0, 9 - staged.count)) }
         focused = true
     }
 
@@ -384,9 +412,9 @@ struct Composer: View {
             stage([data])
             return
         }
-        sendTick += 1
-        withAnimation(Motion.spring) { panel = nil }
-        onSend("", .file, [OutgoingAttachment(kind: "file", name: url.lastPathComponent, data: data)])
+        // 文件也先放进待发区，可以再配一句话一起发
+        withAnimation(Motion.spring) { staged.append(OutgoingAttachment(kind: "file", name: url.lastPathComponent, data: data)) }
+        focused = true
     }
 }
 
