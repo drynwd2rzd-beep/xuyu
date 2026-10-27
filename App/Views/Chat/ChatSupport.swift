@@ -66,9 +66,14 @@ struct ImageViewer: View {
     @State private var saved = false
     @State private var dragY: CGFloat = 0
 
+    private var fade: Double {
+        let d = Double(abs(dragY))
+        return 1 - min(d / 400, 0.6)
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.opacity(1 - min(abs(dragY) / 400, 0.6)).ignoresSafeArea()
+            Color.black.opacity(fade).ignoresSafeArea()
             TabView(selection: $page) {
                 ForEach(Array(item.attachments.enumerated()), id: \.offset) { index, a in
                     ZoomableImage(image: cachedImage(a.data, key: a.id.uuidString))

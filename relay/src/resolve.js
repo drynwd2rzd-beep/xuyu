@@ -28,9 +28,10 @@ export function resolveCommand(name) {
 function fromPath(file) {
   if (!file.toLowerCase().endsWith('.cmd')) return { file, pre: [] };
   const text = fs.readFileSync(file, 'utf8');
-  const match = text.match(/"%(?:~?dp0)%?\\([^"]+?\.(?:c|m)?js)"/i);
-  if (match) {
-    return { file: process.execPath, pre: [path.join(path.dirname(file), match[1])] };
-  }
-  return null;
+  // npm 包装里可能是 .js 入口（用 node 运行），也可能直接是原生 .exe
+  const match = text.match(/"%(?:~?dp0)%?\\([^"]+?\.(?:(?:c|m)?js|exe))"/i);
+  if (!match) return null;
+  const target = path.join(path.dirname(file), match[1]);
+  if (target.toLowerCase().endsWith('.exe')) return { file: target, pre: [] };
+  return { file: process.execPath, pre: [target] };
 }

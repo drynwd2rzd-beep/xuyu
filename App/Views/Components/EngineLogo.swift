@@ -7,9 +7,9 @@ struct ClaudeMark: Shape {
         let c = CGPoint(x: rect.midX, y: rect.midY)
         let r = min(rect.width, rect.height) / 2
         for i in 0..<12 {
-            let angle = Double(i) * .pi / 6 - .pi / 2
-            let length = i.isMultiple(of: 2) ? r * 0.98 : r * 0.78
-            let start = r * 0.14
+            let angle: CGFloat = CGFloat(i) * .pi / 6 - .pi / 2
+            let length: CGFloat = i.isMultiple(of: 2) ? r * 0.98 : r * 0.78
+            let start: CGFloat = r * 0.14
             p.move(to: CGPoint(x: c.x + cos(angle) * start, y: c.y + sin(angle) * start))
             p.addLine(to: CGPoint(x: c.x + cos(angle) * length, y: c.y + sin(angle) * length))
         }
