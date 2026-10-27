@@ -69,7 +69,7 @@ final class ChatEngine {
             if !speaking.contains(convo.id) { tasks[convo.id]?.cancel() }
             return
         }
-        run(responders, in: convo, members: members, context: context)
+        run(responders, in: convo, members: members, context: context, react: true)
     }
 
     func regenerate(_ message: Message, in convo: Conversation, members: [Persona], context: ModelContext) {
@@ -94,7 +94,8 @@ final class ChatEngine {
         return mentioned.isEmpty ? members : mentioned
     }
 
-    private func run(_ responders: [Persona], in convo: Conversation, members: [Persona], context: ModelContext) {
+    private func run(_ responders: [Persona], in convo: Conversation, members: [Persona], context: ModelContext,
+                     react: Bool = false) {
         let convoID = convo.id
         guard !responders.isEmpty, !busy.contains(convoID) else { return }
         busy.insert(convoID)
@@ -102,6 +103,8 @@ final class ChatEngine {
         // 群聊可以设置自动讨论几轮：第一轮按 @ 回复，之后大家接着彼此的话说
         let rounds = convo.isGroup ? max(1, convo.discussRounds) : 1
         tasks[convoID] = Task { [weak self] in
+            // 像真人一样，看到消息后过一小会儿才开始回（每次不一样）；这期间你又发了，就一起看、一起回
+            if react { try? await Task.sleep(for: .seconds(Double.random(in: 0.6...2.5))) }
             rounds: for round in 0..<rounds {
                 for persona in round == 0 ? responders : members {
                     guard let self, !Task.isCancelled, self.pending[convoID] == nil else { break rounds }
@@ -115,7 +118,7 @@ final class ChatEngine {
             self.tasks[convoID] = nil
             if let next = self.pending.removeValue(forKey: convoID) {
                 // 回复途中你又说了话：接着按最新的聊天回复
-                self.run(next, in: convo, members: members, context: context)
+                self.run(next, in: convo, members: members, context: context, react: true)
                 return
             }
             self.releaseBackground(convoID)
@@ -194,6 +197,7 @@ final class ChatEngine {
                 message.status = .done
                 buffers[message.id] = nil
                 sent.append(head)
+                speaking.insert(convo.id)
                 lastCommit = .now
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
                 buffer.hold = true
@@ -224,13 +228,16 @@ final class ChatEngine {
                     pendingText = ""
                     pendingReasoning = ""
                     lastFlush = .now
-                    if !buffer.text.trimmed.isEmpty { speaking.insert(convo.id) }
+                    // 只有你屏幕上已经看到 TA 在说话，才算「开口了」；还藏着没显示时被你插话，就重新看全部再回
+                    if !buffer.text.trimmed.isEmpty && !buffer.hold { speaking.insert(convo.id) }
                     if !rich && Self.looksRich(buffer.text) { becomeRich() }
                     await commitParagraphs()
                 }
             }
             buffer.text += pendingText
             buffer.reasoning += pendingReasoning
+            // 被你插话打断了：还藏着没显示的半段话直接丢掉
+            if Task.isCancelled { throw CancellationError() }
             await commitParagraphs()
             if buffer.text.trimmed.isEmpty && sent.isEmpty && !Task.isCancelled { throw RelayError.server("没有收到回复。") }
             // 最后一条也按打字节奏出现
@@ -240,6 +247,7 @@ final class ChatEngine {
         } catch {
             if Task.isCancelled || error is CancellationError {
                 message.status = .done
+                if buffer.hold { buffer.text = "" }
             } else {
                 message.status = .error
                 message.errorText = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
