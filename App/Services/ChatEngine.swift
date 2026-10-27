@@ -9,6 +9,8 @@ final class StreamBuffer {
     var text = ""
     var reasoning = ""
     var steps: [String] = []
+    /// 先不显示文字（只显示「正在输入」），等这一段写完再整条出现
+    var hold = false
 }
 
 struct OutgoingAttachment {
@@ -163,17 +165,38 @@ final class ChatEngine {
         typing[convo.id] = persona.id
 
         /// 像真人一样一句一句发：每说完一段（空一行），就把这段作为一条消息发出去，接着「输入中」
-        func commitParagraphs() {
+        /// 闲聊时：一段写完才整条冒出来（之前只显示「正在输入」）；带格式、很长的认真回答或工作模式，边写边显示、整段一条
+        buffer.hold = !rich
+        var lastCommit = ContinuousClock.now
+
+        /// 像真人打字：下一条按长度留出 0.8～3 秒的「打字时间」，期间显示跳动的小点
+        func pace(for text: String) async {
+            guard !sent.isEmpty else { return }
+            let wait = Duration.seconds(min(3.0, max(0.8, 0.5 + Double(text.count) * 0.06)))
+            let remain = wait - (ContinuousClock.now - lastCommit)
+            if remain > .zero { try? await Task.sleep(for: remain) }
+        }
+
+        func becomeRich() {
+            rich = true
+            buffer.hold = false
+        }
+
+        func commitParagraphs() async {
             while !rich, let range = buffer.text.range(of: "\n\n") {
                 let head = String(buffer.text[..<range.lowerBound]).trimmed
                 let rest = String(buffer.text[range.upperBound...])
                 guard !head.isEmpty else { buffer.text = rest; continue }
-                if Self.looksRich(head) { rich = true; return }
+                // 带格式或特别长的一段：是认真的回答，整段放一条，不拆
+                if Self.looksRich(head) || head.count > 140 { becomeRich(); return }
+                await pace(for: head)
                 message.content = head
                 message.status = .done
                 buffers[message.id] = nil
                 sent.append(head)
+                lastCommit = .now
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
+                buffer.hold = true
                 buffer.text = rest
                 try? context.save()
             }
@@ -202,14 +225,17 @@ final class ChatEngine {
                     pendingReasoning = ""
                     lastFlush = .now
                     if !buffer.text.trimmed.isEmpty { speaking.insert(convo.id) }
-                    if !rich && Self.looksRich(buffer.text) { rich = true }
-                    commitParagraphs()
+                    if !rich && Self.looksRich(buffer.text) { becomeRich() }
+                    await commitParagraphs()
                 }
             }
             buffer.text += pendingText
             buffer.reasoning += pendingReasoning
-            commitParagraphs()
+            await commitParagraphs()
             if buffer.text.trimmed.isEmpty && sent.isEmpty && !Task.isCancelled { throw RelayError.server("没有收到回复。") }
+            // 最后一条也按打字节奏出现
+            if !rich && !buffer.text.trimmed.isEmpty { await pace(for: buffer.text) }
+            buffer.hold = false
             message.status = .done
         } catch {
             if Task.isCancelled || error is CancellationError {

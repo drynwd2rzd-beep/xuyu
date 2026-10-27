@@ -39,7 +39,7 @@ struct MessageRow: View {
     private var hasDetail: Bool { !steps.isEmpty || (!reasoning.isEmpty && showReasoning) }
     private var time: String { Fmt.bubble.string(from: message.createdAt) }
     /// 已经开始回复、但还没有出字
-    private var isThinking: Bool { live != nil && text.isEmpty }
+    private var isThinking: Bool { live != nil && (text.isEmpty || live?.hold == true) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
