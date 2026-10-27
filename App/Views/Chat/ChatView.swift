@@ -164,7 +164,7 @@ struct ChatView: View {
                             .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                         }
                     }
-                    Color.clear.frame(height: 6).id("bottom")
+                    Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
                 .animation(Motion.spring, value: messages.count)
@@ -173,6 +173,11 @@ struct ChatView: View {
             .scrollDismissesKeyboard(.interactively)
             .onChange(of: messages.count) {
                 withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .task {
+                // 输入栏高度确定后再滚到底，避免最后一条被盖住
+                try? await Task.sleep(for: .milliseconds(150))
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }

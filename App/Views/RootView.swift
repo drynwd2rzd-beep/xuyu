@@ -174,20 +174,22 @@ struct SubpageHeader<Trailing: View>: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        HStack {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("返回")
-            Spacer()
+        // 标题始终居中，左右按钮各占固定宽度
+        ZStack {
             Text(title).font(Typo.serif(18, .medium)).foregroundStyle(Palette.ink)
-            Spacer()
-            trailing
-                .frame(minWidth: 44, minHeight: 44, maxHeight: 44, alignment: .trailing)
-                .padding(.trailing, 6)
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("返回")
+                Spacer()
+                trailing
+                    .frame(width: 64, height: 44, alignment: .trailing)
+                    .padding(.trailing, 6)
+            }
         }
         .frame(height: 44)
         .padding(.horizontal, Space.tight)
