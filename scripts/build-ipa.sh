@@ -22,11 +22,18 @@ fi
 grep -E "warning:" build.log | grep -v "deprecated" | sort -u | head -30 || true
 
 APP=build/Build/Products/Release-iphoneos/Xuyu.app
-bash scripts/sign.sh "$APP"
+rm -rf dist && mkdir -p dist
 
-rm -rf dist && mkdir -p dist/Payload
+# 1. 未签名版：公开发布，用手机上的自签 App 签名安装
+mkdir -p dist/Payload
 cp -R "$APP" dist/Payload/
-NAME="Xuyu-unsigned.ipa"
-if [ -n "${P12_BASE64:-}" ] && [ -n "${PROFILE_BASE64:-}" ]; then NAME="Xuyu.ipa"; fi
-(cd dist && zip -qry "$NAME" Payload && rm -rf Payload)
-ls -lh dist
+(cd dist && zip -qry Xuyu-unsigned.ipa Payload && rm -rf Payload)
+
+# 2. 签名版：只放在需要登录才能下载的构建产物里
+if [ -n "${P12_BASE64:-}" ] && [ -n "${PROFILE_BASE64:-}" ]; then
+  bash scripts/sign.sh "$APP"
+  mkdir -p dist/signed/Payload
+  cp -R "$APP" dist/signed/Payload/
+  (cd dist/signed && zip -qry Xuyu.ipa Payload && rm -rf Payload)
+fi
+ls -lhR dist
