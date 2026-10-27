@@ -212,6 +212,7 @@ struct DiaryCard: View {
                     }
                 }
                 .sensoryFeedback(.selection, trigger: myEntry?.mood)
+                replyView
             }
         }
         .padding(.horizontal, Space.card)
@@ -228,6 +229,38 @@ struct DiaryCard: View {
         .onChange(of: day) { _, _ in
             myText = myEntry?.text ?? ""
             expanded = false
+        }
+    }
+
+    /// 你的日记下面：TA 的回信，像交换日记一样
+    @ViewBuilder
+    private var replyView: some View {
+        if let entry = myEntry, DiaryState.shared.replying.contains(entry.id) {
+            HStack(spacing: Space.tight) {
+                AvatarView(persona: writer, size: 22)
+                Text("\(writer?.name ?? "TA") 正在回信").font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft)
+                TypingDots().scaleEffect(0.7, anchor: .leading)
+            }
+            .padding(.top, 4)
+            .transition(.opacity)
+        } else if let entry = myEntry, !entry.reply.isEmpty {
+            let author = personas.first { $0.id == entry.replyPersonaID } ?? writer
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    AvatarView(persona: author, size: 22)
+                    Text("\(author?.name ?? "TA") 的回信").font(Typo.serif(13)).foregroundStyle(Palette.inkSoft)
+                }
+                Text(entry.reply)
+                    .font(Typo.serif(15))
+                    .lineSpacing(6)
+                    .foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Space.item)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.paper, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+            .padding(.top, 4)
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 
@@ -267,7 +300,7 @@ struct DiaryCard: View {
         if Calendar.current.component(.hour, from: .now) < 20 {
             return "今晚 8 点以后，\(aiName) 会根据你们的聊天写下今天的日记。"
         }
-        if !Companion.enoughToWrite(on: day, context: context) {
+        if !Companion.enoughToWrite(on: day, context: context) && myEntry == nil {
             return "今天聊得还不多，多聊几句，\(aiName) 就会写下今天的日记。"
         }
         return relay.isConnected ? "\(aiName) 马上就会写好今天的日记。" : "连上电脑后，\(aiName) 就会写好今天的日记。"
@@ -283,8 +316,12 @@ struct DiaryCard: View {
     private func saveMine() {
         let text = myText.trimmed
         guard !text.isEmpty || myEntry != nil else { return }
-        ensureMine().text = text
+        let entry = ensureMine()
+        entry.text = text
         try? context.save()
+        // 写完（或改了）就请 TA 回信
+        guard let writer, text.count >= 6, text != entry.repliedText else { return }
+        Task { await Companion.replyToDiary(entry, by: writer, context: context, relay: relay) }
     }
 
     private func setMood(_ mood: String) {

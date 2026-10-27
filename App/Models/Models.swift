@@ -200,6 +200,11 @@ final class DiaryEntry {
     var mood: String = ""
     var personaID: UUID?
     var createdAt: Date = Date()
+    /// 你写的日记：写日记的角色给你的回信
+    var reply: String = ""
+    var replyPersonaID: UUID?
+    /// 回信时对应的那版日记内容（你改了日记，TA 会重新回）
+    var repliedText: String = ""
 
     init(day: Date, author: DiaryAuthor, text: String, mood: String = "") {
         self.day = day.startOfDay

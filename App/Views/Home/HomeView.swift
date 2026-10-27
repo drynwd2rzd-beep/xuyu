@@ -448,36 +448,92 @@ private struct CountdownWidget: View {
 private struct MoodWidget: View {
     @Query(sort: \DiaryEntry.day, order: .reverse) private var entries: [DiaryEntry]
 
+    /// 最近 7 天每天的心情：优先用你自己日记里选的，没选就用 TA 日记里的
+    private var week: [(day: Date, level: CGFloat?, mood: String)] {
+        let today = Date.now.startOfDay
+        return (0..<7).map { offset in
+            let day = today.adding(days: offset - 6)
+            let same = entries.filter { $0.day == day && !$0.mood.isEmpty }
+            let pick = same.first { $0.author == .me } ?? same.first
+            return (day, pick.map { Self.height($0.mood) }, pick?.mood ?? "")
+        }
+    }
+
     var body: some View {
-        let recent = Array(entries.filter { !$0.mood.isEmpty }.prefix(5).reversed())
+        let days = week
+        let latest = days.last { $0.level != nil }
         SmallWidget(caption: "this week") {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .bottom, spacing: 6) {
-                    ForEach(Array(recent.enumerated()), id: \.offset) { i, e in
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(i == recent.count - 1 ? Palette.ink : Color(hex: MoodWidget.tint(e.mood)))
-                            .frame(height: 46 * MoodWidget.height(e.mood))
-                    }
-                    if recent.isEmpty {
-                        Text("还没有心情记录").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+            VStack(alignment: .leading, spacing: 6) {
+                MoodCurve(levels: days.map(\.level))
+                    .frame(height: 46)
+                HStack(spacing: 0) {
+                    ForEach(days.indices, id: \.self) { i in
+                        Text(Fmt.weekday.string(from: days[i].day).replacingOccurrences(of: "周", with: ""))
+                            .font(.system(size: 9))
+                            .foregroundStyle(i == days.count - 1 ? Palette.ink : Palette.faint)
+                            .frame(maxWidth: .infinity)
                     }
                 }
-                .frame(height: 46, alignment: .bottom)
-                Text(recent.last.map { "最近的心情 · \($0.mood)" } ?? " ").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                Text(latest.map { "最近的心情 · \($0.mood)" } ?? "在日记里选个心情吧")
+                    .font(.system(size: 12)).foregroundStyle(Palette.inkSoft).lineLimit(1)
             }
         }
     }
 
+    /// 心情的高低：开心最高，低落最低
     static func height(_ mood: String) -> CGFloat {
-        if ["开心", "兴奋", "惬意", "满足"].contains(mood) { return 0.95 }
-        if ["平静", "安心", "温柔"].contains(mood) { return 0.7 }
-        if ["累了", "疲惫", "无聊"].contains(mood) { return 0.45 }
-        return 0.3
+        if ["开心", "兴奋", "满足"].contains(mood) { return 0.95 }
+        if ["惬意", "温柔", "安心"].contains(mood) { return 0.78 }
+        if ["平静"].contains(mood) { return 0.6 }
+        if ["累了", "疲惫", "无聊"].contains(mood) { return 0.38 }
+        return 0.18
     }
+}
 
-    static func tint(_ mood: String) -> UInt32 {
-        let h = height(mood)
-        return h > 0.9 ? 0xD8C5AE : h > 0.6 ? 0xB7C3B1 : 0xAEBFCE
+/// 一周心情曲线：有记录的日子连成一条平滑的线，没记录的日子断开；最新一天的点大一点
+private struct MoodCurve: View {
+    let levels: [CGFloat?]
+    @State private var drawn: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            let step = w / CGFloat(max(levels.count, 1))
+            let points: [CGPoint?] = levels.enumerated().map { i, level in
+                level.map { CGPoint(x: step * (CGFloat(i) + 0.5), y: 4 + (h - 8) * (1 - $0)) }
+            }
+            ZStack {
+                // 平滑曲线：相邻两天都有记录才连线
+                Path { path in
+                    var previous: CGPoint?
+                    for point in points {
+                        guard let point else { previous = nil; continue }
+                        if let previous {
+                            let mid = (previous.x + point.x) / 2
+                            path.addCurve(to: point, control1: CGPoint(x: mid, y: previous.y), control2: CGPoint(x: mid, y: point.y))
+                        } else {
+                            path.move(to: point)
+                        }
+                        previous = point
+                    }
+                }
+                .trim(from: 0, to: drawn)
+                .stroke(Palette.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+
+                ForEach(Array(points.enumerated()), id: \.offset) { i, point in
+                    if let point {
+                        let last = i == points.lastIndex(where: { $0 != nil })
+                        Circle()
+                            .fill(last ? Palette.ink : Palette.card)
+                            .overlay(Circle().strokeBorder(Palette.ink, lineWidth: 1.5))
+                            .frame(width: last ? 9 : 6, height: last ? 9 : 6)
+                            .position(point)
+                            .opacity(drawn)
+                    }
+                }
+            }
+        }
+        .onAppear { withAnimation(.easeOut(duration: 0.9)) { drawn = 1 } }
     }
 }
 

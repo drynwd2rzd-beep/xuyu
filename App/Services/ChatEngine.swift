@@ -152,7 +152,8 @@ final class ChatEngine {
     private func reply(as persona: Persona, in convo: Conversation, members: [Persona], context: ModelContext,
                        discussing: Bool = false) async {
         let history = convo.visibleMessages()
-        let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing)
+        let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing,
+                                            diaryNotes: Companion.myDiaryNotes(context: context))
         let relayID = UUID().uuidString
         var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
         try? context.save()
@@ -402,13 +403,15 @@ enum PromptBuilder {
     }
 
     static func request(for persona: Persona, convo: Conversation, members: [Persona], history: [Message],
-                        discussing: Bool = false) -> RelayRequest {
+                        discussing: Bool = false, diaryNotes: String = "") -> RelayRequest {
         let names = Dictionary(members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         let ask = discussing
             ? "大家正在讨论，请以「\(persona.name)」的身份接着说：可以回应其他人的观点、补充或提出不同看法，不要重复别人说过的。"
             : "请以「\(persona.name)」的身份回复。"
+        // 你最近写的日记：TA 会记在心上，合适的时候自然地关心，但不要生硬地复述
+        let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
         let prompt = """
-        下面是你们最近的聊天记录：
+        \(diary)下面是你们最近的聊天记录：
 
         \(transcript(recent(history, convo: convo), names: names))
 
