@@ -44,37 +44,11 @@ struct Composer: View {
                 actionButton
             }
             if let panel {
-                Group {
-                    switch panel {
-                    case .plus:
-                        PlusPanel(isGroup: convo.isGroup, onPhotos: sendPhotos, onCamera: { showCamera = true },
-                                  onLibrary: { showPhotos = true }, onFile: { showFiles = true },
-                                  onNote: { showNote = true }, onMention: { draft += "@"; self.panel = nil; focused = true })
-                    case .stickers:
-                        StickerPanel(onKaomoji: { draft += $0 }, onSticker: sendSticker, atTop: $panelAtTop)
-                    }
-                }
-                .offset(y: panelDrag)
-                // 往下拉一段，面板自己收回去
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { v in
-                            guard panelAtTop, v.translation.height > 0,
-                                  v.translation.height > abs(v.translation.width) else { return }
-                            panelDrag = v.translation.height * 0.55
-                        }
-                        .onEnded { v in
-                            if panelDrag > 44 || (panelAtTop && panelDrag > 0 && v.predictedEndTranslation.height > 200) {
-                                withAnimation(Motion.spring) {
-                                    panel = nil
-                                    panelDrag = 0
-                                }
-                            } else {
-                                withAnimation(Motion.settle) { panelDrag = 0 }
-                            }
-                        }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                panelView(panel)
+                    .offset(y: panelDrag)
+                    // 往下拉一段，面板自己收回去
+                    .simultaneousGesture(panelDragGesture)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .padding(.horizontal, Space.item)
@@ -129,6 +103,46 @@ struct Composer: View {
             dictation.onText = { text in draft = dictationBase + text }
         }
         .onDisappear { dictation.stop() }
+    }
+
+    // MARK: - 面板
+
+    @ViewBuilder
+    private func panelView(_ panel: Panel) -> some View {
+        switch panel {
+        case .plus:
+            PlusPanel(isGroup: convo.isGroup, onPhotos: sendPhotos, onCamera: { showCamera = true },
+                      onLibrary: { showPhotos = true }, onFile: { showFiles = true },
+                      onNote: { showNote = true }, onMention: mention)
+        case .stickers:
+            StickerPanel(onKaomoji: { draft += $0 }, onSticker: sendSticker, atTop: $panelAtTop)
+        }
+    }
+
+    private func mention() {
+        draft += "@"
+        panel = nil
+        focused = true
+    }
+
+    private var panelDragGesture: some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { v in
+                let dy = v.translation.height
+                guard panelAtTop, dy > 0, dy > abs(v.translation.width) else { return }
+                panelDrag = dy * 0.55
+            }
+            .onEnded { v in
+                let flick = panelAtTop && panelDrag > 0 && v.predictedEndTranslation.height > 200
+                if panelDrag > 44 || flick {
+                    withAnimation(Motion.spring) {
+                        panel = nil
+                        panelDrag = 0
+                    }
+                } else {
+                    withAnimation(Motion.settle) { panelDrag = 0 }
+                }
+            }
     }
 
     // MARK: - 控件
