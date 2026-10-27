@@ -1,0 +1,20 @@
+# Xcode（由 XcodeGen 生成）
+Xuyu.xcodeproj/
+App/Info.plist
+build/
+build-sim/
+dist/
+shots/
+*.log
+DerivedData/
+xcuserdata/
+.DS_Store
+
+# 中继
+relay/node_modules/
+
+# 证书永远不要提交
+*.p12
+*.mobileprovision
+*.p8
+*.cer

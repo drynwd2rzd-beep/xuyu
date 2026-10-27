@@ -1,0 +1,60 @@
+name: Xuyu
+options:
+  bundleIdPrefix: app.xuyu
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  developmentLanguage: zh-Hans
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Xuyu:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - "Info.plist"
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: 絮语
+        CFBundleDevelopmentRegion: zh-Hans
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSupportsIndirectInputEvents: true
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: 絮语需要连接你电脑上的中继，才能和 Claude、Codex 聊天。
+        NSCameraUsageDescription: 拍照发给 AI。
+        NSPhotoLibraryUsageDescription: 选择照片发给 AI，或者设置头像、聊天背景和表情。
+        NSPhotoLibraryAddUsageDescription: 把聊天里的图片保存到相册。
+        NSMicrophoneUsageDescription: 用语音输入文字。
+        NSSpeechRecognitionUsageDescription: 把你说的话转成文字。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.xuyu.ios
+        PRODUCT_NAME: Xuyu
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  Xuyu:
+    build:
+      targets:
+        Xuyu: all
+    run:
+      config: Debug
+    archive:
+      config: Release

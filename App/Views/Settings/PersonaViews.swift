@@ -1,0 +1,391 @@
+import SwiftUI
+import SwiftData
+import PhotosUI
+
+struct PersonasView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(Router.self) private var router
+    @Query(sort: \Persona.sortIndex) private var personas: [Persona]
+    @Query(filter: #Predicate<Conversation> { $0.isGroup }, sort: \Conversation.createdAt) private var groups: [Conversation]
+    @State private var newGroup = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.section) {
+                VStack(alignment: .leading, spacing: Space.tight) {
+                    SectionLabel(text: "角色")
+                    VStack(spacing: 0) {
+                        ForEach(personas) { p in
+                            Button { router.open(.persona(p.id)) } label: {
+                                HStack(spacing: Space.item) {
+                                    AvatarView(persona: p, size: 40)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(p.name).font(Typo.serif(16.5, .medium)).foregroundStyle(Palette.ink)
+                                            EngineLogo(engine: p.engine, size: 12)
+                                        }
+                                        if !p.bio.isEmpty {
+                                            Text(p.bio).font(.system(size: 13)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                                        }
+                                    }
+                                    Spacer()
+                                    Chevron()
+                                }
+                                .padding(.horizontal, Space.card)
+                                .frame(height: Space.rowTall + 4)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PressableRowStyle())
+                            if p.id != personas.last?.id { Hairline(inset: 68) }
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .card()
+                }
+
+                if !groups.isEmpty {
+                    VStack(alignment: .leading, spacing: Space.tight) {
+                        SectionLabel(text: "群聊")
+                        VStack(spacing: 0) {
+                            ForEach(groups) { g in
+                                Button { router.open(.chat(g.id)) } label: {
+                                    SettingRow(title: g.displayTitle(personas.filter { g.memberIDs.contains($0.id) })) {
+                                        Text("\(g.memberIDs.count) 位").font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                                        Chevron()
+                                    }
+                                }
+                                .buttonStyle(PressableRowStyle())
+                                if g.id != groups.last?.id { Hairline() }
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                        .card()
+                    }
+                }
+
+                HStack(spacing: Space.item) {
+                    bigButton("新建角色", "person.badge.plus", action: createPersona)
+                    bigButton("新建群聊", "person.3", action: { newGroup = true })
+                }
+            }
+            .padding(.horizontal, Space.page)
+            .padding(.bottom, 40)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) { SubpageHeader(title: "角色") }
+        .background(Palette.paper.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $newGroup) {
+            NewGroupSheet { convo in router.open(.chat(convo.id)) }
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(Radius.sheet)
+                .presentationBackground(Palette.paper)
+        }
+    }
+
+    private func bigButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Palette.ink)
+                .frame(maxWidth: .infinity)
+                .frame(height: Space.row)
+                .card()
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+
+    private func createPersona() {
+        let p = Persona(name: "新角色", engine: .claude, tint: 0xD8C5AE)
+        p.sortIndex = (personas.map(\.sortIndex).max() ?? 0) + 1
+        context.insert(p)
+        _ = context.chat(for: p)
+        try? context.save()
+        router.open(.persona(p.id))
+    }
+}
+
+struct NewGroupSheet: View {
+    let onCreate: (Conversation) -> Void
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Persona.sortIndex) private var personas: [Persona]
+    @State private var title = ""
+    @State private var selected: [UUID] = []
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.section) {
+                HStack {
+                    Button("取消") { dismiss() }.foregroundStyle(Palette.inkSoft)
+                    Spacer()
+                    Text("新建群聊").font(Typo.serif(18, .medium)).foregroundStyle(Palette.ink)
+                    Spacer()
+                    Button("创建") {
+                        let convo = Conversation(title: title.trimmed, isGroup: true, memberIDs: selected)
+                        context.insert(convo)
+                        try? context.save()
+                        dismiss()
+                        onCreate(convo)
+                    }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Palette.ink)
+                    .disabled(selected.count < 2)
+                }
+                TextField("群聊名称", text: $title)
+                    .font(.system(size: 16))
+                    .padding(.horizontal, Space.card)
+                    .frame(height: Space.row)
+                    .card()
+                VStack(spacing: 0) {
+                    ForEach(personas) { p in
+                        Button {
+                            if let i = selected.firstIndex(of: p.id) { selected.remove(at: i) } else { selected.append(p.id) }
+                        } label: {
+                            HStack(spacing: Space.item) {
+                                AvatarView(persona: p, size: 36)
+                                Text(p.name).font(.system(size: 16)).foregroundStyle(Palette.ink)
+                                Spacer()
+                                Image(systemName: selected.contains(p.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 21))
+                                    .foregroundStyle(selected.contains(p.id) ? Palette.ink : Palette.faint)
+                            }
+                            .padding(.horizontal, Space.card)
+                            .frame(height: Space.row + 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressableRowStyle())
+                        if p.id != personas.last?.id { Hairline(inset: 64) }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                .card()
+                .sensoryFeedback(.selection, trigger: selected)
+            }
+            .padding(Space.page)
+        }
+    }
+}
+
+struct PersonaEditor: View {
+    @Bindable var persona: Persona
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Environment(RelayClient.self) private var relay
+    @State private var photoItem: PhotosPickerItem?
+    @State private var confirmDelete = false
+    @State private var confirmClear = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.section) {
+                avatarSection
+
+                VStack(spacing: 0) {
+                    inputRow("名字", text: $persona.name)
+                    Hairline()
+                    inputRow("简介", text: $persona.bio)
+                }
+                .card()
+
+                VStack(spacing: 0) {
+                    SettingRow(title: "由谁驱动") {
+                        Segmented(items: Engine.allCases.map { ($0, $0.label) }, selection: $persona.engine)
+                            .fixedSize()
+                    }
+                    Hairline()
+                    SettingRow(title: "模型") {
+                        Menu {
+                            Button("跟随默认") { persona.model = "" }
+                            ForEach(models, id: \.self) { m in
+                                Button(SettingsView.short(m)) { persona.model = m }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(persona.model.isEmpty ? "跟随默认" : SettingsView.short(persona.model))
+                                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
+                            }
+                            .font(.system(size: 15))
+                            .foregroundStyle(Palette.ink2)
+                        }
+                    }
+                }
+                .card()
+
+                VStack(alignment: .leading, spacing: Space.tight) {
+                    Text("人设").font(.system(size: 15)).foregroundStyle(Palette.inkSoft)
+                    TextField("TA 的性格、说话方式、记得关于你的事…", text: $persona.systemPrompt, axis: .vertical)
+                        .font(.system(size: 15))
+                        .lineSpacing(5)
+                        .lineLimit(3...12)
+                }
+                .padding(Space.card)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card()
+
+                VStack(spacing: 0) {
+                    SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
+                    if persona.proactive {
+                        Hairline()
+                        SettingRow(title: "多久一次") {
+                            Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
+                                .fixedSize()
+                        }
+                        .transition(.opacity)
+                    }
+                }
+                .card()
+                .animation(Motion.spring, value: persona.proactive)
+
+                preview
+
+                VStack(spacing: 0) {
+                    Button { confirmClear = true } label: {
+                        SettingRow(title: "清空聊天记录") { EmptyView() }
+                    }
+                    .buttonStyle(PressableRowStyle())
+                    Hairline()
+                    Button { confirmDelete = true } label: {
+                        Text("删除角色")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Palette.danger)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Space.card)
+                            .frame(height: Space.row)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressableRowStyle())
+                }
+                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                .card()
+            }
+            .padding(.horizontal, Space.page)
+            .padding(.bottom, 40)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            SubpageHeader(title: "编辑角色") {
+                Button("完成") { dismiss() }.font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.ink)
+            }
+        }
+        .background(Palette.paper.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    persona.avatarData = ImageUtil.downscale(data, maxSide: 400)
+                }
+                photoItem = nil
+            }
+        }
+        .onDisappear {
+            if persona.name.trimmed.isEmpty { persona.name = "未命名" }
+            try? context.save()
+        }
+        .confirmationDialog("清空和 \(persona.name) 的聊天记录？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("清空", role: .destructive) {
+                for m in context.chat(for: persona).messages ?? [] { context.delete(m) }
+                try? context.save()
+            }
+        }
+        .confirmationDialog("删除「\(persona.name)」？", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("删除", role: .destructive, action: deletePersona)
+        } message: {
+            Text("和 TA 的单聊记录会一起删除。")
+        }
+    }
+
+    private var models: [String] {
+        persona.engine == .claude ? (relay.status?.models.claude ?? ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"])
+                                  : (relay.status?.models.codex ?? [])
+    }
+
+    private var avatarSection: some View {
+        VStack(spacing: Space.item) {
+            AvatarView(persona: persona, size: 92)
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+                .overlay(alignment: .bottomTrailing) {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Image(systemName: "camera")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Palette.inkInverse)
+                            .frame(width: 34, height: 34)
+                            .background(Palette.ink, in: Circle())
+                            .overlay(Circle().strokeBorder(Palette.paper, lineWidth: 2))
+                    }
+                    .accessibilityLabel("从相册选择头像")
+                    .offset(x: 2, y: 2)
+                }
+            HStack(spacing: 10) {
+                ForEach(Palette.avatarTints, id: \.self) { hex in
+                    let on = persona.avatarData == nil && UInt32(truncatingIfNeeded: persona.tint) == hex
+                    Button {
+                        withAnimation(Motion.spring) {
+                            persona.avatarData = nil
+                            persona.tint = Int(hex)
+                        }
+                    } label: {
+                        Circle()
+                            .fill(Color(hex: hex))
+                            .frame(width: 30, height: 30)
+                            .overlay(Circle().strokeBorder(on ? Palette.ink : Palette.hairline, lineWidth: on ? 2.5 : 0.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .sensoryFeedback(.selection, trigger: persona.tint)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.tight)
+    }
+
+    private func inputRow(_ label: String, text: Binding<String>) -> some View {
+        HStack(spacing: Space.item) {
+            Text(label).font(.system(size: 15)).foregroundStyle(Palette.inkSoft).frame(width: 56, alignment: .leading)
+            TextField(label, text: text).font(.system(size: 16)).foregroundStyle(Palette.ink)
+        }
+        .padding(.horizontal, Space.card)
+        .frame(height: Space.row)
+    }
+
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            SectionLabel(text: "预览")
+            HStack(alignment: .top, spacing: 10) {
+                AvatarView(persona: persona, size: 34, ring: true)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        EngineLogo(engine: persona.engine, size: 14)
+                        Text(persona.name).font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
+                    }
+                    TimedText(text: "你好呀，我是\(persona.name)。今天想聊点什么？( ˘ᵕ˘ )", time: Fmt.hm.string(from: .now))
+                        .padding(.horizontal, 13)
+                        .padding(.top, 9)
+                        .padding(.bottom, 7)
+                        .background(Palette.botBubble, in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private func deletePersona() {
+        let id = persona.id
+        let convos = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
+        for c in convos where c.memberIDs.contains(id) {
+            if c.isGroup {
+                c.memberIDs.removeAll { $0 == id }
+            } else {
+                context.delete(c)
+            }
+        }
+        dismiss()
+        let target = persona
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            context.delete(target)
+            try? context.save()
+        }
+    }
+}

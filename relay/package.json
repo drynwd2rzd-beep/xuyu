@@ -1,0 +1,18 @@
+{
+  "name": "xuyu-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "絮语电脑中继：让 iPhone 通过你的订阅账号使用 Claude Code 和 Codex",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node src/selftest.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
