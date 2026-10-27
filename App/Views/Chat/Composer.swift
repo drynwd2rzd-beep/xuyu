@@ -7,18 +7,18 @@ struct Composer: View {
     enum Panel { case plus, stickers }
 
     @Binding var draft: String
+    /// 表情 / 加号面板：放在外面，聊天页要根据它决定键盘弹出时怎么排版
+    @Binding var panel: Panel?
+    /// 面板高度和键盘一样，键盘和面板互相切换时输入框不会上下跳
+    let panelHeight: CGFloat
     let convo: Conversation
     let members: [Persona]
-    let busy: Bool
     let onSend: (String, MessageKind, [OutgoingAttachment]) -> Void
-    let onStop: () -> Void
     /// 输入框获得焦点或打开面板时通知外面（聊天滚到最底下）
     var onExpand: () -> Void = {}
-    /// 外面每加一次，就收起面板（滑动聊天记录时）
-    var collapse: Int = 0
 
     @Environment(\.modelContext) private var context
-    @State private var panel: Panel?
+    @State private var staged: [Data] = []
     @State private var panelDrag: CGFloat = 0
     @State private var panelAtTop = true
     @State private var dictation = Dictation()
@@ -32,12 +32,13 @@ struct Composer: View {
     @State private var sendTick = 0
     @FocusState private var focused: Bool
 
-    private var canSend: Bool { !draft.trimmed.isEmpty }
+    private var canSend: Bool { !draft.trimmed.isEmpty || !staged.isEmpty }
     private var mentionOpen: Bool { convo.isGroup && draft.hasSuffix("@") }
 
     var body: some View {
         VStack(spacing: Space.tight) {
             if mentionOpen { mentionList.transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if !staged.isEmpty { stagedRow.transition(.move(edge: .bottom).combined(with: .opacity)) }
             HStack(spacing: 10) {
                 plusButton
                 field
@@ -45,6 +46,7 @@ struct Composer: View {
             }
             if let panel {
                 panelView(panel)
+                    .frame(height: panelHeight, alignment: .top)
                     .offset(y: panelDrag)
                     // 往下拉一段，面板自己收回去
                     .simultaneousGesture(panelDragGesture)
@@ -54,20 +56,16 @@ struct Composer: View {
         .padding(.horizontal, Space.item)
         .padding(.top, 6)
         .padding(.bottom, Space.tight)
-        .animation(Motion.spring, value: panel)
         .animation(Motion.spring, value: mentionOpen)
+        .animation(Motion.spring, value: staged.count)
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
         .onChange(of: focused) { _, f in
-            if f {
-                withAnimation(Motion.spring) { panel = nil }
-                onExpand()
-            }
-        }
-        .onChange(of: collapse) {
-            if panel != nil { withAnimation(Motion.spring) { panel = nil } }
+            // 面板开着时点输入框：面板先留着，等键盘完全升起来（和面板一样高）再无缝换掉
+            if f { onExpand() }
         }
         .onChange(of: panel) { _, p in
             panelAtTop = true
+            panelDrag = 0
             if p != nil { onExpand() }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 9, matching: .images)
@@ -79,11 +77,11 @@ struct Composer: View {
                     if let data = try? await item.loadTransferable(type: Data.self) { datas.append(data) }
                 }
                 photoItems = []
-                sendPhotos(datas)
+                stage(datas)
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { data in sendPhotos([data]) }.ignoresSafeArea()
+            CameraPicker { data in stage([data]) }.ignoresSafeArea()
         }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item]) { result in
             if case .success(let url) = result { sendFile(url) }
@@ -91,7 +89,7 @@ struct Composer: View {
         .sheet(isPresented: $showNote) {
             NoteComposer { text in
                 onSend(text, .note, [])
-                panel = nil
+                withAnimation(Motion.spring) { panel = nil }
             }
             .presentationCornerRadius(Radius.sheet)
             .presentationBackground(Palette.paper)
@@ -111,7 +109,7 @@ struct Composer: View {
     private func panelView(_ panel: Panel) -> some View {
         switch panel {
         case .plus:
-            PlusPanel(isGroup: convo.isGroup, onPhotos: sendPhotos, onCamera: { showCamera = true },
+            PlusPanel(isGroup: convo.isGroup, onPhotos: stage, onCamera: { showCamera = true },
                       onLibrary: { showPhotos = true }, onFile: { showFiles = true },
                       onNote: { showNote = true }, onMention: mention)
         case .stickers:
@@ -121,8 +119,41 @@ struct Composer: View {
 
     private func mention() {
         draft += "@"
-        panel = nil
         focused = true
+    }
+
+    /// 选好的照片先放在输入框上方，可以再打字，和文字一起发
+    private var stagedRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.tight) {
+                ForEach(Array(staged.enumerated()), id: \.offset) { index, data in
+                    ZStack(alignment: .topTrailing) {
+                        Group {
+                            if let image = UIImage(data: data) {
+                                Image(uiImage: image).resizable().scaledToFill()
+                            } else {
+                                Palette.fill
+                            }
+                        }
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                        Button {
+                            withAnimation(Motion.spring) { _ = staged.remove(at: index) }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 20, height: 20)
+                                .background(Color.black.opacity(0.55), in: Circle())
+                        }
+                        .padding(4)
+                        .accessibilityLabel("移除这张照片")
+                    }
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 52)
+        }
     }
 
     private var panelDragGesture: some Gesture {
@@ -191,15 +222,12 @@ struct Composer: View {
         .overlay(RoundedRectangle(cornerRadius: Space.control / 2, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
     }
 
+    /// 有内容就是发送，没有就是语音。对方回复时也能继续发，新消息会自然地接上
     @ViewBuilder
     private var actionButton: some View {
-        let mode: Int = busy ? 0 : (canSend ? 1 : 2)
+        let sending = canSend
         Button {
-            switch mode {
-            case 0: onStop()
-            case 1: sendText()
-            default: toggleDictation()
-            }
+            if sending { sendText() } else { toggleDictation() }
         } label: {
             ZStack {
                 Circle().fill(Palette.ink)
@@ -208,7 +236,7 @@ struct Composer: View {
                         .scaleEffect(1 + CGFloat(dictation.level) * 0.35)
                         .animation(.easeOut(duration: 0.1), value: dictation.level)
                 }
-                Image(systemName: mode == 0 ? "stop.fill" : (mode == 1 ? "arrow.up" : (dictation.isRecording ? "waveform" : "mic")))
+                Image(systemName: sending ? "arrow.up" : (dictation.isRecording ? "waveform" : "mic"))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Palette.inkInverse)
                     .contentTransition(.symbolEffect(.replace))
@@ -216,12 +244,29 @@ struct Composer: View {
             .frame(width: 44, height: 44)
         }
         .buttonStyle(ScaleButtonStyle())
-        .accessibilityLabel(mode == 0 ? "停止" : (mode == 1 ? "发送" : "语音输入"))
-        .animation(Motion.snappy, value: mode)
+        .accessibilityLabel(sending ? "发送" : "语音输入")
+        .animation(Motion.snappy, value: sending)
     }
 
     private var mentionList: some View {
         VStack(spacing: 0) {
+            Button {
+                draft += "所有人 "
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 28, height: 28)
+                        .background(Palette.fill, in: Circle())
+                    Text("所有人").font(.system(size: 15)).foregroundStyle(Palette.ink)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableRowStyle())
             ForEach(members) { p in
                 Button {
                     draft += p.name + " "
@@ -246,24 +291,41 @@ struct Composer: View {
     // MARK: - 动作
 
     private func toggle(_ p: Panel) {
-        withAnimation(Motion.spring) {
-            if panel == p {
-                panel = nil
-                focused = true
-            } else {
-                focused = false
-                panel = p
-            }
+        if panel == p {
+            // 面板 → 键盘：键盘升到和面板一样高后，聊天页再把面板撤掉
+            focused = true
+        } else if focused || panel != nil {
+            // 键盘 → 面板（或换另一个面板）：面板和键盘一样高，直接替换，输入框不动
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { panel = p }
+            focused = false
+        } else {
+            withAnimation(Motion.spring) { panel = p }
         }
     }
 
     private func sendText() {
         dictation.stop()
         let text = draft.trimmed
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !staged.isEmpty else { return }
         draft = ""
         sendTick += 1
-        onSend(text, .text, [])
+        if staged.isEmpty {
+            onSend(text, .text, [])
+        } else {
+            let items = staged.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\($0.offset + 1).jpg", data: $0.element) }
+            withAnimation(Motion.spring) { staged = [] }
+            onSend(text, .images, items)
+        }
+    }
+
+    /// 选好的照片先放进待发区，收起面板、弹出键盘，方便再配一句话
+    private func stage(_ datas: [Data]) {
+        let images = datas.compactMap { ImageUtil.downscale($0) }
+        guard !images.isEmpty else { return }
+        withAnimation(Motion.spring) { staged += images.prefix(max(0, 9 - staged.count)) }
+        focused = true
     }
 
     private func toggleDictation() {
@@ -275,15 +337,6 @@ struct Composer: View {
                 if let error = await dictation.start() { alert = error }
             }
         }
-    }
-
-    private func sendPhotos(_ datas: [Data]) {
-        let images = datas.compactMap { ImageUtil.downscale($0) }
-        guard !images.isEmpty else { return }
-        let items = images.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\($0.offset + 1).jpg", data: $0.element) }
-        sendTick += 1
-        withAnimation(Motion.spring) { panel = nil }
-        onSend("", .images, items)
     }
 
     private func sendSticker(_ sticker: Sticker) {
@@ -303,9 +356,8 @@ struct Composer: View {
             alert = "文件太大了（最多 20MB）。"
             return
         }
-        if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
-           let jpeg = ImageUtil.downscale(data) {
-            sendPhotos([jpeg])
+        if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image) {
+            stage([data])
             return
         }
         sendTick += 1

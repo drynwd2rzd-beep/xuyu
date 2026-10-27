@@ -58,6 +58,8 @@ final class Conversation {
     var memory: String = ""
     /// 这个时间（含）之前的消息已经总结进记忆，不再逐条发送
     var memoryUntil: Date = Date.distantPast
+    /// 群聊自动讨论的轮数：1 = 每人回一次；更多轮时大家会接着彼此的话说
+    var discussRounds: Int = 1
     @Relationship(deleteRule: .cascade, inverse: \Message.conversation) var messages: [Message]? = []
 
     init(title: String = "", isGroup: Bool, memberIDs: [UUID]) {

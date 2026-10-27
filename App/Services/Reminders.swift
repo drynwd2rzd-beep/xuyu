@@ -76,6 +76,17 @@ enum Reminders {
                  userInfo: ["conversation": conversationID.uuidString])
     }
 
+    /// App 在后台时回复好了：马上发一条本地通知
+    static func notifyReply(conversationID: UUID, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.userInfo = ["conversation": conversationID.uuidString]
+        center.add(UNNotificationRequest(identifier: "reply-" + UUID().uuidString, content: content, trigger: nil),
+                   withCompletionHandler: nil)
+    }
+
     static func cancelProactive(messageID: UUID) {
         center.removePendingNotificationRequests(withIdentifiers: ["proactive-" + messageID.uuidString])
     }

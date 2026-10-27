@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @AppStorage(Prefs.nickname) private var nickname = ""
     @AppStorage(Prefs.inAppBanner) private var inAppBanner = true
+    @AppStorage(Prefs.showEngineLogo) private var showEngineLogo = true
     @AppStorage(Prefs.todoReminders) private var todoReminders = true
     @AppStorage(Prefs.diaryReminder) private var diaryReminder = true
     @AppStorage(Prefs.quietStart) private var quietStart = 23
@@ -46,6 +47,8 @@ struct SettingsView: View {
                     .buttonStyle(PressableRowStyle())
                     Hairline()
                     meRow
+                    Hairline()
+                    SettingRow(title: "名字旁显示模型图标") { InkToggle(isOn: $showEngineLogo, label: "名字旁显示模型图标") }
                 }
 
                 section("通知") {

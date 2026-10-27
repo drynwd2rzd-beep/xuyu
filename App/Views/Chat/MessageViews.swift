@@ -22,12 +22,13 @@ struct MessageRow: View {
     let actions: MessageActions
     @Environment(ChatEngine.self) private var engine
     @AppStorage(Prefs.showReasoning) private var showReasoning = true
+    @AppStorage(Prefs.showEngineLogo) private var showEngineLogo = true
     @State private var reasoningOpen = false
 
     private var live: StreamBuffer? { engine.buffers[message.id] }
     private var text: String { live?.text ?? message.content }
     private var reasoning: String { live?.reasoning ?? message.reasoning }
-    private var time: String { Fmt.hm.string(from: message.createdAt) }
+    private var time: String { Fmt.bubble.string(from: message.createdAt) }
     /// 已经开始回复、但还没有出字
     private var isThinking: Bool { live != nil && text.isEmpty }
 
@@ -92,7 +93,7 @@ struct MessageRow: View {
             withAnimation(Motion.spring) { reasoningOpen.toggle() }
         } label: {
             HStack(spacing: 6) {
-                EngineLogo(engine: persona?.engine ?? .claude, size: 14)
+                if showEngineLogo { EngineLogo(engine: persona?.engine ?? .claude, size: 14) }
                 Text(persona?.name ?? "已删除的角色").font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
                 if !reasoning.isEmpty && showReasoning {
                     Image(systemName: "chevron.down")
@@ -223,13 +224,13 @@ struct TypingDots: View {
             HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { i in
                     // 每个点依次轻轻跳起再落下，像 iMessage 那样
-                    let phase = (t * 1.6 - Double(i) * 0.18).truncatingRemainder(dividingBy: 1)
-                    let lift = phase < 0.4 ? sin(phase / 0.4 * .pi) : 0
+                    let phase = (t * 1.4 - Double(i) * 0.18).truncatingRemainder(dividingBy: 1)
+                    let lift = phase < 0.45 ? sin(phase / 0.45 * .pi) : 0
                     Circle()
                         .fill(Palette.inkSoft)
-                        .frame(width: 7.5, height: 7.5)
-                        .offset(y: -4 * lift)
-                        .opacity(0.45 + 0.55 * lift)
+                        .frame(width: 7, height: 7)
+                        .offset(y: -1.8 * lift)
+                        .opacity(0.4 + 0.6 * lift)
                 }
             }
             .frame(height: 20)

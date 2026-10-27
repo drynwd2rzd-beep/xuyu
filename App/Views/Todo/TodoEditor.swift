@@ -144,6 +144,8 @@ struct DiaryCard: View {
     @Query(sort: \DiaryEntry.createdAt) private var entries: [DiaryEntry]
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @State private var tab: DiaryAuthor = .ai
+    @AppStorage(Prefs.diaryWriter) private var writerID = ""
+    @AppStorage(Prefs.showMyDiary) private var showMine = true
     @State private var myText = ""
     @State private var expanded = false
     @FocusState private var focused: Bool
@@ -153,8 +155,10 @@ struct DiaryCard: View {
     private var dayEntries: [DiaryEntry] { entries.filter { $0.day == day.startOfDay } }
     private var aiEntry: DiaryEntry? { dayEntries.first { $0.author == .ai && $0.text != "……" } }
     private var myEntry: DiaryEntry? { dayEntries.first { $0.author == .me } }
+    /// 写日记的角色：你选的那位，没选就是第一位
+    private var writer: Persona? { personas.first { $0.id.uuidString == writerID } ?? personas.first }
     private var aiName: String {
-        aiEntry?.personaID.flatMap { id in personas.first { $0.id == id }?.name } ?? personas.first?.name ?? "Claude"
+        aiEntry?.personaID.flatMap { id in personas.first { $0.id == id }?.name } ?? writer?.name ?? "Claude"
     }
 
     var body: some View {
@@ -164,8 +168,12 @@ struct DiaryCard: View {
                 if tab == .ai, let mood = aiEntry?.mood, !mood.isEmpty { MoodTag(text: mood) }
                 if tab == .me, let mood = myEntry?.mood, !mood.isEmpty { MoodTag(text: mood) }
                 Spacer()
-                Segmented(items: [(DiaryAuthor.ai, aiName), (DiaryAuthor.me, "我")], selection: $tab)
-                    .fixedSize()
+                if showMine {
+                    Segmented(items: [(DiaryAuthor.ai, aiName), (DiaryAuthor.me, "我")], selection: $tab)
+                        .fixedSize()
+                        .transition(.opacity)
+                }
+                options
             }
             if tab == .ai {
                 Text(aiEntry?.text ?? placeholder)
@@ -209,6 +217,36 @@ struct DiaryCard: View {
             myText = myEntry?.text ?? ""
             expanded = false
         }
+    }
+
+    /// 日记的选项：由哪位角色来写、要不要显示自己的日记
+    private var options: some View {
+        Menu {
+            Section("由谁来写日记") {
+                ForEach(personas) { p in
+                    Button {
+                        writerID = p.id.uuidString
+                    } label: {
+                        if p.id == writer?.id { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                    }
+                }
+            }
+            Button {
+                withAnimation(Motion.spring) {
+                    showMine.toggle()
+                    if !showMine { tab = .ai }
+                }
+            } label: {
+                if showMine { Label("显示我的日记", systemImage: "checkmark") } else { Text("显示我的日记") }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.inkSoft)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("日记选项")
     }
 
     private var placeholder: String {

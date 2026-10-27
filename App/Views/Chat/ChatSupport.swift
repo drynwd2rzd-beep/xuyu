@@ -48,9 +48,45 @@ enum WallpaperStore {
     }
 }
 
+/// 页头 / 底栏下面的一层：先是渐渐加深的模糊，再叠一层和背景完全对齐的同一张图，
+/// 消息滚到这里会先变模糊、再慢慢融进背景，没有分界线
+struct ChatVeil: View {
+    let index: Int
+    let owner: UUID?
+    let edge: VerticalEdge
+
+    var body: some View {
+        GeometryReader { geo in
+            let frame = geo.frame(in: .global)
+            let screen = UIScreen.main.bounds
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                    .mask(gradient(solidUntil: 0.62))
+                ChatWallpaper(index: index, owner: owner, edgeToEdge: false)
+                    .frame(width: screen.width, height: screen.height)
+                    .offset(x: -frame.minX, y: -frame.minY)
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                    .clipped()
+                    .mask(gradient(solidUntil: 0.38))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 靠边的一侧完全不透明，到 solidUntil 之后慢慢变透明
+    private func gradient(solidUntil: CGFloat) -> LinearGradient {
+        let stops: [Gradient.Stop] = [.init(color: .black, location: 0), .init(color: .black, location: solidUntil),
+                                      .init(color: .black.opacity(0.35), location: (solidUntil + 1) / 2),
+                                      .init(color: .clear, location: 1)]
+        return LinearGradient(stops: stops, startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+    }
+}
+
 struct ChatWallpaper: View {
     let index: Int
     var owner: UUID? = nil
+    /// 作为整页背景时铺满到屏幕边缘；放在页头里对齐用时不需要
+    var edgeToEdge = true
 
     static let swatches: [(String, Color)] = [
         ("纸白", Palette.paper),
@@ -72,7 +108,7 @@ struct ChatWallpaper: View {
                 Self.swatches[min(max(index, 0), 2)].1
             }
         }
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: edgeToEdge ? .all : [])
     }
 }
 
@@ -341,6 +377,18 @@ struct GroupInfoSheet: View {
                             }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                        .card()
+                    }
+                    VStack(alignment: .leading, spacing: Space.tight) {
+                        SectionLabel(text: "自动讨论")
+                        VStack(alignment: .leading, spacing: Space.tight) {
+                            Segmented(items: [(1, "不讨论"), (2, "2 轮"), (3, "3 轮"), (5, "5 轮")], selection: $convo.discussRounds)
+                            Text("你说一句后，大家会接着彼此的话聊几轮；你随时插话就会停下来听你说。")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Palette.inkSoft)
+                                .padding(.horizontal, 4)
+                        }
+                        .padding(Space.card)
                         .card()
                     }
                     MemoryEditor(memory: $convo.memory)

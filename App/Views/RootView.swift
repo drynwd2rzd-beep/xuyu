@@ -8,6 +8,8 @@ struct RootView: View {
     @State private var keyboardShown = false
     @State private var shownTab: AppTab = .home
     @State private var revealed = true
+    @State private var direction: CGFloat = 1
+    @State private var entering = false
 
     var body: some View {
         @Bindable var router = router
@@ -51,26 +53,37 @@ struct RootView: View {
     }
 
     /// 三个页面常驻，切换时保留滚动位置
+    /// 切页：旧页朝反方向轻轻滑走、变虚、淡出；新页从点的方向带着一点模糊滑进来、慢慢变清晰
     private func tabPage<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
         let active = shownTab == tab
         let visible = active && revealed
-        // 先让旧页退场，再让新页浮现：两页不会同时叠在屏幕上
+        let shift: CGFloat = entering ? 28 * direction : -18 * direction
         return content()
             .opacity(visible ? 1 : 0)
-            .offset(y: visible ? 0 : 10)
+            .offset(x: visible ? 0 : shift)
+            .scaleEffect(visible ? 1 : 0.975)
+            .blur(radius: visible ? 0 : 8)
             .allowsHitTesting(active)
             .accessibilityHidden(!active)
     }
 
     private func switchTab(to new: AppTab) {
         guard new != shownTab else { return }
-        withAnimation(.easeIn(duration: 0.13)) { revealed = false }
+        let order: [AppTab] = [.home, .chats, .todo]
+        direction = (order.firstIndex(of: new) ?? 0) > (order.firstIndex(of: shownTab) ?? 0) ? 1 : -1
+        entering = false
+        withAnimation(.easeIn(duration: 0.14)) { revealed = false }
         Task {
-            try? await Task.sleep(for: .milliseconds(130))
+            try? await Task.sleep(for: .milliseconds(140))
             // 连续点得很快时，只显示最后点的那个
             guard router.tab == new else { return }
-            shownTab = new
-            withAnimation(Motion.spring) { revealed = true }
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                shownTab = new
+                entering = true
+            }
+            withAnimation(.spring(duration: 0.5, bounce: 0.12)) { revealed = true }
         }
     }
 }

@@ -135,14 +135,16 @@ struct ConversationAvatar: View {
     }
 }
 
-/// 群聊顶部：最多三位成员叠在一起
+/// 群聊顶部：成员叠在一起（最多三位），可以把自己也放在最前面
 struct StackedAvatars: View {
     let members: [Persona]
     var size: CGFloat = 34
+    var includeMe = false
 
     var body: some View {
         HStack(spacing: -size * 0.35) {
-            ForEach(members.prefix(3)) { p in
+            if includeMe { UserAvatar(size: size) }
+            ForEach(members.prefix(includeMe ? 3 : 3)) { p in
                 AvatarView(persona: p, size: size, ring: true)
             }
         }

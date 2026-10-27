@@ -32,7 +32,7 @@ struct PlusPanel: View {
                                 onPhotos(datas)
                             }
                         } label: {
-                            Text("发送 \(picked.count) 张")
+                            Text("选好 \(picked.count) 张")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Palette.inkInverse)
                                 .padding(.horizontal, Space.item)
@@ -272,8 +272,8 @@ struct StickerPanel: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
             .scrollIndicators(.hidden)
-            // 面板高度固定，切换分类或打开时不会挤压聊天内容
-            .frame(height: 232)
+            // 面板和键盘一样高，表情区占满剩下的空间
+            .frame(maxHeight: .infinity)
             // 告诉外面表情是不是已经翻到最上面：在最上面再往下拉，就收起面板
             .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y <= 1 } action: { _, top in atTop = top }
         }

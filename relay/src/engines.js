@@ -47,6 +47,11 @@ export function runEngine({ engine, command, model, effort = '', system, prompt,
       if (!line.startsWith('{')) return;
       try {
         parse.line(JSON.parse(line));
+        // 回复已经完整了就立刻告诉手机，不用等 CLI 收尾退出（那要好几秒）
+        if (parse.complete && parse.gotText) {
+          parse.flush?.();
+          finish();
+        }
       } catch (e) {
         if (e instanceof EngineError) {
           child.kill();
@@ -116,6 +121,7 @@ function claudeParser(onEvent) {
         state.gotText = true;
         onEvent({ type: 'text', text: String(obj.result) });
       }
+      state.complete = true;
     }
   };
   return state;
@@ -143,6 +149,8 @@ function codexParser(onEvent) {
         onEvent({ type: 'text', text: (state.gotText ? '\n\n' : '') + item.text });
         state.gotText = true;
       }
+    } else if (obj.type === 'turn.completed') {
+      state.complete = true;
     } else if (obj.type === 'turn.failed' || obj.type === 'error') {
       state.error = explain(obj.error?.message || obj.message || '出错了');
       throw new EngineError(state.error);
@@ -154,6 +162,8 @@ function codexParser(onEvent) {
         state.gotText = true;
       } else if (m.type === 'agent_reasoning' && m.text) {
         onEvent({ type: 'reasoning', text: m.text + '\n' });
+      } else if (m.type === 'task_complete') {
+        state.complete = true;
       } else if (m.type === 'error') {
         state.error = explain(m.message || '出错了');
         throw new EngineError(state.error);

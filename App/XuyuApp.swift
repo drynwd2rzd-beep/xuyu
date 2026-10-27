@@ -89,6 +89,11 @@ enum Prefs {
     static let defaultClaudeModel = "defaultClaudeModel"
     static let defaultCodexModel = "defaultCodexModel"
     static let showReasoning = "showReasoning"
+    static let showEngineLogo = "showEngineLogo"
+    /// 谁来写 AI 日记（角色 ID）
+    static let diaryWriter = "diaryWriter"
+    /// 待办页是否显示「我」的日记
+    static let showMyDiary = "showMyDiary"
     static let inAppBanner = "inAppBanner"
     static let todoReminders = "todoReminders"
     static let diaryReminder = "diaryReminder"

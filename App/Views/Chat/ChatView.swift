@@ -25,7 +25,11 @@ struct ChatView: View {
     @State private var atBottom = true
     @State private var keyboardShown = false
     @State private var pinBottom = 0
-    @State private var collapsePanel = 0
+    @State private var panel: Composer.Panel?
+    /// 是否跟着最新消息走：你往上翻看记录时不打扰，回到底部或发消息后重新跟随
+    @State private var follow = true
+    /// 键盘高度：表情 / 加号面板做成一样高，切换时输入框不跳
+    @AppStorage("keyboardHeight") private var keyboardHeight = 336.0
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -55,8 +59,22 @@ struct ChatView: View {
             TimelineView(.everyMinute) { _ in
                 messageList(now: .now)
             }
-            .safeAreaInset(edge: .top, spacing: 0) { header }
-            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                header.background {
+                    ChatVeil(index: paper.index, owner: paper.owner, edge: .top)
+                        .padding(.bottom, -36)
+                        .ignoresSafeArea(edges: .top)
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomBar.background {
+                    ChatVeil(index: paper.index, owner: paper.owner, edge: .bottom)
+                        .padding(.top, -26)
+                        .ignoresSafeArea(edges: .bottom)
+                }
+            }
+            // 面板开着时，键盘升起不推动输入框：面板和键盘一样高，两者直接互换
+            .ignoresSafeArea(.keyboard, edges: panel != nil ? .bottom : [])
 
             if searching {
                 ChatSearchView(convo: convo, members: members, personaMap: personaMap) { target in
@@ -80,7 +98,20 @@ struct ChatView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in keyboardShown = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
+            if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect, frame.height > 200 {
+                keyboardHeight = frame.height
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+            keyboardShown = true
+            // 键盘已经升到和面板一样高：悄悄撤掉面板，看起来就是面板直接变成了键盘
+            if panel != nil {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { panel = nil }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in keyboardShown = false }
         .onAppear {
             router.openConversation = convo.id
@@ -118,17 +149,13 @@ struct ChatView: View {
             } label: {
                 VStack(spacing: 4) {
                     if convo.isGroup {
-                        StackedAvatars(members: members, size: 40)
+                        StackedAvatars(members: members, size: 40, includeMe: true)
                     } else {
                         AvatarView(persona: members.first, size: 56)
                             .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                     }
                     Text(convo.displayTitle(members)).font(Typo.serif(15, .medium)).foregroundStyle(Palette.ink)
-                    if let typingID = engine.typing[convo.id], let p = personaMap[typingID] {
-                        Text(convo.isGroup ? "\(p.name) 正在输入…" : "正在输入…")
-                            .font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
-                            .transition(.opacity)
-                    } else if selecting {
+                    if selecting {
                         Text("已选 \(picked.count) 条").font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
                     }
                 }
@@ -145,7 +172,6 @@ struct ChatView: View {
         }
         .padding(.horizontal, Space.tight)
         .padding(.bottom, Space.tight)
-        .animation(Motion.spring, value: engine.typing[convo.id])
     }
 
     // MARK: - 消息
@@ -189,42 +215,53 @@ struct ChatView: View {
                     Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
-                // 回复逐字出现时，只有在底部才跟着往下走
-                .background { StreamFollower(buffer: live) { if atBottom { proxy.scrollTo("bottom", anchor: .bottom) } } }
+                // 回复逐字出现时，跟着往下走（你往上翻看时不打扰）
+                .background { StreamFollower(buffer: live) { if follow { proxy.scrollTo("bottom", anchor: .bottom) } } }
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
+            // 跟随最新消息时，内容变高（新消息、图片加载完）也保持贴着底部
+            .defaultScrollAnchor(follow ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
-            // 消息滚到页头、输入栏附近时自己淡出，后面的背景自然露出来
-            .edgeFade()
-            // 手指一碰聊天记录，表情/加号面板就收起（和键盘一样）
             .onScrollPhaseChange { _, phase in
-                if phase == .interacting { collapsePanel += 1 }
+                switch phase {
+                case .interacting:
+                    // 手指一碰聊天记录，表情/加号面板就收起（和键盘一样）
+                    if panel != nil { withAnimation(Motion.spring) { panel = nil } }
+                case .idle:
+                    // 停下来时在底部附近就继续跟随，翻到上面就不打扰
+                    follow = atBottom
+                default:
+                    break
+                }
             }
             .onAppear {
-                // 打开聊天就停在最新的消息；图片解码后高度会变，稍后再对齐一次
+                // 打开聊天（包括从顶部提示点进来）就停在最新的消息；图片解码后高度会变，稍后再对齐几次
+                follow = true
                 proxy.scrollTo("bottom", anchor: .bottom)
                 Task {
-                    try? await Task.sleep(for: .milliseconds(60))
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                    try? await Task.sleep(for: .milliseconds(350))
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                    for delay in [60, 300, 700] {
+                        try? await Task.sleep(for: .milliseconds(delay))
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
                 }
             }
             .onChange(of: pinBottom) {
                 // 点输入框、打开表情或加号面板：聊天跟着到最底下
+                follow = true
                 Task {
                     try? await Task.sleep(for: .milliseconds(30))
                     withAnimation(Motion.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
             .onScrollGeometryChange(for: Bool.self) { geo in
-                geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height + geo.contentInsets.bottom - 80
+                geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height + geo.contentInsets.bottom - 120
             } action: { _, value in
                 atBottom = value
             }
             .onChange(of: messages.last?.id) {
-                // 自己发的消息总是滚到底；对方的消息只在你本来就在底部时才滚
-                guard atBottom || messages.last?.role == .user else { return }
+                // 自己发消息后总是回到底部；对方的新消息在跟随时滚到最新一条
+                if messages.last?.role == .user { follow = true }
+                guard follow else { return }
                 withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) { _, shown in
@@ -310,9 +347,16 @@ struct ChatView: View {
             .padding(.bottom, Space.tight)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else {
-            Composer(draft: $draft, convo: convo, members: members, busy: engine.isBusy(convo),
-                     onSend: send, onStop: { engine.stop(convo) }, onExpand: { pinBottom += 1 }, collapse: collapsePanel)
+            Composer(draft: $draft, panel: $panel, panelHeight: panelHeight, convo: convo, members: members,
+                     onSend: send, onExpand: { pinBottom += 1 })
         }
+    }
+
+    /// 面板高度 = 键盘高度 - 底部安全区 - 输入栏下边距：键盘和面板互换时输入框停在同一个位置
+    private var panelHeight: CGFloat {
+        let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        let bottom = window?.safeAreaInsets.bottom ?? 34
+        return max(240, keyboardHeight - bottom - Space.tight)
     }
 
     private func send(_ text: String, kind: MessageKind, attachments: [OutgoingAttachment]) {

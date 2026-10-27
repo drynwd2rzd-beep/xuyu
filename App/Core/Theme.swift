@@ -119,35 +119,6 @@ struct HeaderFade: View {
     }
 }
 
-/// 滚动内容在页头、底栏附近自己慢慢变淡，露出后面的背景；不盖底色、不用毛玻璃，换什么背景都自然
-struct EdgeFade: ViewModifier {
-    var top: CGFloat = 56
-    var bottom: CGFloat = 18
-
-    func body(content: Content) -> some View {
-        content.mask {
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    // 页头、底栏所在的位置（safeAreaInset 撑出来的安全区）里内容不显示
-                    Color.clear.frame(height: max(0, geo.safeAreaInsets.top - top * 0.35))
-                    LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black.opacity(0.35), location: 0.45),
-                                           .init(color: .black, location: 1)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: top)
-                    Color.black
-                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: bottom)
-                    Color.clear.frame(height: max(0, geo.safeAreaInsets.bottom - bottom * 0.5))
-                }
-                .ignoresSafeArea()
-            }
-        }
-    }
-}
-
-extension View {
-    func edgeFade(top: CGFloat = 56, bottom: CGFloat = 18) -> some View { modifier(EdgeFade(top: top, bottom: bottom)) }
-}
 
 /// 统一的弹簧动画
 enum Motion {
@@ -385,6 +356,10 @@ enum Fmt {
         f.setLocalizedDateFormatFromTemplate("jmm")
         return f
     }()
+    /// 气泡里的时间：始终带 AM/PM，例如 5:23 PM
+    static let bubble = make("h:mm a", en)
+    /// 发给模型的时间：24 小时制，不会有歧义
+    static let time24 = make("HH:mm")
     static let md = make("M月d日")
     static let weekday = make("EEE")
     static let weekdayMD = make("EEE · M月d日")

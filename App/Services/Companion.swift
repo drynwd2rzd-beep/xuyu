@@ -17,7 +17,10 @@ enum Companion {
         let personas = context.allPersonas()
         guard let main = personas.first else { return }
         await whisper(context: context, relay: relay, persona: main)
-        await diaries(context: context, relay: relay, persona: main)
+        // 日记由你在待办页选的那位角色来写，没选就是第一位
+        let writerID = UserDefaults.standard.string(forKey: Prefs.diaryWriter).flatMap(UUID.init(uuidString:))
+        let writer = personas.first { $0.id == writerID } ?? main
+        await diaries(context: context, relay: relay, persona: writer)
         await proactive(context: context, relay: relay, personas: personas)
         Reminders.syncDiaryReminder()
     }
