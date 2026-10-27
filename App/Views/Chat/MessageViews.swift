@@ -26,6 +26,7 @@ struct MessageRow: View {
     @AppStorage(Prefs.showReasoning) private var showReasoning = true
     @AppStorage(Prefs.showEngineLogo) private var showEngineLogo = true
     @State private var reasoningOpen = false
+    @State private var detailHeight: CGFloat = 0
 
     private var live: StreamBuffer? { engine.buffers[message.id] }
     private var text: String { live?.text ?? message.content }
@@ -77,8 +78,16 @@ struct MessageRow: View {
             AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
             VStack(alignment: .leading, spacing: 5) {
                 if first || isThinking || !steps.isEmpty { label }
-                if reasoningOpen && hasDetail {
-                    detail.transition(.opacity.combined(with: .move(edge: .top)))
+                if hasDetail {
+                    // 展开 / 收起：高度从 0 平滑长出来（或缩回去），下面的消息被柔和地推开，不会跳
+                    detail
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailHeight = $0 }
+                        .frame(height: reasoningOpen ? detailHeight : 0, alignment: .top)
+                        .clipped()
+                        .opacity(reasoningOpen ? 1 : 0)
+                        // 收起时不占 VStack 的间距
+                        .padding(.bottom, reasoningOpen ? 0 : -5)
                 }
                 content(isUser: false)
                     .animation(Motion.spring, value: isThinking)
@@ -92,7 +101,7 @@ struct MessageRow: View {
     private var label: some View {
         Button {
             guard hasDetail else { return }
-            withAnimation(Motion.spring) { reasoningOpen.toggle() }
+            withAnimation(.spring(duration: 0.45, bounce: 0.05)) { reasoningOpen.toggle() }
         } label: {
             HStack(spacing: 6) {
                 if showEngineLogo { EngineLogo(engine: persona?.engine ?? .claude, size: 14) }
@@ -135,6 +144,11 @@ struct MessageRow: View {
                             .foregroundStyle(Palette.ink2)
                             .lineLimit(3)
                     }
+                    // 展开时一条接一条依次淡入
+                    .opacity(reasoningOpen ? 1 : 0)
+                    .offset(y: reasoningOpen ? 0 : -4)
+                    .animation(.spring(duration: 0.4, bounce: 0).delay(reasoningOpen ? Double(min(index, 12)) * 0.035 : 0),
+                               value: reasoningOpen)
                 }
             }
             if !reasoning.isEmpty && showReasoning {
