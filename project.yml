@@ -31,9 +31,11 @@ targets:
           - UIInterfaceOrientationPortrait
         UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
+        CFBundleLocalizations:
+          - zh-Hans
+        # 只留这一项：同时写 NSAllowsLocalNetworking 时 iOS 会忽略它，Tailscale 的 100.x 地址就被拦了
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: 絮语需要连接你电脑上的中继，才能和 Claude、Codex 聊天。
         NSCameraUsageDescription: 拍照发给 AI。
         NSPhotoLibraryUsageDescription: 选择照片发给 AI，或者设置头像、聊天背景和表情。

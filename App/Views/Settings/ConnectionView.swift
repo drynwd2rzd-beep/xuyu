@@ -31,8 +31,9 @@ struct ConnectionView: View {
                 .buttonStyle(ScaleButtonStyle())
                 .disabled((address.trimmed.isEmpty && away.trimmed.isEmpty) || code.trimmed.isEmpty)
 
-                HStack(spacing: Space.tight) {
-                    StatusDot(ok: relay.isConnected)
+                // 点和第一行字对齐，文字折行时也不会跑到中间
+                HStack(alignment: .top, spacing: Space.tight) {
+                    StatusDot(ok: relay.isConnected).padding(.top, 6)
                     Text(stateText).font(.system(size: 14)).foregroundStyle(Palette.ink2)
                 }
                 .padding(.leading, 6)

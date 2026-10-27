@@ -278,9 +278,23 @@ final class RelayClient {
                     self.receive(on: task)
                 case .failure(let error):
                     let code = task.closeCode
-                    self.fail(task, reason: code.rawValue == 4001 ? "配对码不对" : error.localizedDescription)
+                    self.fail(task, reason: code.rawValue == 4001 ? "配对码不对" : Self.describe(error))
                 }
             }
+        }
+    }
+
+    /// 把系统的网络错误翻成简短的中文
+    static func describe(_ error: Error) -> String {
+        guard let e = error as? URLError else { return "连接中断" }
+        switch e.code {
+        case .notConnectedToInternet, .dataNotAllowed: return "手机没有网络"
+        case .timedOut: return "连接超时"
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed: return "找不到电脑，确认中继开着"
+        case .networkConnectionLost: return "网络断了"
+        case .appTransportSecurityRequiresSecureConnection, .secureConnectionFailed: return "系统拦截了连接"
+        case .badServerResponse: return "地址不对，或者中继没开"
+        default: return "连接中断"
         }
     }
 
