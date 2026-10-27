@@ -16,10 +16,13 @@ export const paths = {
   replies: path.join(dir, 'replies'),
 };
 
+// 工作模式下 AI 能读写的文件夹（只在这里面动手）：有 D 盘就放 D 盘
+const oldWorkDir = path.join(os.homedir(), '絮语工作区');
+const defaultWorkDir = fs.existsSync('D:\\') ? 'D:\\絮语工作区' : oldWorkDir;
+
 const defaults = {
   port: 51888,
-  // 工作模式下 AI 能读写的文件夹（只在这里面动手）
-  workDir: path.join(os.homedir(), '絮语工作区'),
+  workDir: defaultWorkDir,
   token: '',
   models: {
     claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
@@ -50,6 +53,8 @@ export function loadConfig() {
     commands: { ...defaults.commands, ...(saved.commands || {}) },
   };
   if (!config.token) config.token = newToken();
+  // 之前默认放在 C 盘用户目录，有 D 盘时改到 D 盘
+  if (config.workDir === oldWorkDir) config.workDir = defaultWorkDir;
   for (const d of Object.values(workPaths(config))) fs.mkdirSync(d, { recursive: true });
   saveConfig(config);
   return config;
