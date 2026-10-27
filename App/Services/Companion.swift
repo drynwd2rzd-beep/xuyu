@@ -73,7 +73,12 @@ enum Companion {
         let today = Date.now.startOfDay
         var days = [today.adding(days: -1)]
         if Calendar.current.component(.hour, from: .now) >= 20 { days.append(today) }
-        for day in days where aiDiary(on: day, context: context) == nil {
+        // 今天：你选的那位还没写就写；昨天：谁都没写才补一篇
+        let pending = days.filter { day in
+            day == today ? aiDiary(on: day, by: persona, context: context) == nil
+                : !((try? context.fetch(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == day }))) ?? []).contains { $0.author == .ai }
+        }
+        for day in pending {
             let messages = messagesOn(day, context: context)
             guard messages.count >= 3 else { continue }
             let names = Dictionary(context.allPersonas().map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
@@ -113,10 +118,11 @@ enum Companion {
         return (lines.joined(separator: "\n").trimmed, mood)
     }
 
-    static func aiDiary(on day: Date, context: ModelContext) -> DiaryEntry? {
+    /// 某位角色在这一天写的日记（换了写日记的角色后，新角色会自己写一篇）
+    static func aiDiary(on day: Date, by persona: Persona, context: ModelContext) -> DiaryEntry? {
         let start = day.startOfDay
         let entries = (try? context.fetch(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == start }))) ?? []
-        return entries.first { $0.author == .ai }
+        return entries.first { $0.author == .ai && $0.personaID == persona.id }
     }
 
     // MARK: - 主动消息

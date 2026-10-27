@@ -38,33 +38,26 @@ struct Composer: View {
     private var mentionOpen: Bool { convo.isGroup && draft.hasSuffix("@") }
 
     var body: some View {
-        VStack(spacing: Space.tight) {
-            if mentionOpen { mentionList.transition(.move(edge: .bottom).combined(with: .opacity)) }
-            if !staged.isEmpty { stagedRow.transition(.move(edge: .bottom).combined(with: .opacity)) }
-            if let quote {
-                QuoteChip(text: quote) { withAnimation(Motion.spring) { self.quote = nil } }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, Space.control + Space.tight + 2)
-                    .padding(.trailing, 54)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-            HStack(spacing: Space.tight + 2) {
-                plusButton
-                field
-                actionButton
-            }
+        VStack(spacing: 0) {
+            inputArea
             if let panel {
+                // 面板：整宽贴住屏幕底部、和键盘一样高；背景一直铺到屏幕最下沿
                 panelView(panel)
+                    .frame(maxWidth: .infinity)
                     .frame(height: panelHeight, alignment: .top)
+                    .background {
+                        UnevenRoundedRectangle(topLeadingRadius: Radius.card, topTrailingRadius: Radius.card, style: .continuous)
+                            .fill(Palette.card)
+                            .shadow(color: .black.opacity(0.06), radius: 16, y: -4)
+                            .ignoresSafeArea(edges: .bottom)
+                    }
                     .offset(y: panelDrag)
                     // 往下拉一段，面板自己收回去
                     .simultaneousGesture(panelDragGesture)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 28)),
+                                            removal: .move(edge: .bottom).combined(with: .opacity)))
             }
         }
-        .padding(.horizontal, Space.item)
-        .padding(.top, 6)
-        .padding(.bottom, Space.tight)
         .animation(Motion.spring, value: mentionOpen)
         .animation(Motion.spring, value: staged.count)
         .onChange(of: quote) { _, q in if q != nil { focused = true } }
@@ -111,6 +104,29 @@ struct Composer: View {
             dictation.onText = { text in draft = dictationBase + text }
         }
         .onDisappear { dictation.stop() }
+    }
+
+    /// 输入框和它上面的 @ 列表、待发照片、引用
+    private var inputArea: some View {
+        VStack(spacing: Space.tight) {
+            if mentionOpen { mentionList.transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if !staged.isEmpty { stagedRow.transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if let quote {
+                QuoteChip(text: quote) { withAnimation(Motion.spring) { self.quote = nil } }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, Space.control + Space.tight + 2)
+                    .padding(.trailing, 54)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            HStack(spacing: Space.tight + 2) {
+                plusButton
+                field
+                actionButton
+            }
+        }
+        .padding(.horizontal, Space.item)
+        .padding(.top, 6)
+        .padding(.bottom, Space.tight)
     }
 
     // MARK: - 面板
@@ -305,10 +321,8 @@ struct Composer: View {
             // 面板 → 键盘：键盘升到和面板一样高后，聊天页再把面板撤掉
             focused = true
         } else if focused || panel != nil {
-            // 键盘 → 面板（或换另一个面板）：面板和键盘一样高，直接替换，输入框不动
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) { panel = p }
+            // 键盘 → 面板（或换另一个面板）：面板和键盘一样高，在原地淡入，输入框不动
+            withAnimation(.easeOut(duration: 0.22)) { panel = p }
             focused = false
         } else {
             withAnimation(Motion.spring) { panel = p }

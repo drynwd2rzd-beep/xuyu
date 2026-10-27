@@ -58,56 +58,71 @@ enum WallpaperStore {
     }
 }
 
-/// 页头 / 底栏下面的一层：先是渐渐加深的模糊，再叠一层和背景完全对齐的同一张图，
-/// 消息滚到这里会先变模糊、再慢慢融进背景，没有分界线
+/// 页头 / 底栏下面的渐变模糊：靠屏幕边缘最模糊，往里慢慢变清晰，不加任何颜色（没有白雾）。
+/// 顶部从屏幕最上面模糊到头像一半左右基本清晰；底部只在输入栏后面轻轻一层
 struct ChatVeil: View {
-    let index: Int
-    let owner: UUID?
     let edge: VerticalEdge
 
     var body: some View {
-        GeometryReader { geo in
-            let frame = geo.frame(in: .global)
-            let screen = UIScreen.main.bounds
-            ZStack {
-                ClearBlur()
-                    .mask(gradient(solidUntil: 0.62))
-                ChatWallpaper(index: index, owner: owner, edgeToEdge: false)
-                    .frame(width: screen.width, height: screen.height)
-                    .offset(x: -frame.minX, y: -frame.minY)
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                    .clipped()
-                    .mask(gradient(solidUntil: 0.38))
-            }
-        }
-        .allowsHitTesting(false)
-    }
-
-    /// 靠边的一侧完全不透明，到 solidUntil 之后慢慢变透明
-    private func gradient(solidUntil: CGFloat) -> LinearGradient {
-        let stops: [Gradient.Stop] = [.init(color: .black, location: 0), .init(color: .black, location: solidUntil),
-                                      .init(color: .black.opacity(0.35), location: (solidUntil + 1) / 2),
-                                      .init(color: .clear, location: 1)]
-        return LinearGradient(stops: stops, startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+        VariableBlur(radius: edge == .top ? 14 : 10, fromTop: edge == .top)
+            .allowsHitTesting(false)
     }
 }
 
-/// 只有模糊、没有颜色的毛玻璃：系统毛玻璃自带一层浅色（深色背景上会发白），这里把那层颜色去掉
-struct ClearBlur: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        DispatchQueue.main.async { Self.stripTint(view) }
-        return view
+/// 可变模糊：一端模糊半径最大，另一端为 0，中间平滑过渡（和系统相册、音乐顶部的效果一样）
+struct VariableBlur: UIViewRepresentable {
+    var radius: CGFloat
+    var fromTop: Bool
+
+    func makeUIView(context: Context) -> VariableBlurView {
+        VariableBlurView(radius: radius, fromTop: fromTop)
     }
 
-    func updateUIView(_ view: UIVisualEffectView, context: Context) {
-        Self.stripTint(view)
+    func updateUIView(_ view: VariableBlurView, context: Context) {}
+}
+
+final class VariableBlurView: UIVisualEffectView {
+    init(radius: CGFloat, fromTop: Bool) {
+        super.init(effect: UIBlurEffect(style: .regular))
+        // 系统内部的可变模糊滤镜：用一张从黑到透明的渐变图告诉它哪里模糊、哪里清晰
+        let name = String("retliFAC".reversed())
+        let make = NSSelectorFromString(String(":epyThtiWretlif".reversed()))
+        guard let type = NSClassFromString(name) as AnyObject as? NSObjectProtocol,
+              type.responds(to: make),
+              let filter = type.perform(make, with: "variableBlur")?.takeUnretainedValue() as? NSObject else { return }
+        filter.setValue(radius, forKey: "inputRadius")
+        filter.setValue(Self.mask(fromTop: fromTop), forKey: "inputMaskImage")
+        filter.setValue(true, forKey: "inputNormalizeEdges")
+        subviews.first?.layer.filters = [filter]
+        // 去掉系统毛玻璃自带的那层颜色
+        for sub in subviews.dropFirst() { sub.alpha = 0 }
     }
 
-    private static func stripTint(_ view: UIVisualEffectView) {
-        for sub in view.subviews where String(describing: type(of: sub)).contains("VisualEffectSubview") {
-            sub.isHidden = true
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard let window, let backdrop = subviews.first?.layer else { return }
+        backdrop.setValue(window.traitCollection.displayScale, forKey: "scale")
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {}
+
+    /// 模糊强度的分布：边缘一小段最模糊，之后按缓和曲线一路减弱，最后一段淡到几乎察觉不到才归零，看不出边界
+    private static func mask(fromTop: Bool) -> CGImage? {
+        let size = CGSize(width: 1, height: 200)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { ctx in
+            let stops: [(CGFloat, CGFloat)] = [(0, 1), (0.12, 1), (0.28, 0.82), (0.44, 0.56), (0.6, 0.32),
+                                               (0.75, 0.14), (0.88, 0.04), (1, 0)]
+            let colors = stops.map { UIColor.black.withAlphaComponent($0.1).cgColor } as CFArray
+            let locations = stops.map(\.0)
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) else { return }
+            let start = CGPoint(x: 0, y: fromTop ? 0 : size.height)
+            let end = CGPoint(x: 0, y: fromTop ? size.height : 0)
+            ctx.cgContext.drawLinearGradient(gradient, start: start, end: end, options: [])
         }
+        return image.cgImage
     }
 }
 

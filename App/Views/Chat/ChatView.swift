@@ -25,6 +25,7 @@ struct ChatView: View {
     @State private var atBottom = true
     @State private var keyboardShown = false
     @State private var pinBottom = 0
+    @State private var entered = false
     @State private var panel: Composer.Panel?
     /// 正在引用的那句话（长按消息 → 引用）
     @State private var quoting: String?
@@ -60,18 +61,23 @@ struct ChatView: View {
             // 每分钟刷新一次，让提前排好的主动消息到点出现；判断用的始终是「现在」
             TimelineView(.everyMinute) { _ in
                 messageList(now: .now)
+                    // 进入聊天：消息从下方轻轻浮上来、慢慢变清晰
+                    .opacity(entered ? 1 : 0)
+                    .offset(y: entered ? 0 : 22)
+                    .blur(radius: entered ? 0 : 6)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
+                // 顶部：屏幕最上面最模糊，往下渐渐减弱，到头像一半左右已经基本清晰
                 header.background {
-                    ChatVeil(index: paper.index, owner: paper.owner, edge: .top)
-                        .padding(.bottom, -36)
+                    ChatVeil(edge: .top)
+                        .padding(.bottom, -28)
                         .ignoresSafeArea(edges: .top)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomBar.background {
-                    ChatVeil(index: paper.index, owner: paper.owner, edge: .bottom)
-                        .padding(.top, -26)
+                    ChatVeil(edge: .bottom)
+                        .padding(.top, -24)
                         .ignoresSafeArea(edges: .bottom)
                 }
             }
@@ -119,8 +125,12 @@ struct ChatView: View {
             router.openConversation = convo.id
             convo.lastReadAt = .now
             draft = convo.draft
+            withAnimation(.spring(duration: 0.6, bounce: 0.08).delay(0.08)) { entered = true }
         }
         .onDisappear {
+            // 离开聊天时把键盘和面板收好，回到列表或别的页面不会残留
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            panel = nil
             if router.openConversation == convo.id { router.openConversation = nil }
             convo.draft = draft
             convo.lastReadAt = .now
@@ -161,6 +171,9 @@ struct ChatView: View {
                         Text("已选 \(picked.count) 条").font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
                     }
                 }
+                // 进入聊天：头像轻轻放大到位
+                .scaleEffect(entered ? 1 : 0.86)
+                .opacity(entered ? 1 : 0)
             }
             .buttonStyle(.plain)
             Spacer()
@@ -224,6 +237,13 @@ struct ChatView: View {
             // 跟随最新消息时，内容变高（新消息、图片加载完）也保持贴着底部
             .defaultScrollAnchor(follow ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
+            // 点一下聊天区域：收起表情/加号面板和键盘
+            .simultaneousGesture(TapGesture().onEnded {
+                if panel != nil { withAnimation(Motion.spring) { panel = nil } }
+                if keyboardShown {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            })
             .onScrollPhaseChange { _, phase in
                 switch phase {
                 case .interacting:
@@ -365,11 +385,11 @@ struct ChatView: View {
         }
     }
 
-    /// 面板高度 = 键盘高度 - 底部安全区 - 输入栏下边距：键盘和面板互换时输入框停在同一个位置
+    /// 面板高度 = 键盘高度 - 底部安全区（面板背景再往下铺满安全区）：键盘和面板互换时输入框停在同一个位置
     private var panelHeight: CGFloat {
         let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
         let bottom = window?.safeAreaInsets.bottom ?? 34
-        return max(240, keyboardHeight - bottom - Space.tight)
+        return max(250, keyboardHeight - bottom)
     }
 
     private func send(_ text: String, kind: MessageKind, attachments: [OutgoingAttachment]) {

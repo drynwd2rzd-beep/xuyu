@@ -154,7 +154,12 @@ struct DiaryCard: View {
     static let moods = ["开心", "惬意", "平静", "累了", "低落"]
 
     private var dayEntries: [DiaryEntry] { entries.filter { $0.day == day.startOfDay } }
-    private var aiEntry: DiaryEntry? { dayEntries.first { $0.author == .ai && $0.text != "……" } }
+    /// 显示你选的那位角色写的日记；以前的日子如果 TA 没写，就显示当天别人写的
+    private var aiEntry: DiaryEntry? {
+        let ai = dayEntries.filter { $0.author == .ai && $0.text != "……" }
+        if let mine = ai.first(where: { $0.personaID == writer?.id }) { return mine }
+        return Calendar.current.isDateInToday(day) ? nil : ai.first
+    }
     private var myEntry: DiaryEntry? { dayEntries.first { $0.author == .me } }
     /// 写日记的角色：你选的那位，没选就是第一位
     private var writer: Persona? { personas.first { $0.id.uuidString == writerID } ?? personas.first }

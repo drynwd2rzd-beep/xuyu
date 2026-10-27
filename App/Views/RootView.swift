@@ -43,6 +43,18 @@ struct RootView: View {
             }
         }
         .onAppear { shownTab = router.tab }
+        // 从聊天等二级页面回来时，确认键盘状态是真实的（避免底栏一直藏着）
+        .onChange(of: router.path.count) { _, count in
+            if count == 0 {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    let up = UIApplication.shared.connectedScenes
+                        .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+                        .first?.firstResponderIsTextInput ?? false
+                    if !up { withAnimation(Motion.snappy) { keyboardShown = false } }
+                }
+            }
+        }
         .onChange(of: router.tab) { _, new in switchTab(to: new) }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(Motion.snappy) { keyboardShown = true }
@@ -69,6 +81,8 @@ struct RootView: View {
 
     private func switchTab(to new: AppTab) {
         guard new != shownTab else { return }
+        // 切页时先收起键盘，底栏不会因为键盘状态残留而消失
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         let order: [AppTab] = [.home, .chats, .todo]
         direction = (order.firstIndex(of: new) ?? 0) > (order.firstIndex(of: shownTab) ?? 0) ? 1 : -1
         entering = false
@@ -85,6 +99,14 @@ struct RootView: View {
             }
             withAnimation(.spring(duration: 0.5, bounce: 0.12)) { revealed = true }
         }
+    }
+}
+
+extension UIView {
+    /// 当前是不是有输入框正在打字（键盘真的开着）
+    var firstResponderIsTextInput: Bool {
+        if isFirstResponder { return self is UITextInput }
+        return subviews.contains { $0.firstResponderIsTextInput }
     }
 }
 

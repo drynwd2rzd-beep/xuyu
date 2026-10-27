@@ -209,7 +209,7 @@ struct MessageRow: View {
     }
 
     private var timeLabel: some View {
-        Text(time).font(.system(size: 10.5)).foregroundStyle(Palette.inkSoft)
+        Text(time).font(TimedText.stampFont).foregroundStyle(TimedText.stampColor)
     }
 
     @ViewBuilder
@@ -272,16 +272,20 @@ struct TimedText: View {
     var fontSize: CGFloat = 15.5
 
     var body: some View {
-        (Text(text) + Text("   " + time).font(.system(size: 10.5)).foregroundColor(.clear))
+        (Text(text) + Text("  " + time).font(Self.stampFont).foregroundColor(.clear))
             .font(.system(size: fontSize))
             .lineSpacing(3)
             .foregroundStyle(Palette.ink)
             .fixedSize(horizontal: false, vertical: true)
             .overlay(alignment: .bottomTrailing) {
-                Text(time).font(.system(size: 10.5)).foregroundStyle(Palette.inkSoft).offset(y: 1)
+                Text(time).font(Self.stampFont).foregroundStyle(Self.stampColor).offset(y: 1)
             }
             .textSelection(.disabled)
     }
+
+    /// 气泡里的时间：小一点、数字等宽、颜色淡一点，更精致
+    static let stampFont = Font.system(size: 9.5, weight: .medium).monospacedDigit()
+    static let stampColor = Palette.inkSoft.opacity(0.8)
 }
 
 struct TypingDots: View {
@@ -410,7 +414,7 @@ struct NoteCard: View {
                 .lineSpacing(5)
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(time).font(.system(size: 10.5)).foregroundStyle(Palette.inkSoft)
+            Text(time).font(TimedText.stampFont).foregroundStyle(TimedText.stampColor)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(Space.card)

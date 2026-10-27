@@ -77,12 +77,7 @@ struct TodoView: View {
                 .padding(.leading, Space.tight)
             }
             .buttonStyle(.plain)
-            if monthOpen {
-                MonthGrid(selected: $selectedDay, marked: markedDays)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else {
-                WeekStrip(selected: $selectedDay, marked: markedDays)
-            }
+            FoldingCalendar(selected: $selectedDay, marked: markedDays, open: monthOpen)
         }
         .padding(Space.tight)
         .card()
@@ -268,69 +263,103 @@ struct TodoRow: View {
     }
 }
 
-struct WeekStrip: View {
+/// 可以折叠的日历：收起时只显示选中日期所在的那一周；展开时那一周原地不动，
+/// 上下几周平滑地展开出来（和 iPhone 自带日历一样），收起时再折回去
+struct FoldingCalendar: View {
     @Binding var selected: Date
     let marked: Set<Date>
+    let open: Bool
+    @State private var month = Date.now.startOfDay
+    @Namespace private var dayNS
+    private let rowHeight: CGFloat = 46
 
-    private var days: [Date] {
-        let cal = Calendar.current
-        let start = cal.dateInterval(of: .weekOfYear, for: selected)?.start ?? selected.startOfDay
-        return (0..<7).map { start.adding(days: $0) }
-    }
+    private var cal: Calendar { Calendar.current }
 
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(days, id: \.self) { day in
-                DayCell(day: day, selected: Calendar.current.isDate(day, inSameDayAs: selected),
-                        marked: marked.contains(day.startOfDay), showWeekday: true) {
-                    withAnimation(Motion.spring) { selected = day.startOfDay }
-                }
-            }
+    /// 这个月要显示的几周（每周 7 天，前后用相邻月份的日子补齐）
+    private var weeks: [[Date]] {
+        let first = cal.date(from: cal.dateComponents([.year, .month], from: month)) ?? month
+        let start = cal.dateInterval(of: .weekOfYear, for: first)?.start ?? first
+        let count = cal.range(of: .day, in: .month, for: first)?.count ?? 30
+        let last = first.adding(days: count - 1)
+        var rows: [[Date]] = []
+        var day = start
+        while day <= last {
+            rows.append((0..<7).map { day.adding(days: $0) })
+            day = day.adding(days: 7)
         }
+        return rows
     }
-}
 
-struct MonthGrid: View {
-    @Binding var selected: Date
-    let marked: Set<Date>
-    @State private var month = Date.now
+    private var selectedRow: Int {
+        weeks.firstIndex { row in row.contains { cal.isDate($0, inSameDayAs: selected) } } ?? 0
+    }
 
     var body: some View {
-        let cal = Calendar.current
-        let start = cal.date(from: cal.dateComponents([.year, .month], from: month)) ?? month
-        let count = cal.range(of: .day, in: .month, for: start)?.count ?? 30
-        let lead = (cal.component(.weekday, from: start) - cal.firstWeekday + 7) % 7
-        let symbols = (0..<7).map { cal.veryShortStandaloneWeekdaySymbols[(cal.firstWeekday - 1 + $0) % 7] }
+        let rows = weeks
+        let keep = selectedRow
         VStack(spacing: 4) {
+            // 月份切换：只在展开时出现
             HStack {
-                Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 40, height: 32) }
+                Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 40, height: 30) }
                 Spacer()
-                Text(Fmt.enMonth.string(from: start) + " " + String(cal.component(.year, from: start)))
-                    .font(Typo.serif(15))
+                Text(Fmt.enMonth.string(from: month) + " " + String(cal.component(.year, from: month)))
+                    .font(Typo.serif(14))
                 Spacer()
-                Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 40, height: 32) }
+                Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 40, height: 30) }
             }
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Palette.ink)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
-                ForEach(symbols.indices, id: \.self) { i in
-                    Text(symbols[i]).font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
+            .frame(height: open ? 30 : 0)
+            .opacity(open ? 1 : 0)
+            .clipped()
+
+            // 星期一直都在
+            HStack(spacing: 0) {
+                ForEach(0..<7, id: \.self) { i in
+                    Text(cal.veryShortStandaloneWeekdaySymbols[(cal.firstWeekday - 1 + i) % 7])
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.inkSoft)
+                        .frame(maxWidth: .infinity)
                 }
-                ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 44) }
-                ForEach(0..<count, id: \.self) { i in
-                    let day = start.adding(days: i)
-                    DayCell(day: day, selected: cal.isDate(day, inSameDayAs: selected), marked: marked.contains(day.startOfDay), showWeekday: false) {
-                        withAnimation(Motion.spring) { selected = day.startOfDay }
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    let visible = open || index == keep
+                    HStack(spacing: 0) {
+                        ForEach(row, id: \.self) { day in
+                            DayCell(day: day, selected: cal.isDate(day, inSameDayAs: selected),
+                                    marked: marked.contains(day.startOfDay),
+                                    outside: !cal.isDate(day, equalTo: month, toGranularity: .month), ns: dayNS) {
+                                withAnimation(Motion.spring) { selected = day.startOfDay }
+                            }
+                        }
                     }
+                    // 收起时其他几周高度变成 0、淡出并稍微往选中那周收拢
+                    .frame(height: visible ? rowHeight : 0, alignment: index < keep ? .bottom : .top)
+                    .opacity(visible ? 1 : 0)
+                    .scaleEffect(visible ? 1 : 0.92, anchor: index < keep ? .bottom : .top)
+                    .clipped()
                 }
             }
         }
         .onAppear { month = selected }
+        // 收起前先回到选中日期所在的月份，这样折回去的就是选中的那一周
+        .onChange(of: open) { _, isOpen in
+            if !isOpen, !cal.isDate(month, equalTo: selected, toGranularity: .month) {
+                withAnimation(Motion.spring) { month = selected }
+            }
+        }
+        .onChange(of: selected) { _, day in
+            if !cal.isDate(month, equalTo: day, toGranularity: .month) {
+                withAnimation(Motion.spring) { month = day }
+            }
+        }
     }
 
     private func shift(_ delta: Int) {
         withAnimation(Motion.spring) {
-            month = Calendar.current.date(byAdding: .month, value: delta, to: month) ?? month
+            month = cal.date(byAdding: .month, value: delta, to: month) ?? month
         }
     }
 }
@@ -339,23 +368,29 @@ private struct DayCell: View {
     let day: Date
     let selected: Bool
     let marked: Bool
-    let showWeekday: Bool
+    var outside = false
+    /// 选中的黑色圆点在日子之间平滑滑动
+    var ns: Namespace.ID? = nil
     let onTap: () -> Void
 
     var body: some View {
         let today = Calendar.current.isDateInToday(day)
         Button(action: onTap) {
             VStack(spacing: 3) {
-                if showWeekday {
-                    Text(Fmt.weekday.string(from: day).replacingOccurrences(of: "周", with: ""))
-                        .font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
-                }
                 Text("\(Calendar.current.component(.day, from: day))")
                     .font(.system(size: 15, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Palette.inkInverse : Palette.ink2)
+                    .foregroundStyle(selected ? Palette.inkInverse : (outside ? Palette.faint : Palette.ink2))
                     .frame(width: 34, height: 34)
                     .background {
-                        if selected { Circle().fill(Palette.ink) } else if today { Circle().strokeBorder(Palette.ink, lineWidth: 1) }
+                        if selected {
+                            if let ns {
+                                Circle().fill(Palette.ink).matchedGeometryEffect(id: "selectedDay", in: ns)
+                            } else {
+                                Circle().fill(Palette.ink)
+                            }
+                        } else if today {
+                            Circle().strokeBorder(Palette.ink, lineWidth: 1)
+                        }
                     }
                 Circle().fill(marked && !selected ? Palette.ink : Color.clear).frame(width: 4, height: 4)
             }
