@@ -103,6 +103,22 @@ enum Space {
     static let top: CGFloat = 16
 }
 
+/// 页头背景：页头本身是纸色，下方再延伸一段柔和淡出，内容滚上来不会和标题叠在一起
+struct HeaderFade: View {
+    var fade: CGFloat = 28
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Palette.paper
+            LinearGradient(colors: [Palette.paper, Palette.paper.opacity(0)], startPoint: .top, endPoint: .bottom)
+                .frame(height: fade)
+        }
+        .padding(.bottom, -fade)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
+    }
+}
+
 /// 统一的弹簧动画
 enum Motion {
     static let spring = Animation.spring(response: 0.42, dampingFraction: 0.82)

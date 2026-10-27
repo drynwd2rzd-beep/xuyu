@@ -194,11 +194,7 @@ struct SubpageHeader<Trailing: View>: View {
         .frame(height: 44)
         .padding(.horizontal, Space.tight)
         .padding(.bottom, Space.tight)
-        .background {
-            LinearGradient(stops: [.init(color: Palette.paper, location: 0.62), .init(color: Palette.paper.opacity(0), location: 1)],
-                           startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea(edges: .top)
-        }
+        .background { HeaderFade(fade: 20) }
     }
 }
 

@@ -124,12 +124,8 @@ struct ChatView: View {
             .accessibilityLabel("搜索聊天记录")
         }
         .padding(.horizontal, Space.tight)
-        .padding(.bottom, Space.item)
-        .background {
-            LinearGradient(stops: [.init(color: Palette.paper, location: 0.6), .init(color: Palette.paper.opacity(0), location: 1)],
-                           startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea(edges: .top)
-        }
+        .padding(.bottom, Space.tight)
+        .background { HeaderFade() }
         .animation(Motion.spring, value: engine.typing[convo.id])
     }
 
