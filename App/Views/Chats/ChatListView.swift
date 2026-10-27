@@ -8,6 +8,8 @@ struct ChatListView: View {
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @State private var query = ""
+    @State private var openRow: UUID?
+    @State private var pendingRemoval: Conversation?
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -51,17 +53,23 @@ struct ChatListView: View {
         let items = visible
         VStack(spacing: 0) {
             ForEach(items) { convo in
-                Button { router.open(.chat(convo.id)) } label: {
-                    ConversationRow(convo: convo, members: members(convo), personaMap: personaMap,
-                                    typing: engine.isBusy(convo))
+                SwipeRow(id: convo.id, openID: $openRow,
+                         leading: SwipeAction(icon: convo.pinned ? "pin.slash.fill" : "pin.fill",
+                                              title: convo.pinned ? "取消置顶" : "置顶", tint: Palette.ink) { togglePin(convo) },
+                         trailing: SwipeAction(icon: "trash.fill", title: convo.isGroup ? "删除" : "清空",
+                                               tint: Palette.danger) { pendingRemoval = convo }) {
+                    Button { router.open(.chat(convo.id)) } label: {
+                        ConversationRow(convo: convo, members: members(convo), personaMap: personaMap,
+                                        typing: engine.isBusy(convo))
+                    }
+                    .buttonStyle(PressableRowStyle())
                 }
-                .buttonStyle(PressableRowStyle())
                 .contextMenu {
-                    Button {
-                        withAnimation(Motion.spring) { convo.pinned.toggle() }
-                        try? context.save()
-                    } label: {
+                    Button { togglePin(convo) } label: {
                         Label(convo.pinned ? "取消置顶" : "置顶", systemImage: convo.pinned ? "pin.slash" : "pin")
+                    }
+                    Button(role: .destructive) { pendingRemoval = convo } label: {
+                        Label(convo.isGroup ? "删除群聊" : "清空聊天记录", systemImage: "trash")
                     }
                 }
                 if convo.id != items.last?.id { Hairline(inset: 76) }
@@ -77,6 +85,20 @@ struct ChatListView: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .card()
         .animation(Motion.spring, value: items.map(\.id))
+        .confirmationDialog(pendingRemoval?.isGroup == true ? "删除这个群聊？" : "清空聊天记录？",
+                            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+                            titleVisibility: .visible, presenting: pendingRemoval) { convo in
+            Button(convo.isGroup ? "删除" : "清空", role: .destructive) {
+                withAnimation(Motion.spring) { ConversationRemover.remove(convo, context: context, engine: engine) }
+            }
+        } message: { convo in
+            Text(convo.isGroup ? "群聊和里面的记录都会删除，无法恢复。" : "角色会保留，记录删除后无法恢复。")
+        }
+    }
+
+    private func togglePin(_ convo: Conversation) {
+        withAnimation(Motion.spring) { convo.pinned.toggle() }
+        try? context.save()
     }
 }
 

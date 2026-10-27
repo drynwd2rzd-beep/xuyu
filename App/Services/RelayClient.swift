@@ -100,6 +100,9 @@ final class RelayClient {
 
     @ObservationIgnored private var task: URLSessionWebSocketTask?
     @ObservationIgnored private var streams: [String: AsyncThrowingStream<RelayEvent, Error>.Continuation] = [:]
+    /// 每条回复已经收到的片段数；断线重连后从这里接着收
+    @ObservationIgnored private var received: [String: Int] = [:]
+    @ObservationIgnored private var orphanTimeout: Task<Void, Never>?
     @ObservationIgnored private var waiters: [CheckedContinuation<Void, Error>] = []
     @ObservationIgnored private var retryDelay: Double = 2
     @ObservationIgnored private var retryTask: Task<Void, Never>?
@@ -147,6 +150,25 @@ final class RelayClient {
         switch state {
         case .connected, .connecting: return
         default: connect()
+        }
+    }
+
+    /// 回到前台：旧连接可能已经被系统断掉，马上确认一下，断了就立刻重连（不等退避）
+    func wake() {
+        guard !DemoMode.isOn else { return }
+        switch state {
+        case .connected:
+            guard let task else { return }
+            task.sendPing { [weak self] error in
+                guard error != nil else { return }
+                Task { @MainActor in self?.fail(task, reason: "连接中断") }
+            }
+        case .connecting:
+            return
+        default:
+            retryDelay = 2
+            candidateIndex = 0
+            connect()
         }
     }
 
@@ -228,7 +250,13 @@ final class RelayClient {
         pingTask?.cancel()
         failed.cancel(with: .goingAway, reason: nil)
         state = .failed(reason)
-        failStreams(RelayError.unreachable)
+        // 正在进行的回复先不判失败：电脑上还在继续生成，重新连上后会接着收。90 秒还连不上才算失败。
+        orphanTimeout?.cancel()
+        orphanTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(90))
+            guard !Task.isCancelled, let self, self.state != .connected else { return }
+            self.failStreams(RelayError.unreachable)
+        }
         waiters.forEach { $0.resume(throwing: RelayError.unreachable) }
         waiters = []
         // 配对码错误时不自动重连
@@ -252,6 +280,15 @@ final class RelayClient {
     private func failStreams(_ error: Error) {
         streams.values.forEach { $0.finish(throwing: error) }
         streams = [:]
+        received = [:]
+    }
+
+    /// 只接受比已收到的更新的片段（重连补发时去重）
+    private func accept(_ id: String, _ obj: [String: Any]) -> Bool {
+        guard let seq = obj["seq"] as? Int else { return true }
+        if seq <= received[id, default: 0] { return false }
+        received[id] = seq
+        return true
     }
 
     private func handle(_ text: String) {
@@ -265,17 +302,24 @@ final class RelayClient {
             if state != .connected {
                 state = .connected
                 retryDelay = 2
+                orphanTimeout?.cancel()
                 waiters.forEach { $0.resume() }
                 waiters = []
                 startPing()
+                // 断线前没收完的回复，接着收
+                for streamID in streams.keys {
+                    sendJSON(["type": "resume", "id": streamID, "from": received[streamID, default: 0]])
+                }
             }
         case "text":
-            streams[id]?.yield(.text(obj["text"] as? String ?? ""))
+            if accept(id, obj) { streams[id]?.yield(.text(obj["text"] as? String ?? "")) }
         case "reasoning":
-            streams[id]?.yield(.reasoning(obj["text"] as? String ?? ""))
+            if accept(id, obj) { streams[id]?.yield(.reasoning(obj["text"] as? String ?? "")) }
         case "done":
+            received.removeValue(forKey: id)
             streams.removeValue(forKey: id)?.finish()
         case "error":
+            received.removeValue(forKey: id)
             streams.removeValue(forKey: id)?.finish(throwing: RelayError.server(obj["message"] as? String ?? "出错了"))
         default:
             break

@@ -14,15 +14,14 @@ struct SettingsView: View {
     @AppStorage(Prefs.quietStart) private var quietStart = 23
     @AppStorage(Prefs.quietEnd) private var quietEnd = 8
     @AppStorage(Prefs.appearance) private var appearance = 0
-    @AppStorage(Prefs.wallpaper) private var wallpaper = 0
     @AppStorage(Prefs.defaultClaudeModel) private var claudeModel = ""
     @AppStorage(Prefs.defaultCodexModel) private var codexModel = ""
     @AppStorage(Prefs.defaultClaudeEffort) private var claudeEffort = ""
     @AppStorage(Prefs.defaultCodexEffort) private var codexEffort = ""
+    @AppStorage(MyAvatarStore.stampKey) private var avatarStamp = 0.0
+    @State private var avatarItem: PhotosPickerItem?
     @State private var showModels = false
     @State private var showQuiet = false
-    @State private var wallpaperItem: PhotosPickerItem?
-    @State private var wallpaperVersion = 0
 
     var body: some View {
         ScrollView {
@@ -56,13 +55,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(PressableRowStyle())
                     Hairline()
-                    SettingRow(title: "你的称呼") {
-                        TextField("怎么称呼你", text: $nickname)
-                            .multilineTextAlignment(.trailing)
-                            .font(.system(size: 15))
-                            .foregroundStyle(Palette.ink2)
-                            .frame(maxWidth: 160)
-                    }
+                    meRow
                     Hairline()
                     SettingRow(title: "显示思考过程") { InkToggle(isOn: $showReasoning, label: "显示思考过程") }
                 }
@@ -89,26 +82,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: Space.section) {
                         Segmented(items: Appearance.allCases.map { ($0.rawValue, $0.label) }, selection: $appearance)
                         Text("聊天背景").font(.system(size: 14)).foregroundStyle(Palette.ink)
-                        HStack(spacing: 10) {
-                            ForEach(0..<3, id: \.self) { i in
-                                wallpaperSwatch(index: i, label: ChatWallpaper.swatches[i].0) {
-                                    ChatWallpaper.swatches[i].1
-                                }
-                            }
-                            PhotosPicker(selection: $wallpaperItem, matching: .images) {
-                                swatchBody(index: 3, label: "自定义照片") {
-                                    if wallpaper == 3, let image = WallpaperStore.image {
-                                        Image(uiImage: image).resizable().scaledToFill().id(wallpaperVersion)
-                                    } else {
-                                        ZStack {
-                                            Palette.paper
-                                            Image(systemName: "photo").font(.system(size: 17)).foregroundStyle(Palette.inkSoft)
-                                        }
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        WallpaperPicker(owner: nil)
                     }
                     .padding(Space.card)
                 }
@@ -133,15 +107,13 @@ struct SettingsView: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
-        .onChange(of: wallpaperItem) { _, item in
+        .onChange(of: avatarItem) { _, item in
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    WallpaperStore.save(data)
-                    wallpaper = 3
-                    wallpaperVersion += 1
+                    withAnimation(Motion.spring) { MyAvatarStore.save(data) }
                 }
-                wallpaperItem = nil
+                avatarItem = nil
             }
         }
         .onChange(of: todoReminders) { _, _ in resyncTodos() }
@@ -153,6 +125,43 @@ struct SettingsView: View {
     }
 
     @Environment(\.modelContext) private var context
+
+    /// 自己：头像（点一下从相册换，长按可恢复成文字头像）+ 称呼
+    private var meRow: some View {
+        HStack(spacing: Space.item) {
+            PhotosPicker(selection: $avatarItem, matching: .images) {
+                UserAvatar(size: 40)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Palette.inkInverse)
+                            .frame(width: 17, height: 17)
+                            .background(Palette.ink, in: Circle())
+                            .overlay(Circle().strokeBorder(Palette.card, lineWidth: 1.5))
+                            .offset(x: 3, y: 3)
+                    }
+            }
+            .buttonStyle(ScaleButtonStyle())
+            .accessibilityLabel("更换我的头像")
+            .contextMenu {
+                if MyAvatarStore.image != nil {
+                    Button(role: .destructive) { withAnimation(Motion.spring) { MyAvatarStore.clear() } } label: {
+                        Label("移除头像", systemImage: "trash")
+                    }
+                }
+            }
+            .id(avatarStamp)
+            Text("我").font(.system(size: 16)).foregroundStyle(Palette.ink)
+            Spacer()
+            TextField("怎么称呼你", text: $nickname)
+                .multilineTextAlignment(.trailing)
+                .font(.system(size: 15))
+                .foregroundStyle(Palette.ink2)
+                .frame(maxWidth: 160)
+        }
+        .padding(.horizontal, Space.card)
+        .frame(height: Space.rowTall)
+    }
 
     private func resyncTodos() {
         let all = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
@@ -210,28 +219,11 @@ struct SettingsView: View {
             }
             Spacer()
             StatusDot(ok: s?.installed == true && relay.isConnected)
+            // 占住箭头的位置，和上面「电脑中继」的点对齐成一列
+            Chevron().hidden()
         }
         .padding(.horizontal, Space.card)
         .frame(height: Space.rowTall)
-    }
-
-    private func wallpaperSwatch<C: View>(index: Int, label: String, @ViewBuilder fill: () -> C) -> some View {
-        Button { wallpaper = index } label: { swatchBody(index: index, label: label, fill: fill) }
-            .buttonStyle(.plain)
-    }
-
-    private func swatchBody<C: View>(index: Int, label: String, @ViewBuilder fill: () -> C) -> some View {
-        VStack(spacing: 6) {
-            fill()
-                .frame(height: 64)
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                    .strokeBorder(wallpaper == index ? Palette.ink : Palette.hairline, lineWidth: wallpaper == index ? 2 : 0.5))
-            Text(label).font(.system(size: 12)).foregroundStyle(Palette.inkSoft).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .sensoryFeedback(.selection, trigger: wallpaper)
     }
 
     static func short(_ model: String) -> String {

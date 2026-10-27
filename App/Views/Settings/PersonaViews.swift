@@ -174,6 +174,7 @@ struct PersonaEditor: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var confirmDelete = false
     @State private var confirmClear = false
+    @State private var chatID: UUID?
 
     var body: some View {
         ScrollView {
@@ -243,6 +244,15 @@ struct PersonaEditor: View {
 
                 preview
 
+                if let chatID {
+                    VStack(alignment: .leading, spacing: Space.tight) {
+                        SectionLabel(text: "聊天背景")
+                        WallpaperPicker(owner: chatID)
+                            .padding(Space.card)
+                            .card()
+                    }
+                }
+
                 VStack(spacing: 0) {
                     Button { confirmClear = true } label: {
                         SettingRow(title: "清空聊天记录") { EmptyView() }
@@ -283,6 +293,7 @@ struct PersonaEditor: View {
                 photoItem = nil
             }
         }
+        .onAppear { chatID = context.chat(for: persona).id }
         .onDisappear {
             if persona.name.trimmed.isEmpty { persona.name = "未命名" }
             try? context.save()

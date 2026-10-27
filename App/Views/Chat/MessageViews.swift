@@ -110,6 +110,7 @@ struct MessageRow: View {
                         .rotationEffect(.degrees(reasoningOpen ? 180 : 0))
                 }
             }
+            .photoChip()
             .padding(.leading, 2)
         }
         .buttonStyle(.plain)

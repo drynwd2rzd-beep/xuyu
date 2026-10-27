@@ -43,7 +43,7 @@ struct XuyuApp: App {
         .onChange(of: scenePhase) { _, phase in
             guard !DemoMode.isOn else { return }
             if phase == .active {
-                relay.connectIfConfigured()
+                relay.wake()
                 Task { await Companion.refresh(context: container.mainContext, relay: relay) }
             }
         }

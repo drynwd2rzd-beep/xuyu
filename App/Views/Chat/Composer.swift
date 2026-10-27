@@ -54,11 +54,7 @@ struct Composer: View {
         .padding(.horizontal, Space.item)
         .padding(.top, 6)
         .padding(.bottom, Space.tight)
-        .background {
-            LinearGradient(stops: [.init(color: Palette.paper.opacity(0), location: 0), .init(color: Palette.paper, location: 0.35)],
-                           startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea(edges: .bottom)
-        }
+        .background { FooterFade() }
         .animation(Motion.spring, value: panel)
         .animation(Motion.spring, value: mentionOpen)
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)

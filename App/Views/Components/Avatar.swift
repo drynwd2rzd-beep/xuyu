@@ -58,15 +58,60 @@ struct InitialAvatar: View {
 }
 
 /// 用户自己的头像：称呼的第一个字
+/// 自己的头像照片，存在 App 自己的目录里
+enum MyAvatarStore {
+    static let stampKey = "myAvatarStamp"
+
+    private static var url: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("me.jpg")
+    }
+
+    private static var cache: UIImage?
+    private static var loaded = false
+
+    static var image: UIImage? {
+        if !loaded {
+            loaded = true
+            cache = (try? Data(contentsOf: url)).flatMap { UIImage(data: $0) }
+        }
+        return cache
+    }
+
+    static func save(_ data: Data) {
+        guard let jpeg = ImageUtil.downscale(data, maxSide: 400) else { return }
+        try? jpeg.write(to: url, options: .atomic)
+        cache = UIImage(data: jpeg)
+        loaded = true
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
+    }
+
+    static func clear() {
+        try? FileManager.default.removeItem(at: url)
+        cache = nil
+        loaded = true
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
+    }
+}
+
 struct UserAvatar: View {
     var size: CGFloat = 34
     @AppStorage(Prefs.nickname) private var nickname = ""
+    @AppStorage(MyAvatarStore.stampKey) private var stamp = 0.0
 
     var body: some View {
-        InitialAvatar(text: nickname.trimmed.first.map(String.init) ?? "我", tint: 0xE7E3DA, size: size)
-            .frame(width: size, height: size)
-            .clipShape(Circle())
-            .overlay(Circle().strokeBorder(Palette.card, lineWidth: 1.5))
+        Group {
+            if let image = MyAvatarStore.image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                InitialAvatar(text: nickname.trimmed.first.map(String.init) ?? "我", tint: 0xE7E3DA, size: size)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().strokeBorder(Palette.card, lineWidth: 1.5))
+        .id(stamp)
     }
 }
 

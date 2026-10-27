@@ -96,7 +96,33 @@ function send(ws, obj) {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
 
-async function handleRun(ws, msg, running) {
+// ---- 回复任务：手机断开也继续跑，结果保留 10 分钟，重新连上后接着收 ----
+const jobs = new Map();
+
+function publish(job, obj) {
+  job.events.push(obj);
+  const seq = job.events.length;
+  for (const ws of job.subscribers) send(ws, { ...obj, seq });
+}
+
+function finishJob(job, obj) {
+  job.final = obj;
+  for (const ws of job.subscribers) send(ws, obj);
+  setTimeout(() => jobs.delete(job.id), 10 * 60 * 1000);
+}
+
+function resumeJob(ws, id, from) {
+  const job = jobs.get(id);
+  if (!job) {
+    send(ws, { type: 'error', id, message: '这条回复已经过期，请重新发送。' });
+    return;
+  }
+  job.subscribers.add(ws);
+  job.events.slice(from).forEach((e, i) => send(ws, { ...e, seq: from + i + 1 }));
+  if (job.final) send(ws, job.final);
+}
+
+async function handleRun(ws, msg) {
   const id = String(msg.id || '');
   const engine = msg.engine === 'codex' ? 'codex' : 'claude';
   const cmd = command(engine);
@@ -104,6 +130,8 @@ async function handleRun(ws, msg, running) {
     send(ws, { type: 'error', id, message: engine === 'codex' ? '电脑上还没有安装 Codex。' : '电脑上还没有安装 Claude Code。' });
     return;
   }
+  const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController() };
+  jobs.set(id, job);
   const saved = saveAttachments(id.replace(/[^\w-]/g, ''), msg.attachments);
   let prompt = String(msg.prompt || '');
   const files = saved.filter((s) => engine === 'claude' || s.kind !== 'image');
@@ -111,8 +139,7 @@ async function handleRun(ws, msg, running) {
     prompt += '\n\n用户附带的文件（可以直接读取）：\n' + files.map((f) => `- ${f.name}: ${f.file}`).join('\n');
   }
 
-  const controller = new AbortController();
-  running.set(id, controller);
+  const controller = job.controller;
   const started = Date.now();
   console.log(`→ ${id.slice(0, 8)} ${engine}${msg.model ? ' ' + msg.model : ''}${msg.effort ? ' · ' + msg.effort : ''}`);
   try {
@@ -127,15 +154,13 @@ async function handleRun(ws, msg, running) {
       images: saved.filter((s) => s.kind === 'image').map((s) => s.file),
       cwd: paths.workspace,
       signal: controller.signal,
-      onEvent: (e) => send(ws, { type: e.type, id, text: e.text }),
+      onEvent: (e) => publish(job, { type: e.type, id, text: e.text }),
     });
-    send(ws, { type: 'done', id });
+    finishJob(job, { type: 'done', id });
     console.log(`✓ ${id.slice(0, 8)} ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } catch (e) {
-    if (!controller.signal.aborted) send(ws, { type: 'error', id, message: e.message });
+    finishJob(job, { type: 'error', id, message: controller.signal.aborted ? '已取消' : e.message });
     console.log(`✗ ${id.slice(0, 8)} ${e.message}`);
-  } finally {
-    running.delete(id);
   }
 }
 
@@ -158,7 +183,6 @@ wss.on('connection', (ws, req) => {
     ws.close(4001, 'bad token');
     return;
   }
-  const running = new Map();
   console.log(`iPhone 已连接（${req.socket.remoteAddress}）`);
 
   ws.on('message', async (raw) => {
@@ -173,10 +197,13 @@ wss.on('connection', (ws, req) => {
         send(ws, { type: 'status', id: msg.id, ...(await status()) });
         break;
       case 'run':
-        handleRun(ws, msg, running);
+        handleRun(ws, msg);
+        break;
+      case 'resume':
+        resumeJob(ws, String(msg.id), Math.max(0, Number(msg.from) || 0));
         break;
       case 'cancel':
-        running.get(String(msg.id))?.abort();
+        jobs.get(String(msg.id))?.controller.abort();
         break;
       case 'ping':
         send(ws, { type: 'pong', id: msg.id });
@@ -184,7 +211,8 @@ wss.on('connection', (ws, req) => {
     }
   });
   ws.on('close', () => {
-    running.forEach((c) => c.abort());
+    // 不取消正在进行的回复，等手机回来继续收
+    for (const job of jobs.values()) job.subscribers.delete(ws);
     console.log('iPhone 已断开');
   });
 });

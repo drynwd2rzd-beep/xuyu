@@ -1,34 +1,61 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import PhotosUI
 
 // MARK: - 聊天背景
 
+/// 聊天背景：全局一张，每个对话也可以单独设一张（owner 为对话 id）
 enum WallpaperStore {
-    static var url: URL {
+    /// 每个对话自己的背景选择；-1 表示跟随全局
+    static func key(_ owner: UUID) -> String { "wallpaper.\(owner.uuidString)" }
+    /// 照片每次更换都会改这个值，让界面重新读图
+    static let stampKey = "wallpaperStamp"
+
+    static func url(_ owner: UUID?) -> URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("wallpaper.jpg")
+        return dir.appendingPathComponent(owner.map { "wallpaper-\($0.uuidString).jpg" } ?? "wallpaper.jpg")
     }
 
-    static func save(_ data: Data) {
+    static func save(_ data: Data, for owner: UUID? = nil) {
         guard let jpeg = ImageUtil.downscale(data, maxSide: 2000, quality: 0.85) else { return }
-        try? jpeg.write(to: url, options: .atomic)
-        cache = nil
+        try? jpeg.write(to: url(owner), options: .atomic)
+        cache[owner] = nil
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
     }
 
-    private static var cache: UIImage?
+    /// 对话被删除时一并清掉
+    static func remove(for owner: UUID) {
+        try? FileManager.default.removeItem(at: url(owner))
+        cache[owner] = nil
+        UserDefaults.standard.removeObject(forKey: key(owner))
+    }
 
-    static var image: UIImage? {
-        if let cache { return cache }
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        cache = UIImage(data: data)
-        return cache
+    /// 对话自己设了背景就用自己的，否则跟随全局
+    static func resolve(for convoID: UUID, global: Int) -> (index: Int, owner: UUID?) {
+        let own = UserDefaults.standard.object(forKey: key(convoID)) as? Int ?? -1
+        return own >= 0 ? (own, convoID) : (global, nil)
+    }
+
+    static func backdrop(index: Int, owner: UUID?) -> Backdrop {
+        if index == 3, image(for: owner) != nil { return .photo }
+        return .color(ChatWallpaper.swatches[min(max(index, 0), 2)].1)
+    }
+
+    private static var cache: [UUID?: UIImage] = [:]
+
+    static func image(for owner: UUID? = nil) -> UIImage? {
+        if let hit = cache[owner] { return hit }
+        guard let data = try? Data(contentsOf: url(owner)), let image = UIImage(data: data) else { return nil }
+        cache[owner] = image
+        return image
     }
 }
 
 struct ChatWallpaper: View {
     let index: Int
+    var owner: UUID? = nil
 
     static let swatches: [(String, Color)] = [
         ("纸白", Palette.paper),
@@ -38,16 +65,115 @@ struct ChatWallpaper: View {
 
     var body: some View {
         Group {
-            if index == 3, let image = WallpaperStore.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .overlay(Palette.paper.opacity(0.18))
+            if index == 3, let image = WallpaperStore.image(for: owner) {
+                Color.clear.overlay {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                }
+                .clipped()
+                .overlay(Palette.paper.opacity(0.18))
             } else {
                 Self.swatches[min(max(index, 0), 2)].1
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+
+/// 背景选择：一排色块 + 自定义照片；owner 不为空时多一个「跟随」
+struct WallpaperPicker: View {
+    let owner: UUID?
+    @AppStorage(WallpaperStore.stampKey) private var stamp = 0.0
+    @AppStorage private var selection: Int
+    @State private var item: PhotosPickerItem?
+
+    init(owner: UUID?) {
+        self.owner = owner
+        if let owner {
+            _selection = AppStorage(wrappedValue: -1, WallpaperStore.key(owner))
+        } else {
+            _selection = AppStorage(wrappedValue: 0, Prefs.wallpaper)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if owner != nil {
+                pick(-1, "跟随") {
+                    ZStack {
+                        Palette.paper
+                        Image(systemName: "circle.lefthalf.filled").font(.system(size: 17)).foregroundStyle(Palette.inkSoft)
+                    }
+                }
+            }
+            ForEach(0..<3, id: \.self) { i in
+                pick(i, ChatWallpaper.swatches[i].0) { ChatWallpaper.swatches[i].1 }
+            }
+            PhotosPicker(selection: $item, matching: .images) {
+                swatch(3, "照片") {
+                    if selection == 3, let image = WallpaperStore.image(for: owner) {
+                        Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill() }.id(stamp)
+                    } else {
+                        ZStack {
+                            Palette.paper
+                            Image(systemName: "photo").font(.system(size: 17)).foregroundStyle(Palette.inkSoft)
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .sensoryFeedback(.selection, trigger: selection)
+        .onChange(of: selection) { _, _ in
+            // 让正在显示的聊天页立刻换上
+            withAnimation(Motion.spring) { stamp = Date.now.timeIntervalSince1970 }
+        }
+        .onChange(of: item) { _, picked in
+            guard let picked else { return }
+            Task {
+                if let data = try? await picked.loadTransferable(type: Data.self) {
+                    WallpaperStore.save(data, for: owner)
+                    withAnimation(Motion.spring) { selection = 3 }
+                }
+                item = nil
+            }
+        }
+    }
+
+    private func pick<C: View>(_ index: Int, _ label: String, @ViewBuilder fill: () -> C) -> some View {
+        Button { withAnimation(Motion.spring) { selection = index } } label: { swatch(index, label, fill: fill) }
+            .buttonStyle(.plain)
+    }
+
+    private func swatch<C: View>(_ index: Int, _ label: String, @ViewBuilder fill: () -> C) -> some View {
+        VStack(spacing: 6) {
+            fill()
+                .frame(height: 64)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                    .strokeBorder(selection == index ? Palette.ink : Palette.hairline, lineWidth: selection == index ? 2 : 0.5))
+            Text(label).font(.system(size: 12)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 删除群聊 / 清空单聊
+enum ConversationRemover {
+    @MainActor
+    static func remove(_ convo: Conversation, context: ModelContext, engine: ChatEngine) {
+        engine.stop(convo)
+        Companion.cancelPlannedMessages(in: convo, context: context)
+        if convo.isGroup {
+            WallpaperStore.remove(for: convo.id)
+            context.delete(convo)
+        } else {
+            for m in convo.messages ?? [] { context.delete(m) }
+        }
+        try? context.save()
     }
 }
 
@@ -152,7 +278,10 @@ struct GroupInfoSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
+    @Environment(Router.self) private var router
+    @Environment(ChatEngine.self) private var engine
     @State private var confirmClear = false
+    @State private var confirmDelete = false
 
     var body: some View {
         NavigationStack {
@@ -190,15 +319,35 @@ struct GroupInfoSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                         .card()
                     }
-                    Button { confirmClear = true } label: {
-                        Text("清空聊天记录")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Palette.danger)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: Space.row)
+                    VStack(alignment: .leading, spacing: Space.tight) {
+                        SectionLabel(text: "聊天背景")
+                        WallpaperPicker(owner: convo.id)
+                            .padding(Space.card)
                             .card()
                     }
-                    .buttonStyle(ScaleButtonStyle())
+                    VStack(spacing: 0) {
+                        Button { confirmClear = true } label: {
+                            Text("清空聊天记录")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Palette.danger)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: Space.row)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressableRowStyle())
+                        Hairline()
+                        Button { confirmDelete = true } label: {
+                            Text("删除群聊")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(Palette.danger)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: Space.row)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressableRowStyle())
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .card()
                 }
                 .padding(Space.page)
             }
@@ -221,6 +370,20 @@ struct GroupInfoSheet: View {
                 }
             } message: {
                 Text("成员会保留，删除后无法恢复。")
+            }
+            .confirmationDialog("删除这个群聊？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("删除", role: .destructive) {
+                    dismiss()
+                    // 先退出聊天页，再删数据，避免页面还在显示已删除的对话
+                    if !router.path.isEmpty { router.path.removeLast() }
+                    let target = convo
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(450))
+                        ConversationRemover.remove(target, context: context, engine: engine)
+                    }
+                }
+            } message: {
+                Text("群聊和里面的记录都会删除，无法恢复。")
             }
         }
     }

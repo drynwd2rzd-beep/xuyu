@@ -9,7 +9,9 @@ struct ChatView: View {
     @Environment(RelayClient.self) private var relay
     @Environment(Router.self) private var router
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
-    @AppStorage(Prefs.wallpaper) private var wallpaper = 0
+    @Environment(\.colorScheme) private var systemScheme
+    @AppStorage(Prefs.wallpaper) private var globalWallpaper = 0
+    @AppStorage(WallpaperStore.stampKey) private var wallpaperStamp = 0.0
 
     @State private var draft = ""
     @State private var selecting = false
@@ -29,9 +31,26 @@ struct ChatView: View {
 
     private var members: [Persona] { convo.memberIDs.compactMap { personaMap[$0] } }
 
+    /// 这个对话实际用的背景（自己设的优先，否则跟随全局）
+    private var wallpaper: (index: Int, owner: UUID?) {
+        _ = wallpaperStamp
+        return WallpaperStore.resolve(for: convo.id, global: globalWallpaper)
+    }
+
     var body: some View {
+        let paper = wallpaper
+        let backdrop = WallpaperStore.backdrop(index: paper.index, owner: paper.owner)
+        content(paper: paper)
+            .environment(\.backdrop, backdrop)
+            // 「夜墨」背景下整页按深色排版，文字和气泡才看得清
+            .environment(\.colorScheme, paper.index == 2 ? .dark : systemScheme)
+    }
+
+    private func content(paper: (index: Int, owner: UUID?)) -> some View {
         ZStack {
-            ChatWallpaper(index: wallpaper)
+            ChatWallpaper(index: paper.index, owner: paper.owner)
+                .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
+                .transition(.opacity)
             // 每分钟刷新一次，让提前排好的主动消息到点出现；判断用的始终是「现在」
             TimelineView(.everyMinute) { _ in
                 messageList(now: .now)
@@ -99,9 +118,9 @@ struct ChatView: View {
             } label: {
                 VStack(spacing: 4) {
                     if convo.isGroup {
-                        StackedAvatars(members: members, size: 34)
+                        StackedAvatars(members: members, size: 40)
                     } else {
-                        AvatarView(persona: members.first, size: 46)
+                        AvatarView(persona: members.first, size: 56)
                             .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
                     }
                     Text(convo.displayTitle(members)).font(Typo.serif(15, .medium)).foregroundStyle(Palette.ink)
@@ -145,6 +164,7 @@ struct ChatView: View {
                         Button("查看更早的消息") { visibleLimit += 120 }
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.inkSoft)
+                            .photoChip()
                             .padding(.vertical, Space.item)
                     }
                     ForEach(rows) { row in
@@ -153,6 +173,7 @@ struct ChatView: View {
                             Text(date.separatorStamp)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Palette.inkSoft)
+                                .photoChip()
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, Space.item)
                         case .message(let m, let first):
