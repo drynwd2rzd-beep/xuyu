@@ -320,7 +320,7 @@ struct TimedText: View {
     var read = false
 
     var body: some View {
-        (Text(text) + Text("  " + time + (read ? "   " : "")).font(Self.stampFont).foregroundColor(.clear))
+        (Text(text) + reserve)
             .font(.system(size: fontSize))
             .lineSpacing(3)
             .foregroundStyle(Palette.ink)
@@ -334,6 +334,17 @@ struct TimedText: View {
                 .animation(Motion.spring, value: read)
             }
             .textSelection(.disabled)
+    }
+
+    /// 末行留给时间和已读勾的透明占位：用同样的字和勾图标排出来，宽度和右下角真正显示的一样，文字不会压到时间上。
+    /// 用不换行空格，时间不会被拆到两行
+    private var reserve: Text {
+        var stamp = Text("\u{00A0}\u{00A0}" + time.replacingOccurrences(of: " ", with: "\u{00A0}")).font(Self.stampFont)
+        if read {
+            let tick = Text(Image(systemName: "checkmark")).font(.system(size: 8, weight: .bold))
+            stamp = stamp + Text("\u{00A0}") + tick + tick
+        }
+        return stamp.foregroundColor(.clear)
     }
 
     /// 气泡里的时间：小一点、数字等宽、颜色淡一点，更精致

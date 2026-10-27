@@ -94,7 +94,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        // 正开着这个聊天：消息直接出现在聊天里，不再弹通知
+        let target = notification.request.content.userInfo["conversation"] as? String
+        let open = await MainActor.run { AppDelegate.router?.openConversation?.uuidString }
+        if let target, target == open { return [] }
+        return [.banner, .sound]
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

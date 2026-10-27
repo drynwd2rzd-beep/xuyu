@@ -48,17 +48,30 @@ final class ChatEngine {
 
     // MARK: - 发送
 
+    /// 你说了一次话。照片和文件一起发时分成两条（照片带着文字一条、文件一条），但只算一次，按这句话决定谁来回
     func send(_ text: String, kind: MessageKind = .text, attachments: [OutgoingAttachment] = [], quote: String = "", quoteID: UUID? = nil,
               in convo: Conversation, members: [Persona], context: ModelContext) {
-        let message = Message(role: .user, kind: kind, content: text)
-        message.quote = quote
-        message.quoteID = quoteID
-        message.conversation = convo
-        context.insert(message)
-        for (index, item) in attachments.enumerated() {
-            let a = Attachment(kind: item.kind, fileName: item.name, data: item.data, order: index)
-            a.message = message
-            context.insert(a)
+        let images = attachments.filter { $0.kind == "image" }
+        let files = attachments.filter { $0.kind != "image" }
+        let parts: [(kind: MessageKind, text: String, items: [OutgoingAttachment])] =
+            kind != .sticker && !images.isEmpty && !files.isEmpty
+                ? [(.images, text, images), (.file, "", files)]
+                : [(kind, text, attachments)]
+        let now = Date.now
+        for (index, part) in parts.enumerated() {
+            let message = Message(role: .user, kind: part.kind, content: part.text)
+            message.createdAt = now.addingTimeInterval(Double(index) * 0.00001)
+            if index == 0 {
+                message.quote = quote
+                message.quoteID = quoteID
+            }
+            message.conversation = convo
+            context.insert(message)
+            for (order, item) in part.items.enumerated() {
+                let a = Attachment(kind: item.kind, fileName: item.name, data: item.data, order: order)
+                a.message = message
+                context.insert(a)
+            }
         }
         convo.updatedAt = .now
         convo.lastReadAt = .now
@@ -66,19 +79,30 @@ final class ChatEngine {
         try? context.save()
         let responders = Self.responders(for: text, convo: convo, members: members)
         if busy.contains(convo.id) {
-            // 像真人聊天一样可以连着发：对方还没开口就重新想；已经在说了，就说完这句再接着回
-            pending[convo.id] = responders
-            if !speaking.contains(convo.id) { tasks[convo.id]?.cancel() }
+            // 像真人聊天一样可以连着发：对方还没开口就重新想；已经在说了，就说完这句再接着回。
+            // 连着 @ 了不同的人，这些人都要回
+            pending[convo.id] = Self.merge(pending[convo.id] ?? [], responders)
+            if speaking.contains(convo.id) {
+                // TA 正在打的下一条还没显示出来：挪到你这句下面
+                for m in convo.messages ?? [] where m.status == .streaming && buffers[m.id]?.hold == true {
+                    m.createdAt = .now
+                }
+            } else {
+                tasks[convo.id]?.cancel()
+            }
             return
         }
         run(responders, in: convo, members: members, context: context, react: true)
     }
 
-    /// 你撤回或编辑了消息：TA 还没开口就重新看一遍再回；已经在说了就算了
+    /// 你撤回或编辑了消息：TA 还没开口就重新看一遍再回；已经在说了就算了。
+    /// 你在 TA 上次说话后发的都撤回了，TA 就不用回了
     func reconsider(_ convo: Conversation, members: [Persona], context: ModelContext) {
         guard busy.contains(convo.id), !speaking.contains(convo.id) else { return }
-        let last = convo.visibleMessages().last { $0.role == .user && !$0.recalled }
-        pending[convo.id] = Self.responders(for: last?.content ?? "", convo: convo, members: members)
+        let said = convo.visibleMessages().filter { $0.status != .streaming }
+        let unanswered = said.reversed().prefix { $0.role == .user }.filter { !$0.recalled }
+        guard !unanswered.isEmpty else { return stop(convo) }
+        pending[convo.id] = Self.responders(for: unanswered.map(\.content).joined(separator: "\n"), convo: convo, members: members)
         tasks[convo.id]?.cancel()
     }
 
@@ -113,6 +137,11 @@ final class ChatEngine {
         if text.contains("@所有人") { return members }
         let mentioned = members.filter { text.contains("@\($0.name)") }
         return mentioned.isEmpty ? members : mentioned
+    }
+
+    /// 合并两批要回复的人，去掉重复，保持先后顺序
+    static func merge(_ a: [Persona], _ b: [Persona]) -> [Persona] {
+        a + b.filter { p in !a.contains { $0.id == p.id } }
     }
 
     private func run(_ responders: [Persona], in convo: Conversation, members: [Persona], context: ModelContext,
@@ -176,6 +205,8 @@ final class ChatEngine {
     private func newBubble(_ persona: Persona, in convo: Conversation, context: ModelContext, label: String,
                            relayID: String) -> (Message, StreamBuffer) {
         let message = Message(role: .assistant, content: "", personaID: persona.id)
+        // 排在已经出现的消息后面（比如上一段刚带出的表情）
+        if let latest = convo.lastVisible()?.createdAt { message.createdAt = max(.now, latest.addingTimeInterval(0.00001)) }
         message.status = .streaming
         message.modelLabel = label
         message.relayID = relayID
@@ -227,6 +258,8 @@ final class ChatEngine {
                 // 带格式或特别长的一段：是认真的回答，整段放一条，不拆
                 if Self.looksRich(head) || head.count > 140 { becomeRich(); return }
                 await pace(for: head)
+                // 藏着打字的这条，以真正冒出来的时刻为准
+                message.createdAt = max(.now, message.createdAt)
                 let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
                 buffers[message.id] = nil
                 if cleaned.isEmpty {
@@ -256,6 +289,8 @@ final class ChatEngine {
                 case .text(let s): pendingText += s
                 case .reasoning(let s): pendingReasoning += s
                 case .step(let s):
+                    // 已经开始操作电脑了：你再插话也不打断重来，免得同样的操作做两遍
+                    speaking.insert(convo.id)
                     buffer.steps.append(s)
                     message.steps = buffer.steps.joined(separator: "\n")
                 case .file(let name, let data):
@@ -282,6 +317,7 @@ final class ChatEngine {
             if buffer.text.trimmed.isEmpty && sent.isEmpty && !Task.isCancelled { throw RelayError.server("没有收到回复。") }
             // 最后一条也按打字节奏出现
             if !rich && !buffer.text.trimmed.isEmpty { await pace(for: buffer.text) }
+            if buffer.hold { message.createdAt = max(.now, message.createdAt) }
             buffer.hold = false
             message.status = .done
         } catch {
@@ -344,7 +380,7 @@ final class ChatEngine {
             // 图片表情：单独一条表情消息，跟在这条后面；找不到这个分类就不发
             if let pick = stickers.randomElement() {
                 let sticker = Message(role: .assistant, kind: .sticker, content: "", personaID: persona.id)
-                sticker.createdAt = .now.addingTimeInterval(0.001)
+                sticker.createdAt = max(.now, message.createdAt).addingTimeInterval(0.00001)
                 sticker.conversation = convo
                 context.insert(sticker)
                 let a = Attachment(kind: "image", fileName: "sticker.png", data: pick.data, order: 0)
@@ -567,10 +603,11 @@ enum PromptBuilder {
         let shared = sharedMemory.isEmpty ? "" : "\(sharedMemory)\n\n"
         // 感知聊天间隔：隔了很久你再来找 TA，TA 会自然地说「好久没聊了」
         var gapLine = ""
+        // 你连着发了几条：从这几条的第一条往前算，才是真正隔了多久
         let visible = history.filter { $0.status != .error && !$0.recalled }
-        if let latest = visible.last, latest.role == .user,
-           let previous = visible.dropLast().last(where: { $0.createdAt < latest.createdAt.addingTimeInterval(-1) }) {
-            let gap = latest.createdAt.timeIntervalSince(previous.createdAt)
+        let streak = visible.reversed().prefix { $0.role == .user }
+        if let first = streak.last, let previous = visible.last(where: { $0.role != .user && $0.createdAt < first.createdAt }) {
+            let gap = first.createdAt.timeIntervalSince(previous.createdAt)
             if gap >= 3 * 86400 {
                 gapLine = "（距离你们上一次聊天已经过去了\(Fmt.duration(gap))，可以自然地表现出好久没聊了。）"
             } else if gap >= 12 * 3600 {
@@ -589,8 +626,8 @@ enum PromptBuilder {
 
         现在是 \(Fmt.time24.string(from: .now))。\(gapLine)\(ask)直接输出要说的话，不要加名字或时间。
         """
-        // 最后一次 AI 回复之后用户发的附件
-        let lastAI = history.lastIndex { $0.role == .assistant } ?? -1
+        // 这位角色上次说话之后你发的附件（群聊里别人先回了，这位也要看到你的图）
+        let lastAI = history.lastIndex { $0.role == .assistant && $0.personaID == persona.id } ?? -1
         var attachments: [RelayAttachment] = []
         for m in history.suffix(from: lastAI + 1) where m.role == .user {
             for a in m.sortedAttachments {

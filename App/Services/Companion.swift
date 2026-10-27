@@ -47,18 +47,26 @@ enum Companion {
         }
     }
 
+    /// 切到后台和定时刷新可能同时触发：同一时间只准备一次，避免追问两遍
+    private static var followingUp = false
+
     /// 最后一条是 TA 发的、你一直没回：过一阵子 TA 会来问你怎么不回了，或者接着刚才的话题。每段话题只追问一次
     static func followUps(context: ModelContext, relay: RelayClient, personas: [Persona]) async {
-        guard !DemoMode.isOn, relay.isConnected else { return }
+        guard !DemoMode.isOn, relay.isConnected, !followingUp else { return }
+        followingUp = true
+        defer { followingUp = false }
         let now = Date.now
         for persona in personas where persona.followUp > 0 {
             let convo = context.chat(for: persona)
             let visible = convo.visibleMessages(at: now)
             guard let last = visible.last, last.role == .assistant, last.status == .done, !last.isProactive,
                   now.timeIntervalSince(last.createdAt) < 12 * 3600 else { continue }
-            let planned = (convo.messages ?? []).contains { $0.isProactive && $0.createdAt > now }
-            guard !planned else { continue }
-            var deliver = last.createdAt.addingTimeInterval(Double.random(in: followUpRange(persona.followUp)))
+            let range = followUpRange(persona.followUp)
+            // 这段话题的追问时间附近已经排了消息（上次准备好的追问）就不再排；
+            // 更远的主动消息（比如明天的）不算，不然开了「主动找我聊天」就永远等不到追问
+            let horizon = max(last.createdAt.addingTimeInterval(range.upperBound), now).addingTimeInterval(3600)
+            guard !convo.plannedMessages(after: now).contains(where: { $0.createdAt <= horizon }) else { continue }
+            var deliver = last.createdAt.addingTimeInterval(Double.random(in: range))
             // 已经过了该追问的时间（比如刚打开 App）：过两三分钟再来
             if deliver < now.addingTimeInterval(90) { deliver = now.addingTimeInterval(Double.random(in: 120...300)) }
             guard !Prefs.isQuiet(deliver) else { continue }
@@ -75,6 +83,11 @@ enum Companion {
             guard let text = try? await relay.complete(request(persona, prompt)), !text.trimmed.isEmpty else { continue }
             // 生成的这段时间里你回了消息：就不用追问了
             guard convo.visibleMessages().last?.id == last.id else { continue }
+            // 之后排好的主动消息是在不知道这条追问时写的，撤掉，等追问送达后再重新安排
+            for later in convo.plannedMessages(after: deliver) {
+                Reminders.cancelProactive(messageID: later.id)
+                context.delete(later)
+            }
             let message = Message(role: .assistant, content: text.trimmed, personaID: persona.id)
             message.isProactive = true
             message.createdAt = deliver
@@ -236,8 +249,7 @@ enum Companion {
         let habits = activeHours(context: context)
         for persona in personas where persona.proactive {
             let convo = context.chat(for: persona)
-            let planned = (convo.messages ?? []).contains { $0.isProactive && $0.createdAt > now }
-            guard !planned else { continue }
+            guard convo.plannedMessages(after: now).isEmpty else { continue }
             let deliver = nextSlot(after: now, frequency: persona.proactiveFreq, habits: habits)
             let history = convo.visibleMessages(at: now)
             let names = [persona.id: persona.name]
@@ -308,8 +320,7 @@ enum Companion {
 
     /// 用户先说话了，就撤掉还没送达的主动消息
     static func cancelPlannedMessages(in convo: Conversation, context: ModelContext) {
-        let now = Date.now
-        for m in convo.messages ?? [] where m.isProactive && m.createdAt > now {
+        for m in convo.plannedMessages() {
             Reminders.cancelProactive(messageID: m.id)
             context.delete(m)
         }

@@ -408,13 +408,16 @@ struct ChatView: View {
             },
             selectText: { text in selectableText = SelectableTextItem(text: text) },
             edit: { m in
-                // 编辑：把原话放回输入框，原消息去掉，改好再发
+                // 编辑：把原话（连同引用）放回输入框，原消息去掉，改好再发
+                quotingID = m.quoteID
                 withAnimation(Motion.spring) {
                     draft = m.content
+                    quoting = m.quote.isEmpty ? nil : m.quote
                     context.delete(m)
                 }
                 try? context.save()
                 engine.reconsider(convo, members: members, context: context)
+                inputFocused = true
                 pinBottom += 1
             }
         )

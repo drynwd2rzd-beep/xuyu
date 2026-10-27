@@ -31,11 +31,13 @@ jobs:
           P12_BASE64: ${{ secrets.P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           PROFILE_BASE64: ${{ secrets.PROFILE_BASE64 }}
+          ARTIFACT_KEY: ${{ secrets.ARTIFACT_KEY }}
         run: bash scripts/build-ipa.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Xuyu-ipa
-          path: dist/**/*.ipa
+          path: dist/**/*.ipa.enc
+          if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         if: failure()

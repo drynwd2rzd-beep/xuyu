@@ -77,6 +77,11 @@ final class Conversation {
         (messages ?? []).filter { $0.createdAt <= now }.sorted { $0.createdAt < $1.createdAt }
     }
 
+    /// 提前生成好、还没到点的主动消息和追问
+    func plannedMessages(after now: Date = .now) -> [Message] {
+        (messages ?? []).filter { $0.isProactive && $0.createdAt > now }
+    }
+
     func lastVisible(at now: Date = .now) -> Message? {
         (messages ?? []).filter { $0.createdAt <= now }.max { $0.createdAt < $1.createdAt }
     }

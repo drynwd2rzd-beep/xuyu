@@ -69,6 +69,8 @@ struct Composer: View {
         .animation(Motion.spring, value: mentionOpen)
         .animation(Motion.spring, value: staged.count)
         .onChange(of: quote) { _, q in if q != nil { focused = true } }
+        // 聊天页要求弹出键盘（比如编辑消息）
+        .onChange(of: inputFocused) { _, f in if f != focused { focused = f } }
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
         .onChange(of: focused) { _, f in
             inputFocused = f
@@ -362,12 +364,11 @@ struct Composer: View {
             onSend(text, .text, [])
             return
         }
-        // 照片和文件可以和文字一起发：有照片时文字跟着照片，只有文件时文字跟着文件
-        let images = staged.filter { $0.kind == "image" }
-        let files = staged.filter { $0.kind != "image" }
+        // 照片和文件可以和文字一起发，一次发出（照片、文件都有时会自动分成两条）
+        let hasImages = staged.contains { $0.kind == "image" }
+        let items = staged
         withAnimation(Motion.spring) { staged = [] }
-        if !images.isEmpty { onSend(text, .images, images) }
-        if !files.isEmpty { onSend(images.isEmpty ? text : "", .file, files) }
+        onSend(text, hasImages ? .images : .file, items)
     }
 
     /// 选好的照片先放进待发区，收起面板、弹出键盘，方便再配一句话

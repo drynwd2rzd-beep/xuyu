@@ -36,4 +36,21 @@ if [ -n "${P12_BASE64:-}" ] && [ -n "${PROFILE_BASE64:-}" ]; then
   cp -R "$APP" dist/signed/Payload/
   (cd dist/signed && zip -qry Xuyu.ipa Payload && rm -rf Payload)
 fi
+
+# 3. 加密：仓库是公开的，构建产物任何 GitHub 用户都能下载。
+#    用只有这台电脑和 GitHub 加密密钥里才有的钥匙加密，别人下到的只是乱码
+if [ -n "${ARTIFACT_KEY:-}" ]; then
+  OPENSSL=openssl
+  if command -v brew >/dev/null && [ -x "$(brew --prefix openssl@3 2>/dev/null)/bin/openssl" ]; then
+    OPENSSL="$(brew --prefix openssl@3)/bin/openssl"
+  fi
+  find dist -name "*.ipa" | while read -r f; do
+    "$OPENSSL" enc -aes-256-cbc -md sha256 -pbkdf2 -iter 200000 -salt -in "$f" -out "$f.enc" -pass env:ARTIFACT_KEY
+    rm -f "$f"
+  done
+else
+  echo "没有设置 ARTIFACT_KEY，不上传 IPA（避免公开）"
+  rm -rf dist
+  mkdir -p dist
+fi
 ls -lhR dist
