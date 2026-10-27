@@ -29,6 +29,8 @@ struct RelayStatus: Decodable, Equatable {
     var codex: EngineStatus
     var models: Models
     var catalog: Catalog?
+    /// 电脑开机时是否自动启动中继
+    var autostart: Bool?
 
     func catalog(for engine: Engine) -> [ModelInfo] {
         if let catalog { return engine == .claude ? catalog.claude : catalog.codex }
@@ -421,6 +423,11 @@ final class RelayClient {
 
     func refreshStatus() {
         sendJSON(["type": "status", "id": UUID().uuidString])
+    }
+
+    /// 让电脑开机时自动启动（或不再自动启动）中继；电脑回复新的状态
+    func setAutostart(_ on: Bool) {
+        sendJSON(["type": "autostart", "id": UUID().uuidString, "on": on])
     }
 
     private func waitUntilConnected() async throws {

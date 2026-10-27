@@ -48,6 +48,14 @@ struct ConnectionView: View {
                     .card()
                     .transition(.opacity)
 
+                    SettingRow(title: "开机自动启动中继", subtitle: "电脑开机后自动在后台打开中继，不用每次去点桌面图标") {
+                        InkToggle(isOn: Binding(get: { relay.status?.autostart ?? false },
+                                                set: { relay.setAutostart($0) }),
+                                  label: "开机自动启动中继")
+                    }
+                    .card()
+                    .transition(.opacity)
+
                     Button(action: test) {
                         HStack {
                             Text(testing ? "正在问 Claude…" : "发一句话试试")

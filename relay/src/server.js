@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { loadConfig, saveConfig, paths, workPaths } from './config.js';
 import { resolveCommand } from './resolve.js';
@@ -102,11 +103,42 @@ function refreshStatus() {
 
 // 有旧结果就立刻返回，过期了在后台刷新；手机连上时不用等 CLI 查版本（出门线路延迟高，等不起）
 async function status() {
-  if (statusCache.value) {
+  let value = statusCache.value;
+  if (value) {
     if (Date.now() - statusCache.at > 60_000) refreshStatus().catch(() => {});
-    return statusCache.value;
+  } else {
+    value = await refreshStatus();
   }
-  return refreshStatus();
+  return { ...value, autostart: autostartEnabled() };
+}
+
+// ---- 开机自动启动：在「启动」文件夹里放一个最小化启动中继的快捷方式 ----
+const relayDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const startupLink = path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', '絮语中继.lnk');
+
+function autostartEnabled() {
+  return fs.existsSync(startupLink);
+}
+
+function setAutostart(on) {
+  return new Promise((resolve) => {
+    if (!on) {
+      fs.rm(startupLink, { force: true }, () => resolve());
+      return;
+    }
+    const bat = path.join(relayDir, 'start-relay.bat');
+    const ico = path.join(relayDir, 'xuyu.ico');
+    const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+    const script = [
+      '$s = (New-Object -ComObject WScript.Shell).CreateShortcut(' + q(startupLink) + ')',
+      `$s.TargetPath = ${q(bat)}`,
+      `$s.WorkingDirectory = ${q(relayDir)}`,
+      fs.existsSync(ico) ? `$s.IconLocation = ${q(ico + ',0')}` : '',
+      '$s.WindowStyle = 7',
+      '$s.Save()',
+    ].filter(Boolean).join('; ');
+    execFile('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true }, () => resolve());
+  });
 }
 
 // ---- 附件：聊天时存到 uploads，10 分钟后删除；工作模式存进工作文件夹的「收到的文件」，一直保留 ----
@@ -306,6 +338,11 @@ wss.on('connection', (ws, req) => {
       case 'resume':
         resumeJob(ws, String(msg.id), Math.max(0, Number(msg.from) || 0));
         break;
+      case 'autostart':
+        await setAutostart(msg.on === true);
+        console.log(msg.on === true ? '已设置开机自动启动' : '已取消开机自动启动');
+        send(ws, { type: 'status', id: msg.id, ...(await status()) });
+        break;
       case 'cancel':
         jobs.get(String(msg.id))?.controller.abort();
         break;
@@ -358,7 +395,21 @@ function listen(index) {
   };
   const onError = (e) => {
     server.off('listening', onListening);
-    if (e.code === 'EADDRINUSE' || e.code === 'EACCES') {
+    if (e.code === 'EADDRINUSE' && index === 0) {
+      // 端口被占用：先看看是不是絮语中继已经开着了（比如又双击了一次桌面图标）
+      http.get({ host: '127.0.0.1', port, path: '/health', timeout: 1500 }, (res) => {
+        let body = '';
+        res.on('data', (d) => (body += d));
+        res.on('end', () => {
+          if (body.includes('xuyu-relay')) {
+            console.log('絮语中继已经在运行了，不用再开一个。这个窗口可以关掉。');
+            setTimeout(() => process.exit(0), 8000);
+          } else {
+            listen(index + 1);
+          }
+        });
+      }).on('error', () => listen(index + 1));
+    } else if (e.code === 'EADDRINUSE' || e.code === 'EACCES') {
       listen(index + 1);
     } else {
       console.error(e.message);
