@@ -20,6 +20,13 @@ struct AvatarView: View {
         Group {
             if let persona, let data = persona.avatarData, let image = cachedImage(data, key: persona.id.uuidString) {
                 Image(uiImage: image).resizable().scaledToFill()
+            } else if let persona, persona.name == persona.engine.label {
+                // 默认的 Claude / Codex 角色直接用它们的标志做头像
+                ZStack {
+                    Color(hex: UInt32(truncatingIfNeeded: persona.tint))
+                    EngineLogo(engine: persona.engine, size: size * 0.5)
+                        .environment(\.colorScheme, InitialAvatar.isLight(UInt32(truncatingIfNeeded: persona.tint)) ? .light : .dark)
+                }
             } else {
                 InitialAvatar(text: persona?.initial ?? "?", tint: UInt32(truncatingIfNeeded: persona?.tint ?? 0x1E1E1F), size: size)
             }

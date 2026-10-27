@@ -185,8 +185,11 @@ struct SubpageHeader<Trailing: View>: View {
             Spacer()
             Text(title).font(Typo.serif(18, .medium)).foregroundStyle(Palette.ink)
             Spacer()
-            trailing.frame(minWidth: 44, alignment: .trailing)
+            trailing
+                .frame(minWidth: 44, minHeight: 44, maxHeight: 44, alignment: .trailing)
+                .padding(.trailing, 6)
         }
+        .frame(height: 44)
         .padding(.horizontal, Space.tight)
         .padding(.bottom, Space.tight)
         .background {

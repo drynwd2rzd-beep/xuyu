@@ -74,7 +74,8 @@ enum DemoMode {
         case "chat", "group":
             router.tab = .chats
             let all = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
-            if let c = all.first(where: { $0.isGroup == (screen == "group") }) { router.open(.chat(c.id)) }
+            let matching = all.filter { $0.isGroup == (screen == "group") }
+            if let c = matching.max(by: { ($0.messages?.count ?? 0) < ($1.messages?.count ?? 0) }) { router.open(.chat(c.id)) }
         case "persona":
             router.tab = .chats
             if let p = context.allPersonas().first { router.open(.persona(p.id)) }
