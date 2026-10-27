@@ -279,21 +279,35 @@ struct QuoteChip: View {
     var onClose: (() -> Void)? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        // 像 iMessage 的引用回复：左边一条细竖线，旁边浅灰小字，轻轻的不抢眼
+        HStack(alignment: .center, spacing: 8) {
+            Capsule()
+                .fill(Palette.faint.opacity(0.7))
+                .frame(width: 2.5)
             Text(text)
                 .font(.system(size: 12.5))
+                .lineSpacing(2)
                 .foregroundStyle(Palette.inkSoft)
                 .lineLimit(2)
             if let onClose {
+                Spacer(minLength: 0)
                 Button(action: onClose) {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Palette.faint)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Palette.inkSoft)
+                        .frame(width: 20, height: 20)
+                        .background(Palette.fill, in: Circle())
                 }
                 .accessibilityLabel("取消引用")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Palette.fill.opacity(0.85), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.leading, 9)
+        .padding(.trailing, onClose == nil ? 11 : 6)
+        .padding(.vertical, 7)
+        .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
     }
 }
 

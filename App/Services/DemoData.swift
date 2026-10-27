@@ -41,9 +41,13 @@ enum DemoData {
             a.message = photos
             context.insert(a)
         }
-        add(context, chat, .user, "周六拍的，帮我挑一张当壁纸", at: ago(3))
+        let ask = add(context, chat, .user, "周六拍的，帮我挑一张当壁纸", at: ago(3))
         add(context, chat, .assistant, "选第二张。", persona: claude, at: ago(1.2))
-        add(context, chat, .assistant, "银杏的黄和天空的蓝很干净，上方留白正好放时间，主体不会被挡住。", persona: claude, at: ago(1.1))
+        let pick = add(context, chat, .assistant, "银杏的黄和天空的蓝很干净，上方留白正好放时间，主体不会被挡住。", persona: claude, at: ago(1.1))
+        pick.quote = "你：周六拍的，帮我挑一张当壁纸"
+        pick.quoteID = ask.id
+        let thanks = add(context, chat, .user, "那就它了，谢谢你", at: ago(0.6))
+        thanks.quote = "Claude：选第二张。"
 
         let codexChat = Conversation(isGroup: false, memberIDs: [codex.id])
         codexChat.updatedAt = ago(40)
@@ -101,6 +105,11 @@ enum DemoData {
         mine.reply = "整理一半已经很棒啦。明天的你会感谢今天没把自己逼太紧的你，剩下的我们周六下午慢慢弄。"
         mine.replyPersonaID = claude.id
         context.insert(mine)
+
+        // 截图里你发的消息都显示已读
+        for m in (try? context.fetch(FetchDescriptor<Message>())) ?? [] where m.role == .user {
+            m.readAt = m.createdAt.addingTimeInterval(20)
+        }
 
         // 截图用的几张表情包
         for (i, hex) in [0xF2D6A2, 0xC9DDF2, 0xF2C9D4, 0xD4E8C9, 0xE8D4F2, 0xF2E3C9].enumerated() {
