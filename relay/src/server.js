@@ -67,14 +67,29 @@ function codexCatalog() {
   }
 }
 
+let refreshing = null;
+
+function refreshStatus() {
+  if (!refreshing) {
+    refreshing = (async () => {
+      const [claude, codex] = await Promise.all([version('claude'), version('codex')]);
+      const catalog = { claude: claudeCatalog(), codex: codexCatalog() };
+      const models = { claude: catalog.claude.map((m) => m.id), codex: catalog.codex.map((m) => m.id) };
+      const value = { protocol: PROTOCOL, host: os.hostname(), claude, codex, models, catalog };
+      statusCache = { at: Date.now(), value };
+      return value;
+    })().finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+// 有旧结果就立刻返回，过期了在后台刷新；手机连上时不用等 CLI 查版本（出门线路延迟高，等不起）
 async function status() {
-  if (Date.now() - statusCache.at < 60_000 && statusCache.value) return statusCache.value;
-  const [claude, codex] = await Promise.all([version('claude'), version('codex')]);
-  const catalog = { claude: claudeCatalog(), codex: codexCatalog() };
-  const models = { claude: catalog.claude.map((m) => m.id), codex: catalog.codex.map((m) => m.id) };
-  const value = { protocol: PROTOCOL, host: os.hostname(), claude, codex, models, catalog };
-  statusCache = { at: Date.now(), value };
-  return value;
+  if (statusCache.value) {
+    if (Date.now() - statusCache.at > 60_000) refreshStatus().catch(() => {});
+    return statusCache.value;
+  }
+  return refreshStatus();
 }
 
 // ---- 附件：保存到 uploads，10 分钟后删除 ----
@@ -183,7 +198,8 @@ wss.on('connection', (ws, req) => {
     ws.close(4001, 'bad token');
     return;
   }
-  console.log(`iPhone 已连接（${req.socket.remoteAddress}）`);
+  const from = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  console.log(`iPhone 已连接（${from}${from.startsWith('100.') ? '，出门线路' : ''}）`);
 
   ws.on('message', async (raw) => {
     let msg;

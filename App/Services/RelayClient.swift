@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Observation
 
 struct EngineStatus: Decodable, Equatable {
@@ -87,6 +88,11 @@ enum RelayError: LocalizedError {
     }
 }
 
+@MainActor
+private final class PongFlag {
+    var answered = false
+}
+
 /// 和电脑上「絮语中继」之间的 WebSocket 连接
 @MainActor
 @Observable
@@ -108,6 +114,37 @@ final class RelayClient {
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var pingTask: Task<Void, Never>?
     @ObservationIgnored private let session = URLSession(configuration: .default)
+    @ObservationIgnored private let pathMonitor = NWPathMonitor()
+    @ObservationIgnored private var lastPath = ""
+    @ObservationIgnored private var onWiFi = true
+
+    init() {
+        // Wi-Fi ↔ 流量切换时，旧连接多半已经失效，但系统要很久才报错；这里一发现网络变了就立刻重连
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let wifi = path.usesInterfaceType(.wifi) || path.usesInterfaceType(.wiredEthernet)
+            let key = "\(path.status == .satisfied)-\(wifi)"
+            Task { @MainActor in self?.networkChanged(key: key, wifi: wifi) }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "xuyu.relay.path"))
+    }
+
+    private func networkChanged(key: String, wifi: Bool) {
+        let first = lastPath.isEmpty
+        onWiFi = wifi
+        guard key != lastPath else { return }
+        lastPath = key
+        guard !first, !DemoMode.isOn, !candidates.isEmpty else { return }
+        if let old = task {
+            task = nil
+            pingTask?.cancel()
+            old.cancel(with: .goingAway, reason: nil)
+        }
+        // 正在收的回复不判失败，重连后接着收
+        retryTask?.cancel()
+        retryDelay = 2
+        candidateIndex = 0
+        connect()
+    }
 
     /// 在家用的局域网地址
     var address: String {
@@ -125,8 +162,10 @@ final class RelayClient {
     private(set) var usingAway = false
     @ObservationIgnored private var candidateIndex = 0
 
+    /// 用 Wi-Fi 时先试家里的地址；用流量时家里的地址肯定连不上，直接先走出门线路
     private var candidates: [String] {
-        [address, awayAddress].filter { !$0.trimmed.isEmpty }
+        let list = onWiFi ? [address, awayAddress] : [awayAddress, address]
+        return list.filter { !$0.trimmed.isEmpty }
     }
 
     var code: String {
@@ -194,9 +233,10 @@ final class RelayClient {
         task.resume()
         receive(on: task)
         sendJSON(["type": "status", "id": "hello"])
-        // 5 秒内没有拿到状态就算失败
+        // 出门线路可能要绕中转服务器，延迟高，多等一会儿
+        let patience: Double = usingAway ? 15 : 6
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(6))
+            try? await Task.sleep(for: .seconds(patience))
             guard let self, self.task === task, self.state == .connecting else { return }
             self.fail(task, reason: "连接超时")
         }
@@ -330,9 +370,18 @@ final class RelayClient {
         pingTask?.cancel()
         pingTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(25))
+                try? await Task.sleep(for: .seconds(15))
                 guard let self, let task = self.task else { return }
-                task.sendPing { _ in }
+                // ping 不通、或者 10 秒没回音，就说明连接已经断了：马上换线路重连，而不是一直往死连接里发
+                let pong = PongFlag()
+                task.sendPing { [weak self] error in
+                    Task { @MainActor in
+                        pong.answered = true
+                        if error != nil { self?.fail(task, reason: "连接中断") }
+                    }
+                }
+                try? await Task.sleep(for: .seconds(10))
+                if !pong.answered, self.task === task { self.fail(task, reason: "连接中断") }
             }
         }
     }
