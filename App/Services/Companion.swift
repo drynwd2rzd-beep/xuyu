@@ -32,6 +32,7 @@ enum Companion {
         await writeDiaries(context: context, relay: relay)
         await followUps(context: context, relay: relay, personas: personas)
         await proactive(context: context, relay: relay, personas: personas)
+        await Appointments.refresh(context: context, relay: relay)
         Reminders.syncDiaryReminder()
         await Backup.autoBackupIfNeeded(context: context, relay: relay)
     }
@@ -80,11 +81,11 @@ enum Companion {
 
             你最后发的那条，\(PromptBuilder.userName)已经过了\(gap)还没回。像真人朋友一样再发一条：可以俏皮或关心地问 TA 怎么不回消息、是不是在忙，或者接着刚才没聊完的话题再说一句。一两句话，口语化，不要重复你上一条说过的话。只输出消息内容。
             """
-            guard let text = try? await relay.complete(request(persona, prompt)), !text.trimmed.isEmpty else { continue }
+            guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.trimmed.isEmpty else { continue }
             // 生成的这段时间里你回了消息：就不用追问了
             guard convo.visibleMessages().last?.id == last.id else { continue }
             // 之后排好的主动消息是在不知道这条追问时写的，撤掉，等追问送达后再重新安排
-            for later in convo.plannedMessages(after: deliver) {
+            for later in convo.plannedMessages(after: deliver) where !Appointments.isAppointment(later.id) {
                 Reminders.cancelProactive(messageID: later.id)
                 context.delete(later)
             }
@@ -126,7 +127,7 @@ enum Companion {
 
         你们在交换日记。请以「\(persona.name)」的身份，在 TA 的日记下面回一小段话：真诚、温柔、具体地回应 TA 写的事和心情，可以接着聊或轻轻鼓励，不要说教，不要复述原文，60 到 120 字。只输出回信内容。
         """
-        guard let reply = try? await relay.complete(request(persona, prompt)), !reply.trimmed.isEmpty else { return }
+        guard let reply = try? await relay.complete(lightRequest(persona, prompt)), !reply.trimmed.isEmpty else { return }
         withAnimation(Motion.spring) {
             entry.reply = reply.trimmed
             entry.replyPersonaID = persona.id
@@ -169,7 +170,7 @@ enum Companion {
         今天是 \(Fmt.full.string(from: .now))。\(todos.isEmpty ? "" : "\(PromptBuilder.userName)今天的待办：\(todos)。")
         写一句今天想对\(PromptBuilder.userName)说的话：温柔、具体、有画面感，不超过 28 个字，可以用逗号分成两小句。不要引号，只输出这一句。
         """
-        guard let text = try? await relay.complete(request(persona, prompt)), !text.isEmpty else { return }
+        guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.isEmpty else { return }
         defaults.set(text.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "“", with: "").replacingOccurrences(of: "”", with: ""),
                      forKey: Prefs.whisperText)
         defaults.set(persona.name, forKey: Prefs.whisperAuthor)
@@ -211,7 +212,7 @@ enum Companion {
             """
             DiaryState.shared.writing.insert(day)
             defer { DiaryState.shared.writing.remove(day) }
-            guard let raw = try? await relay.complete(request(persona, prompt)), !raw.isEmpty else { continue }
+            guard let raw = try? await relay.complete(lightRequest(persona, prompt)), !raw.isEmpty else { continue }
             let (text, mood) = parseMood(raw)
             let entry = DiaryEntry(day: day, author: .ai, text: text, mood: mood)
             entry.personaID = persona.id
@@ -249,7 +250,8 @@ enum Companion {
         let habits = activeHours(context: context)
         for persona in personas where persona.proactive {
             let convo = context.chat(for: persona)
-            guard convo.plannedMessages(after: now).isEmpty else { continue }
+            // 约好的消息不算：它们到点照常来
+            guard convo.plannedMessages(after: now).allSatisfy({ Appointments.isAppointment($0.id) }) else { continue }
             let deliver = nextSlot(after: now, frequency: persona.proactiveFreq, habits: habits)
             let history = convo.visibleMessages(at: now)
             let names = [persona.id: persona.name]
@@ -264,7 +266,7 @@ enum Companion {
             现在是 \(Fmt.full.string(from: now))。你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptBuilder.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
             像朋友一样自然地开个话题：可以接着之前聊的事、关心一下 TA、或者轻轻提醒一件事。一两句话，口语化，不要说「我来主动找你」。只输出消息内容。
             """
-            guard let text = try? await relay.complete(request(persona, prompt)), !text.isEmpty else { continue }
+            guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.isEmpty else { continue }
             let message = Message(role: .assistant, content: text, personaID: persona.id)
             message.isProactive = true
             message.createdAt = deliver
@@ -320,7 +322,7 @@ enum Companion {
 
     /// 用户先说话了，就撤掉还没送达的主动消息
     static func cancelPlannedMessages(in convo: Conversation, context: ModelContext) {
-        for m in convo.plannedMessages() {
+        for m in convo.plannedMessages() where !Appointments.isAppointment(m.id) {
             Reminders.cancelProactive(messageID: m.id)
             context.delete(m)
         }
@@ -328,7 +330,7 @@ enum Companion {
 
     // MARK: - 工具
 
-    private static func request(_ persona: Persona, _ prompt: String) -> RelayRequest {
+    static func lightRequest(_ persona: Persona, _ prompt: String) -> RelayRequest {
         // 今日一句、日记、主动消息都是轻任务，用低强度省额度
         RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
                      system: PromptBuilder.system(for: persona, convo: nil, members: [persona]), prompt: prompt)

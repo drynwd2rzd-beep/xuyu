@@ -36,7 +36,12 @@ enum PromptBuilder {
         if !stickerCategories.isEmpty {
             parts.append("""
             想发表情包时，单独一段只写【表情:分类名】，可以用的分类只有这些：\(stickerCategories.joined(separator: "、"))。偶尔用一下就好，不要每次都发；没有合适的分类就不发，也不要用文字描述或假装发表情。
-            想针对\(userName)之前说的某句话回应时，可以在那一段开头写【引用:那句话里的几个字】，像聊天软件里的引用回复；同样偶尔用。
+            """)
+        }
+        if convo != nil {
+            parts.append("""
+            想针对\(userName)之前说的某句话回应时，可以在那一段开头写【引用:那句话里的几个字】，像聊天软件里的引用回复；偶尔用。
+            \(userName)让你到某个时间来找 TA、提醒 TA 做什么（比如「晚上找我」「半小时后提醒我」「八点催我睡觉」「每天 22:30 叫我睡觉」），答应的同时在回复末尾单独写一个【约定:时间|事情】，到点 App 会让你真的发消息过去。时间只能写成：21:30（今天，已经过了就是明天）、明天 08:00、+30分钟、+2小时，每天都要就在前面加「每天」，比如【约定:每天 22:30|催睡觉】。「晚上」「待会儿」这种没说具体时间的，你挑一个合适的钟点。TA 说不用了、取消了，就写【取消约定:事情】。这些标记 TA 看不到，不要在话里提到它们。
             """)
         }
         if let memory = convo?.memory.trimmed, !memory.isEmpty {
@@ -137,9 +142,10 @@ enum PromptBuilder {
 
     static func request(for persona: Persona, convo: Conversation, members: [Persona], history: [Message],
                         discussing: Bool = false, diaryNotes: String = "", sharedMemory: String = "",
-                        stickerCategories: [String] = []) -> RelayRequest {
+                        stickerCategories: [String] = [], appointments: String = "") -> RelayRequest {
         let names = Dictionary(members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        let shared = sharedMemory.isEmpty ? "" : "\(sharedMemory)\n\n"
+        let shared = (sharedMemory.isEmpty ? "" : "\(sharedMemory)\n\n")
+            + (appointments.isEmpty ? "" : "你和\(userName)现在的约定：\n\(appointments)\n\n")
         let ask = discussing
             ? "大家正在讨论，请以「\(persona.name)」的身份接着说：可以回应其他人的观点、补充或提出不同看法，不要重复别人说过的。"
             : "请以「\(persona.name)」的身份回复。"

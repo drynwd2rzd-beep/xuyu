@@ -66,7 +66,7 @@ enum Backup {
     private static let prefKeys = [Prefs.nickname, Prefs.appearance, Prefs.wallpaper, Prefs.defaultClaudeModel, Prefs.defaultCodexModel,
                                    Prefs.defaultClaudeEffort, Prefs.defaultCodexEffort, Prefs.inAppBanner, Prefs.todoReminders,
                                    Prefs.diaryReminder, Prefs.quietStart, Prefs.quietEnd, Prefs.homeWidgets, Prefs.showEngineLogo,
-                                   Prefs.diaryWriter, Prefs.showMyDiary, "stickerPackOrder"]
+                                   Prefs.diaryWriter, Prefs.showMyDiary, Prefs.stickerPackOrder, Prefs.appointments]
 
     // MARK: 导出
 

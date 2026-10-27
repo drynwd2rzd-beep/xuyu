@@ -175,6 +175,14 @@ struct PersonaEditor: View {
     @State private var confirmDelete = false
     @State private var confirmClear = false
     @State private var chat: Conversation?
+    /// 约定存在本机设置里：读这个让列表跟着变
+    @AppStorage(Prefs.appointments) private var appointmentsRaw = ""
+
+    /// TA 答应你的事（到点来找你）
+    private var appointments: [Appointment] {
+        _ = appointmentsRaw
+        return Appointments.all.filter { $0.personaID == persona.id }.sorted { $0.at < $1.at }
+    }
 
     var body: some View {
         ScrollView {
@@ -261,6 +269,27 @@ struct PersonaEditor: View {
                 }
                 .card()
                 .animation(Motion.spring, value: persona.proactive)
+
+                if !appointments.isEmpty {
+                    SettingsGroup(title: "约定") {
+                        ForEach(appointments) { a in
+                            SettingRow(title: Appointments.label(for: a)) {
+                                Button {
+                                    withAnimation(Motion.spring) { Appointments.remove(a, context: context) }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(Palette.inkSoft)
+                                        .frame(width: 28, height: 28)
+                                        .background(Palette.fill, in: Circle())
+                                }
+                                .accessibilityLabel("取消这个约定")
+                            }
+                            if a.id != appointments.last?.id { Hairline() }
+                        }
+                    }
+                    .transition(.opacity)
+                }
 
                 SettingRow(title: "允许操作电脑", subtitle: "只在电脑的「絮语工作区」文件夹里读写文件、运行命令，做好的文件会发到手机") {
                     InkToggle(isOn: $persona.canWork, label: "允许操作电脑")

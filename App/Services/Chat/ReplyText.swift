@@ -16,6 +16,12 @@ enum ReplyText {
 
     // MARK: - 小标记
 
+    /// 【约定:时间|事情】：TA 答应你到某个时间做某件事
+    struct Promise: Equatable {
+        var time: String
+        var what: String
+    }
+
     struct Markers: Equatable {
         /// 去掉标记后的文字
         var body: String
@@ -23,11 +29,17 @@ enum ReplyText {
         var quoteKey: String?
         /// 【表情:…】里写的分类名，按出现顺序
         var stickerPacks: [String] = []
+        /// 【约定:时间|事情】
+        var promises: [Promise] = []
+        /// 【取消约定:事情】
+        var cancels: [String] = []
     }
 
     // 中英文括号都认：【】 和 []
     private static let quoteMarker = try! Regex("[【\\[]引用[:：]\\s*(.+?)[】\\]]")
     private static let stickerMarker = try! Regex("[【\\[]表情[:：]\\s*(.+?)[】\\]]")
+    private static let promiseMarker = try! Regex("[【\\[]约定[:：]\\s*(.+?)\\s*[|｜]\\s*(.+?)[】\\]]")
+    private static let cancelMarker = try! Regex("[【\\[]取消约定[:：]\\s*(.+?)[】\\]]")
     /// TA 偶尔会用文字假装发表情（比如「[表情]」「【捂脸表情】」）
     private static let fakeSticker = try! Regex("[【\\[][^】\\]]{0,8}表情[^】\\]]{0,8}[】\\]]")
 
@@ -44,8 +56,20 @@ enum ReplyText {
             packs.append(match.output[1].substring.map { String($0).trimmed } ?? "")
             body.removeSubrange(match.range)
         }
+        var cancels: [String] = []
+        while let match = body.firstMatch(of: cancelMarker) {
+            cancels.append(match.output[1].substring.map { String($0).trimmed } ?? "")
+            body.removeSubrange(match.range)
+        }
+        var promises: [Promise] = []
+        while let match = body.firstMatch(of: promiseMarker) {
+            let time = match.output[1].substring.map { String($0).trimmed } ?? ""
+            let what = match.output[2].substring.map { String($0).trimmed } ?? ""
+            promises.append(Promise(time: time, what: what))
+            body.removeSubrange(match.range)
+        }
         body = body.replacing(fakeSticker, with: "")
-        return Markers(body: body.trimmed, quoteKey: quoteKey, stickerPacks: packs)
+        return Markers(body: body.trimmed, quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels)
     }
 
     /// TA 引用的是你哪句话：从最近的往前找，包含这几个字的那条（或这几个字包含那条的开头）

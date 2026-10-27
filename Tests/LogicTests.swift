@@ -83,6 +83,37 @@ final class LogicTests: XCTestCase {
         XCTAssertNil(ReplyText.source(ofQuote: "我：完全没说过的话", id: UUID(), in: all))
     }
 
+    // MARK: - 约定
+
+    func testPromiseMarkers() {
+        let m = ReplyText.markers(in: "好呀，八点准时催你\n\n【约定:20:00|催睡觉】")
+        XCTAssertEqual(m.body, "好呀，八点准时催你")
+        XCTAssertEqual(m.promises, [ReplyText.Promise(time: "20:00", what: "催睡觉")])
+        let c = ReplyText.markers(in: "好，那就不催啦【取消约定：催睡觉】")
+        XCTAssertEqual(c.body, "好，那就不催啦")
+        XCTAssertEqual(c.cancels, ["催睡觉"])
+        XCTAssertTrue(c.promises.isEmpty)
+    }
+
+    func testAppointmentTimes() throws {
+        let cal = Calendar.current
+        let now = try XCTUnwrap(cal.date(bySettingHour: 19, minute: 0, second: 0, of: .now))
+        let eight = try XCTUnwrap(Appointments.parseTime("20:00", now: now))
+        XCTAssertEqual(eight.date, cal.date(bySettingHour: 20, minute: 0, second: 0, of: now))
+        XCTAssertFalse(eight.daily)
+        // 已经过了的钟点就是明天
+        let morning = try XCTUnwrap(Appointments.parseTime("08:30", now: now))
+        XCTAssertEqual(morning.date, cal.date(bySettingHour: 8, minute: 30, second: 0, of: now)?.adding(days: 1))
+        XCTAssertEqual(Appointments.parseTime("+30分钟", now: now)?.date, now.addingTimeInterval(1800))
+        XCTAssertEqual(Appointments.parseTime("+2小时", now: now)?.date, now.addingTimeInterval(7200))
+        XCTAssertEqual(Appointments.parseTime("明天 7:00", now: now)?.date,
+                       cal.date(bySettingHour: 7, minute: 0, second: 0, of: now)?.adding(days: 1))
+        let daily = try XCTUnwrap(Appointments.parseTime("每天 22：30", now: now))
+        XCTAssertTrue(daily.daily)
+        XCTAssertEqual(cal.component(.hour, from: daily.date), 22)
+        XCTAssertNil(Appointments.parseTime("晚上", now: now))
+    }
+
     // MARK: - 谁来回复
 
     func testResponders() {

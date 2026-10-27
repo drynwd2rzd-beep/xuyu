@@ -225,7 +225,8 @@ final class ChatEngine {
         let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing,
                                             diaryNotes: Companion.myDiaryNotes(context: context),
                                             sharedMemory: PromptBuilder.sharedMemory(of: persona, besides: convo, context: context),
-                                            stickerCategories: PromptBuilder.stickerCategories(context: context))
+                                            stickerCategories: PromptBuilder.stickerCategories(context: context),
+                                            appointments: Appointments.summary(persona: persona, convo: convo))
         let relayID = UUID().uuidString
         var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
         try? context.save()
@@ -352,13 +353,18 @@ final class ChatEngine {
     }
 
     /// 处理 TA 回复里的小标记，返回去掉标记后的文字：
-    /// 【引用:…】把你说过的那句话挂在 TA 这条消息下面；【表情:分类】从你的表情库里挑一个，单独一条跟在后面
+    /// 【引用:…】把你说过的那句话挂在 TA 这条消息下面；【表情:分类】从你的表情库里挑一个，单独一条跟在后面；
+    /// 【约定:时间|事情】【取消约定:事情】记下或撤掉约定（到点 TA 真的来找你）
     func applyMarkers(_ text: String, to message: Message, persona: Persona, convo: Conversation,
-                              context: ModelContext) -> String {
+                      context: ModelContext) -> String {
         let markers = ReplyText.markers(in: text)
         if let key = markers.quoteKey, let quoted = ReplyText.quoted(key, in: convo.visibleMessages()) {
             message.quote = ReplyText.quoteLine(for: quoted)
             message.quoteID = quoted.id
+        }
+        for what in markers.cancels { Appointments.cancel(what, persona: persona, convo: convo, context: context) }
+        for promise in markers.promises {
+            Appointments.promise(promise, persona: persona, convo: convo, context: context, relay: relay)
         }
         let stickers = markers.stickerPacks.isEmpty ? [] : (try? context.fetch(FetchDescriptor<Sticker>())) ?? []
         for pack in markers.stickerPacks {

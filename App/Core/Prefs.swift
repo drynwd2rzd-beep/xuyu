@@ -27,6 +27,8 @@ enum Prefs {
     /// 新建了但还没放表情的空表情包
     static let stickerPackOrder = "stickerPackOrder"
     static let recentSearches = "recentSearches"
+    /// 你和 TA 的约定（到点来找你），见 Appointments
+    static let appointments = "appointments"
 
     // MARK: 日记与今日一句
     /// 谁来写 AI 日记（角色 ID）
