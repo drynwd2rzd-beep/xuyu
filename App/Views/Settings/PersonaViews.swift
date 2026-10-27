@@ -174,7 +174,7 @@ struct PersonaEditor: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var confirmDelete = false
     @State private var confirmClear = false
-    @State private var chatID: UUID?
+    @State private var chat: Conversation?
 
     var body: some View {
         ScrollView {
@@ -244,10 +244,11 @@ struct PersonaEditor: View {
 
                 preview
 
-                if let chatID {
+                if let chat {
+                    MemoryEditor(memory: Binding(get: { chat.memory }, set: { chat.memory = $0 }))
                     VStack(alignment: .leading, spacing: Space.tight) {
                         SectionLabel(text: "聊天背景")
-                        WallpaperPicker(owner: chatID)
+                        WallpaperPicker(owner: chat.id)
                             .padding(Space.card)
                             .card()
                     }
@@ -293,14 +294,16 @@ struct PersonaEditor: View {
                 photoItem = nil
             }
         }
-        .onAppear { chatID = context.chat(for: persona).id }
+        .onAppear { chat = context.chat(for: persona) }
         .onDisappear {
             if persona.name.trimmed.isEmpty { persona.name = "未命名" }
             try? context.save()
         }
         .confirmationDialog("清空和 \(persona.name) 的聊天记录？", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("清空", role: .destructive) {
-                for m in context.chat(for: persona).messages ?? [] { context.delete(m) }
+                let convo = context.chat(for: persona)
+                for m in convo.messages ?? [] { context.delete(m) }
+                Memory.reset(convo)
                 try? context.save()
             }
         }

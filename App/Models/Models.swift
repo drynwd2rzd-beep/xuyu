@@ -54,6 +54,10 @@ final class Conversation {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     var lastReadAt: Date = Date()
+    /// 长期记忆：更早的聊天总结成的要点，每次聊天都会带上
+    var memory: String = ""
+    /// 这个时间（含）之前的消息已经总结进记忆，不再逐条发送
+    var memoryUntil: Date = Date.distantPast
     @Relationship(deleteRule: .cascade, inverse: \Message.conversation) var messages: [Message]? = []
 
     init(title: String = "", isGroup: Bool, memberIDs: [UUID]) {

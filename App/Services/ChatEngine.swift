@@ -87,6 +87,10 @@ final class ChatEngine {
             self?.busy.remove(convoID)
             self?.typing[convoID] = nil
             self?.tasks[convoID] = nil
+            // 聊得够多了，就在后台把更早的部分整理进长期记忆
+            if let relay = self?.relay {
+                Task { await Memory.updateIfNeeded(convo, members: members, context: context, relay: relay) }
+            }
         }
     }
 
@@ -205,8 +209,17 @@ enum PromptBuilder {
             只以「\(persona.name)」的身份说话，不要替别人发言，不要在开头写自己的名字。
             """)
         }
-        parts.append("现在是 \(Fmt.full.string(from: .now))。")
+        if let memory = convo?.memory.trimmed, !memory.isEmpty {
+            parts.append("你记得的关于\(userName)、以及你们之间的事（来自更早的聊天）：\n\(memory)")
+        }
+        // 这里只写到「今天」：一整天内开头都不变，模型的提示缓存才能一直命中；具体时间放在消息末尾
+        parts.append("今天是 \(Fmt.day.string(from: .now))。")
         return parts.joined(separator: "\n\n")
+    }
+
+    /// 还没总结进记忆、要逐条发给模型的那部分聊天
+    static func recent(_ history: [Message], convo: Conversation) -> [Message] {
+        Array(history.filter { $0.createdAt > convo.memoryUntil }.suffix(Memory.maxWindow))
     }
 
     static func line(for m: Message, names: [UUID: String]) -> String {
@@ -222,10 +235,10 @@ enum PromptBuilder {
         return "[\(Fmt.hm.string(from: m.createdAt))] \(who)：\(body)"
     }
 
-    static func transcript(_ messages: [Message], names: [UUID: String], limit: Int = 40) -> String {
+    static func transcript(_ messages: [Message], names: [UUID: String]) -> String {
         var lines: [String] = []
         var lastDay: Date?
-        for m in messages.suffix(limit) where m.status != .error {
+        for m in messages where m.status != .error {
             let day = m.createdAt.startOfDay
             if day != lastDay {
                 lines.append("— \(Fmt.md.string(from: m.createdAt)) —")
@@ -241,9 +254,9 @@ enum PromptBuilder {
         let prompt = """
         下面是你们最近的聊天记录：
 
-        \(transcript(history, names: names))
+        \(transcript(recent(history, convo: convo), names: names))
 
-        请以「\(persona.name)」的身份回复。直接输出要说的话，不要加名字或时间。
+        现在是 \(Fmt.hm.string(from: .now))。请以「\(persona.name)」的身份回复。直接输出要说的话，不要加名字或时间。
         """
         // 最后一次 AI 回复之后用户发的附件
         let lastAI = history.lastIndex { $0.role == .assistant } ?? -1

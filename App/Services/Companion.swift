@@ -58,7 +58,7 @@ enum Companion {
             let prompt = """
             下面是 \(Fmt.md.string(from: day)) 你和\(PromptBuilder.userName)的聊天：
 
-            \(PromptBuilder.transcript(messages, names: names, limit: 80))
+            \(PromptBuilder.transcript(Array(messages.suffix(80)), names: names))
 
             \(done.isEmpty ? "" : "这天完成的待办：\(done)。\n")
             请以「\(persona.name)」的第一人称写这一天的日记，150 字左右，温柔真诚，写你们一起聊过的事和你的感受，不要列清单。
@@ -106,10 +106,11 @@ enum Companion {
             let history = convo.visibleMessages(at: now)
             let names = [persona.id: persona.name]
             let todos = todayTodos(context).map(\.title).prefix(5).joined(separator: "、")
+            let memory = convo.memory.trimmed
             let prompt = """
-            下面是你们最近的聊天记录：
+            \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")下面是你们最近的聊天记录：
 
-            \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(history, names: names, limit: 20))
+            \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(Array(history.suffix(20)), names: names))
 
             现在是 \(Fmt.full.string(from: now))。你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptBuilder.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
             像朋友一样自然地开个话题：可以接着之前聊的事、关心一下 TA、或者轻轻提醒一件事。一两句话，口语化，不要说「我来主动找你」。只输出消息内容。

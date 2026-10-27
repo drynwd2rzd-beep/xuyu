@@ -156,6 +156,34 @@ struct WallpaperPicker: View {
     }
 }
 
+/// 记忆：它从更早的聊天里记住的事，可以直接改或删
+struct MemoryEditor: View {
+    @Binding var memory: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            HStack {
+                SectionLabel(text: "记忆")
+                Spacer()
+                if !memory.trimmed.isEmpty {
+                    Button("清空") { withAnimation(Motion.spring) { memory = "" } }
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.inkSoft)
+                        .padding(.trailing, 6)
+                }
+            }
+            TextField("聊得多了，会自己记住关于你的事", text: $memory, axis: .vertical)
+                .font(.system(size: 15))
+                .lineSpacing(5)
+                .lineLimit(2...14)
+                .foregroundStyle(Palette.ink)
+                .padding(Space.card)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card()
+        }
+    }
+}
+
 /// 删除群聊 / 清空单聊
 enum ConversationRemover {
     @MainActor
@@ -167,6 +195,7 @@ enum ConversationRemover {
             context.delete(convo)
         } else {
             for m in convo.messages ?? [] { context.delete(m) }
+            Memory.reset(convo)
         }
         try? context.save()
     }
@@ -314,6 +343,7 @@ struct GroupInfoSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
                         .card()
                     }
+                    MemoryEditor(memory: $convo.memory)
                     VStack(alignment: .leading, spacing: Space.tight) {
                         SectionLabel(text: "聊天背景")
                         WallpaperPicker(owner: convo.id)
@@ -361,10 +391,11 @@ struct GroupInfoSheet: View {
             .confirmationDialog("清空这个群聊的记录？", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("清空", role: .destructive) {
                     for m in convo.messages ?? [] { context.delete(m) }
+                    Memory.reset(convo)
                     try? context.save()
                 }
             } message: {
-                Text("成员会保留，删除后无法恢复。")
+                Text("成员会保留，聊天记录和记忆删除后无法恢复。")
             }
             .confirmationDialog("删除这个群聊？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("删除", role: .destructive) {
