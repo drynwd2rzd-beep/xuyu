@@ -180,7 +180,10 @@ export function explain(text) {
   if (/login|log in|\/login|not authenticated|unauthorized|invalid api key|401/i.test(t)) {
     return '这个账号还没有登录。请在电脑上运行一次 claude 或 codex 完成登录。';
   }
-  if (/rate limit|usage limit|429|quota/i.test(t)) return '订阅额度暂时用完了，请稍后再试。';
+  if (/hit your .*limit|session limit|weekly limit|rate limit|usage limit|429|quota/i.test(t)) {
+    const reset = t.match(/resets?\s+(?:at\s+)?([^\n(·]+?)\s*(?:\(|$)/i)?.[1]?.trim();
+    return reset ? `这段时间的订阅用量到上限了，${reset} 后恢复。可以先换另一个模型聊。` : '订阅用量暂时到上限了，请稍后再试，或先换另一个模型聊。';
+  }
   if (/model/i.test(t) && /not found|invalid|unknown|not available|not supported/i.test(t)) {
     return '这个模型现在用不了，请在设置里换一个。';
   }
