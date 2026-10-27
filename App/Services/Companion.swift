@@ -131,7 +131,7 @@ enum Companion {
             let names = Dictionary(context.allPersonas().map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             let done = todosDone(on: day, context: context).map(\.title).joined(separator: "、")
             // TA 自己写的日记和心情：写日记时一起参考
-            let mine =((try? context.fetch(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == day && $0.authorRaw == me }))) ?? []).first
+            let mine = ((try? context.fetch(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == day && $0.authorRaw == me }))) ?? []).first
             let mineLine = mine.map { e in
                 "\(PromptBuilder.userName)这天自己也写了日记\(e.mood.isEmpty ? "" : "（心情：\(e.mood)）")：\(e.text.trimmed)\n"
             } ?? ""
