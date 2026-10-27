@@ -67,11 +67,17 @@ struct RelayRequest: Encodable {
     var system: String
     var prompt: String
     var attachments: [RelayAttachment] = []
+    /// 工作模式：允许在电脑的工作文件夹里读写文件、运行命令
+    var work = false
 }
 
 enum RelayEvent {
     case text(String)
     case reasoning(String)
+    /// 工作模式里做的一步，例如「读取 报告.docx」
+    case step(String)
+    /// 工作模式里发回手机的文件
+    case file(String, Data)
 }
 
 enum RelayError: LocalizedError {
@@ -369,6 +375,13 @@ final class RelayClient {
             if accept(id, obj) { streams[id]?.yield(.text(obj["text"] as? String ?? "")) }
         case "reasoning":
             if accept(id, obj) { streams[id]?.yield(.reasoning(obj["text"] as? String ?? "")) }
+        case "step":
+            if accept(id, obj) { streams[id]?.yield(.step(obj["text"] as? String ?? "")) }
+        case "file":
+            if accept(id, obj), let name = obj["name"] as? String,
+               let data = Data(base64Encoded: obj["data"] as? String ?? "") {
+                streams[id]?.yield(.file(name, data))
+            }
         case "done":
             received.removeValue(forKey: id)
             streams.removeValue(forKey: id)?.finish()
@@ -460,6 +473,7 @@ final class RelayClient {
                     var payload: [String: Any] = [
                         "type": "run", "id": id, "engine": request.engine, "model": request.model,
                         "effort": request.effort, "system": request.system, "prompt": request.prompt,
+                        "work": request.work,
                     ]
                     if !request.attachments.isEmpty {
                         payload["attachments"] = request.attachments.map { ["kind": $0.kind, "name": $0.name, "data": $0.data] }

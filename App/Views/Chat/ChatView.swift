@@ -26,6 +26,8 @@ struct ChatView: View {
     @State private var keyboardShown = false
     @State private var pinBottom = 0
     @State private var panel: Composer.Panel?
+    /// 正在引用的那句话（长按消息 → 引用）
+    @State private var quoting: String?
     /// 是否跟着最新消息走：你往上翻看记录时不打扰，回到底部或发消息后重新跟随
     @State private var follow = true
     /// 键盘高度：表情 / 加号面板做成一样高，切换时输入框不跳
@@ -302,7 +304,18 @@ struct ChatView: View {
             openImages: { attachments, index in
                 viewer = ImageViewerItem(attachments: attachments, index: index)
             },
-            retry: { m in engine.regenerate(m, in: convo, members: members, context: context) }
+            retry: { m in engine.regenerate(m, in: convo, members: members, context: context) },
+            quote: { m in
+                let who = m.role == .user ? "我" : (m.personaID.flatMap { personaMap[$0]?.name } ?? "AI")
+                let body: String = switch m.kind {
+                case .images: "[图片]" + (m.content.isEmpty ? "" : " " + m.content)
+                case .file: "[文件] " + m.sortedAttachments.map(\.fileName).joined(separator: "、")
+                case .sticker: "[表情]"
+                case .note, .text: m.content
+                }
+                withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
+                pinBottom += 1
+            }
         )
     }
 
@@ -347,7 +360,7 @@ struct ChatView: View {
             .padding(.bottom, Space.tight)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else {
-            Composer(draft: $draft, panel: $panel, panelHeight: panelHeight, convo: convo, members: members,
+            Composer(draft: $draft, panel: $panel, quote: $quoting, panelHeight: panelHeight, convo: convo, members: members,
                      onSend: send, onExpand: { pinBottom += 1 })
         }
     }
@@ -360,7 +373,9 @@ struct ChatView: View {
     }
 
     private func send(_ text: String, kind: MessageKind, attachments: [OutgoingAttachment]) {
-        engine.send(text, kind: kind, attachments: attachments, in: convo, members: members, context: context)
+        let quote = quoting ?? ""
+        withAnimation(Motion.spring) { quoting = nil }
+        engine.send(text, kind: kind, attachments: attachments, quote: quote, in: convo, members: members, context: context)
     }
 
     private func deleteMessages(_ ids: Set<UUID>) {

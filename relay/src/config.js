@@ -18,6 +18,8 @@ export const paths = {
 
 const defaults = {
   port: 51888,
+  // 工作模式下 AI 能读写的文件夹（只在这里面动手）
+  workDir: path.join(os.homedir(), '絮语工作区'),
   token: '',
   models: {
     claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
@@ -48,8 +50,19 @@ export function loadConfig() {
     commands: { ...defaults.commands, ...(saved.commands || {}) },
   };
   if (!config.token) config.token = newToken();
+  for (const d of Object.values(workPaths(config))) fs.mkdirSync(d, { recursive: true });
   saveConfig(config);
   return config;
+}
+
+/** 工作文件夹和里面的三个子文件夹 */
+export function workPaths(config) {
+  return {
+    root: config.workDir,
+    inbox: path.join(config.workDir, '收到的文件'),
+    outbox: path.join(config.workDir, '发给手机'),
+    sent: path.join(config.workDir, '已发送'),
+  };
 }
 
 export function saveConfig(config) {

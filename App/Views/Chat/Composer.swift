@@ -9,6 +9,8 @@ struct Composer: View {
     @Binding var draft: String
     /// 表情 / 加号面板：放在外面，聊天页要根据它决定键盘弹出时怎么排版
     @Binding var panel: Panel?
+    /// 正在引用的那句话，显示在输入框上方，发送时一起带上
+    @Binding var quote: String?
     /// 面板高度和键盘一样，键盘和面板互相切换时输入框不会上下跳
     let panelHeight: CGFloat
     let convo: Conversation
@@ -39,6 +41,13 @@ struct Composer: View {
         VStack(spacing: Space.tight) {
             if mentionOpen { mentionList.transition(.move(edge: .bottom).combined(with: .opacity)) }
             if !staged.isEmpty { stagedRow.transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if let quote {
+                QuoteChip(text: quote) { withAnimation(Motion.spring) { self.quote = nil } }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, Space.control + Space.tight + 2)
+                    .padding(.trailing, 54)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             HStack(spacing: Space.tight + 2) {
                 plusButton
                 field
@@ -58,6 +67,7 @@ struct Composer: View {
         .padding(.bottom, Space.tight)
         .animation(Motion.spring, value: mentionOpen)
         .animation(Motion.spring, value: staged.count)
+        .onChange(of: quote) { _, q in if q != nil { focused = true } }
         .sensoryFeedback(.impact(weight: .light), trigger: sendTick)
         .onChange(of: focused) { _, f in
             // 面板开着时点输入框：面板先留着，等键盘完全升起来（和面板一样高）再无缝换掉

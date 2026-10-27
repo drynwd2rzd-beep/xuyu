@@ -1,5 +1,14 @@
 import Foundation
+import Observation
 import SwiftData
+
+/// 正在写哪几天的日记：待办页据此显示「正在写…」
+@MainActor
+@Observable
+final class DiaryState {
+    static let shared = DiaryState()
+    var writing: Set<Date> = []
+}
 
 /// 让 AI 像朋友一样「在」：今日一句、每天的日记、主动发来的消息。
 /// 都在 App 打开时提前生成；主动消息排成本地通知，到点送达。
@@ -17,12 +26,23 @@ enum Companion {
         let personas = context.allPersonas()
         guard let main = personas.first else { return }
         await whisper(context: context, relay: relay, persona: main)
-        // 日记由你在待办页选的那位角色来写，没选就是第一位
-        let writerID = UserDefaults.standard.string(forKey: Prefs.diaryWriter).flatMap(UUID.init(uuidString:))
-        let writer = personas.first { $0.id == writerID } ?? main
-        await diaries(context: context, relay: relay, persona: writer)
+        await writeDiaries(context: context, relay: relay)
         await proactive(context: context, relay: relay, personas: personas)
         Reminders.syncDiaryReminder()
+    }
+
+    /// 日记由你在待办页选的那位角色来写，没选就是第一位。待办页打开时、以及 App 开着时每隔一会儿都会检查一次
+    static func writeDiaries(context: ModelContext, relay: RelayClient) async {
+        guard !DemoMode.isOn, relay.isConnected else { return }
+        let personas = context.allPersonas()
+        let writerID = UserDefaults.standard.string(forKey: Prefs.diaryWriter).flatMap(UUID.init(uuidString:))
+        guard let writer = personas.first(where: { $0.id == writerID }) ?? personas.first else { return }
+        await diaries(context: context, relay: relay, persona: writer)
+    }
+
+    /// 这一天的聊天够不够写日记
+    static func enoughToWrite(on day: Date, context: ModelContext) -> Bool {
+        messagesOn(day, context: context).count >= 3
     }
 
     // MARK: - 今日一句
@@ -67,6 +87,8 @@ enum Companion {
             请以「\(persona.name)」的第一人称写这一天的日记，150 字左右，温柔真诚，写你们一起聊过的事和你的感受，不要列清单。
             最后另起一行，只写：心情：两个字
             """
+            DiaryState.shared.writing.insert(day)
+            defer { DiaryState.shared.writing.remove(day) }
             guard let raw = try? await relay.complete(request(persona, prompt)), !raw.isEmpty else { continue }
             let (text, mood) = parseMood(raw)
             let entry = DiaryEntry(day: day, author: .ai, text: text, mood: mood)

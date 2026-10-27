@@ -4,7 +4,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { WebSocketServer } from 'ws';
-import { loadConfig, saveConfig, paths } from './config.js';
+import { loadConfig, saveConfig, paths, workPaths } from './config.js';
 import { resolveCommand } from './resolve.js';
 import { runEngine } from './engines.js';
 
@@ -109,19 +109,61 @@ async function status() {
   return refreshStatus();
 }
 
-// ---- 附件：保存到 uploads，10 分钟后删除 ----
-function saveAttachments(id, attachments = []) {
+// ---- 附件：聊天时存到 uploads，10 分钟后删除；工作模式存进工作文件夹的「收到的文件」，一直保留 ----
+function saveAttachments(id, attachments = [], work = false) {
   const saved = [];
+  const dir = work ? workPaths(config).inbox : paths.uploads;
   attachments.forEach((a, i) => {
     const safe = String(a.name || `file-${i}`).replace(/[^\w.\-一-龥]/g, '_').slice(-80);
-    const file = path.join(paths.uploads, `${id}-${i}-${safe}`);
+    const stamp = new Date().toISOString().slice(5, 16).replace(/[-T:]/g, '');
+    const file = path.join(dir, work ? `${stamp}-${safe}` : `${id}-${i}-${safe}`);
     fs.writeFileSync(file, Buffer.from(String(a.data || ''), 'base64'));
     saved.push({ file, kind: a.kind === 'image' ? 'image' : 'file', name: a.name || safe });
   });
-  if (saved.length) {
+  if (saved.length && !work) {
     setTimeout(() => saved.forEach((s) => fs.rm(s.file, { force: true }, () => {})), 10 * 60 * 1000);
   }
   return saved;
+}
+
+/** 工作模式的说明：告诉 AI 能在哪里动手、怎么把文件发回手机 */
+function workGuide() {
+  const w = workPaths(config);
+  return [
+    `你现在可以在用户电脑上的工作文件夹「${w.root}」里读写文件、运行命令，帮用户把事情做完。`,
+    '只在这个文件夹里操作，不要读写或修改文件夹外面的东西，不要删除用户没让你删的文件，不要安装软件或改系统设置。',
+    `用户从手机发来的文件在「${w.inbox}」。`,
+    `要把做好的文件发到用户手机上，就把文件保存（或复制）到「${w.outbox}」，系统会自动发过去。`,
+    '做完后用一两句口语化的话告诉用户结果。',
+  ].join('\n');
+}
+
+/** 把「发给手机」文件夹里这次新出现的文件发回手机，然后挪到「已发送」 */
+function sendOutbox(job, since) {
+  const w = workPaths(config);
+  let names = [];
+  try {
+    names = fs.readdirSync(w.outbox);
+  } catch {
+    return;
+  }
+  for (const name of names.slice(0, 10)) {
+    const file = path.join(w.outbox, name);
+    try {
+      const st = fs.statSync(file);
+      if (!st.isFile() || st.mtimeMs < since - 2000) continue;
+      if (st.size > 20 * 1024 * 1024) {
+        publish(job, { type: 'step', id: job.id, text: `${name} 超过 20MB，留在电脑上没有发送` });
+        continue;
+      }
+      publish(job, { type: 'file', id: job.id, name, data: fs.readFileSync(file).toString('base64') });
+      let target = path.join(w.sent, name);
+      if (fs.existsSync(target)) target = path.join(w.sent, `${Date.now()}-${name}`);
+      fs.renameSync(file, target);
+    } catch {
+      // 单个文件出错不影响其他文件
+    }
+  }
 }
 
 function send(ws, obj) {
@@ -187,32 +229,36 @@ async function handleRun(ws, msg) {
     send(ws, { type: 'error', id, message: engine === 'codex' ? '电脑上还没有安装 Codex。' : '电脑上还没有安装 Claude Code。' });
     return;
   }
+  const work = msg.work === true;
   const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController() };
   jobs.set(id, job);
-  const saved = saveAttachments(id.replace(/[^\w-]/g, ''), msg.attachments);
+  const saved = saveAttachments(id.replace(/[^\w-]/g, ''), msg.attachments, work);
   let prompt = String(msg.prompt || '');
-  const files = saved.filter((s) => engine === 'claude' || s.kind !== 'image');
+  const files = saved.filter((s) => work || engine === 'claude' || s.kind !== 'image');
   if (files.length) {
     prompt += '\n\n用户附带的文件（可以直接读取）：\n' + files.map((f) => `- ${f.name}: ${f.file}`).join('\n');
   }
+  const system = work ? `${msg.system || ''}\n\n${workGuide()}`.trim() : msg.system || '';
 
   const controller = job.controller;
   const started = Date.now();
-  console.log(`→ ${id.slice(0, 8)} ${engine}${msg.model ? ' ' + msg.model : ''}${msg.effort ? ' · ' + msg.effort : ''}`);
+  console.log(`→ ${id.slice(0, 8)} ${engine}${msg.model ? ' ' + msg.model : ''}${msg.effort ? ' · ' + msg.effort : ''}${work ? ' · 工作模式' : ''}`);
   try {
     await runEngine({
       engine,
       command: cmd,
       model: msg.model || '',
       effort: /^[a-z]+$/.test(String(msg.effort || '')) ? msg.effort : '',
-      system: msg.system || '',
+      system,
       prompt,
       files,
       images: saved.filter((s) => s.kind === 'image').map((s) => s.file),
-      cwd: paths.workspace,
+      cwd: work ? workPaths(config).root : paths.workspace,
       signal: controller.signal,
+      work,
       onEvent: (e) => publish(job, { type: e.type, id, text: e.text }),
     });
+    if (work) sendOutbox(job, started);
     finishJob(job, { type: 'done', id });
     console.log(`✓ ${id.slice(0, 8)} ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } catch (e) {
@@ -334,6 +380,7 @@ async function banner(port) {
   console.log(line);
   for (const ip of lanAddresses()) console.log(`  地址    ${ip}:${port}`);
   console.log(`  配对码  ${config.token}`);
+  console.log(`  工作区  ${config.workDir}`);
   console.log(line);
   console.log(`  Claude Code  ${s.claude.installed ? s.claude.version : '未安装'}`);
   console.log(`  Codex        ${s.codex.installed ? s.codex.version : '未安装'}`);

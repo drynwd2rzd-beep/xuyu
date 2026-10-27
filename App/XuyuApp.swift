@@ -41,6 +41,14 @@ struct XuyuApp: App {
                         Task { await engine.recover(context: container.mainContext) }
                     }
                 }
+                .task {
+                    // App 一直开着时，每 10 分钟看看有没有该做的事（比如过了 8 点该写日记了）
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(600))
+                        guard !DemoMode.isOn, scenePhase == .active else { continue }
+                        await Companion.refresh(context: container.mainContext, relay: relay)
+                    }
+                }
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in

@@ -242,6 +242,11 @@ struct PersonaEditor: View {
                 .card()
                 .animation(Motion.spring, value: persona.proactive)
 
+                SettingRow(title: "允许操作电脑", subtitle: "只在电脑的「絮语工作区」文件夹里读写文件、运行命令，做好的文件会发到手机") {
+                    InkToggle(isOn: $persona.canWork, label: "允许操作电脑")
+                }
+                .card()
+
                 preview
 
                 if let chat {

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuickLook
 
 struct MessageActions {
     var copy: (String) -> Void
@@ -10,6 +11,7 @@ struct MessageActions {
     var addTodo: (String) -> Void
     var openImages: ([Attachment], Int) -> Void
     var retry: (Message) -> Void
+    var quote: (Message) -> Void
 }
 
 struct MessageRow: View {
@@ -28,6 +30,12 @@ struct MessageRow: View {
     private var live: StreamBuffer? { engine.buffers[message.id] }
     private var text: String { live?.text ?? message.content }
     private var reasoning: String { live?.reasoning ?? message.reasoning }
+    /// 工作模式做过的步骤
+    private var steps: [String] {
+        live?.steps ?? message.steps.split(separator: "\n").map(String.init)
+    }
+    /// 名字旁有没有可以展开的内容（工作过程或思考过程）
+    private var hasDetail: Bool { !steps.isEmpty || (!reasoning.isEmpty && showReasoning) }
     private var time: String { Fmt.bubble.string(from: message.createdAt) }
     /// 已经开始回复、但还没有出字
     private var isThinking: Bool { live != nil && text.isEmpty }
@@ -56,6 +64,7 @@ struct MessageRow: View {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 6) {
                 content(isUser: true)
+                if !message.quote.isEmpty { QuoteChip(text: message.quote) }
             }
             UserAvatar(size: 34).opacity(first ? 1 : 0)
         }
@@ -67,16 +76,9 @@ struct MessageRow: View {
         HStack(alignment: .top, spacing: 10) {
             AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
             VStack(alignment: .leading, spacing: 5) {
-                if first || isThinking { label }
-                if reasoningOpen && !reasoning.isEmpty {
-                    Text(reasoning)
-                        .font(.system(size: 13))
-                        .lineSpacing(4)
-                        .foregroundStyle(Palette.inkSoft)
-                        .padding(.leading, 10)
-                        .overlay(alignment: .leading) { Rectangle().fill(Palette.hairline).frame(width: 2) }
-                        .padding(.leading, 2)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                if first || isThinking || !steps.isEmpty { label }
+                if reasoningOpen && hasDetail {
+                    detail.transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 content(isUser: false)
                     .animation(Motion.spring, value: isThinking)
@@ -86,26 +88,66 @@ struct MessageRow: View {
         }
     }
 
-    /// 消息上方：模型图标 + 名字，点一下展开思考过程
+    /// 消息上方：模型图标 + 名字；有工作过程或思考过程时旁边有个小箭头，点一下展开
     private var label: some View {
         Button {
-            guard !reasoning.isEmpty, showReasoning else { return }
+            guard hasDetail else { return }
             withAnimation(Motion.spring) { reasoningOpen.toggle() }
         } label: {
             HStack(spacing: 6) {
                 if showEngineLogo { EngineLogo(engine: persona?.engine ?? .claude, size: 14) }
                 Text(persona?.name ?? "已删除的角色").font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
-                if !reasoning.isEmpty && showReasoning {
+                if hasDetail {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8.5, weight: .bold))
                         .foregroundStyle(Palette.inkSoft)
                         .rotationEffect(.degrees(reasoningOpen ? 180 : 0))
+                }
+                // 正在干活时，名字旁淡淡地显示当前这一步
+                if live != nil, !reasoningOpen, let current = steps.last {
+                    Text(current)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.inkSoft)
+                        .lineLimit(1)
+                        .contentTransition(.opacity)
+                        .animation(Motion.snappy, value: current)
                 }
             }
             .padding(.leading, 2)
         }
         .buttonStyle(.plain)
         .disabled(selecting)
+    }
+
+    /// 展开后：一步步的工作过程，下面是思考过程
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !steps.isEmpty {
+                Text("工作过程 · \(steps.count) 步").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Palette.inkSoft)
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Circle()
+                            .fill(live != nil && index == steps.count - 1 ? Palette.ink : Palette.faint)
+                            .frame(width: 5, height: 5)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                        Text(step)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Palette.ink2)
+                            .lineLimit(3)
+                    }
+                }
+            }
+            if !reasoning.isEmpty && showReasoning {
+                Text(reasoning)
+                    .font(.system(size: 13))
+                    .lineSpacing(4)
+                    .foregroundStyle(Palette.inkSoft)
+            }
+        }
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) { Rectangle().fill(Palette.hairline).frame(width: 2) }
+        .padding(.leading, 2)
+        .padding(.vertical, 2)
     }
 
     // MARK: - 内容
@@ -145,7 +187,7 @@ struct MessageRow: View {
             NoteCard(text: message.content, time: time).contextMenu { menu }
         case .file:
             ForEach(message.sortedAttachments) { a in
-                FileCard(name: a.fileName, size: a.data.count, time: time).contextMenu { menu }
+                FileCard(name: a.fileName, size: a.data.count, time: time, data: a.data).contextMenu { menu }
             }
         }
     }
@@ -172,6 +214,7 @@ struct MessageRow: View {
 
     @ViewBuilder
     private var menu: some View {
+        Button { actions.quote(message) } label: { Label("引用", systemImage: "quote.bubble") }
         if !message.content.isEmpty {
             Button { actions.copy(message.content) } label: { Label("复制", systemImage: "doc.on.doc") }
         }
@@ -196,6 +239,30 @@ struct MessageRow: View {
         .padding(.leading, 4)
     }
 
+}
+
+/// 引用的那句话：小小的一块，放在自己的消息下面（和微信一样）
+struct QuoteChip: View {
+    let text: String
+    var onClose: (() -> Void)? = nil
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(text)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.inkSoft)
+                .lineLimit(2)
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Palette.faint)
+                }
+                .accessibilityLabel("取消引用")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Palette.fill.opacity(0.85), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+    }
 }
 
 /// 时间放在气泡右下角：先留出时间的位置，再把时间叠上去
@@ -362,8 +429,27 @@ struct FileCard: View {
     let name: String
     let size: Int
     let time: String
+    /// 有文件内容时，点一下用系统预览打开（能保存到「文件」、分享给其他 App）
+    var data: Data? = nil
+    @State private var previewURL: URL?
 
     var body: some View {
+        card
+            .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+            .onTapGesture { open() }
+            .quickLookPreview($previewURL)
+    }
+
+    private func open() {
+        guard let data else { return }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("files", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(name.isEmpty ? "文件" : name)
+        try? data.write(to: url, options: .atomic)
+        previewURL = url
+    }
+
+    private var card: some View {
         HStack(spacing: Space.item) {
             Image(systemName: "doc.text")
                 .font(.system(size: 20))

@@ -32,6 +32,16 @@ enum WallpaperStore {
         UserDefaults.standard.removeObject(forKey: key(owner))
     }
 
+    /// 照片背景的明暗（-0.6 更暗 … 0.6 更亮）和模糊（0…24），每个背景各存一份
+    static func dimKey(_ owner: UUID?) -> String { owner.map { "wallpaperDim.\($0.uuidString)" } ?? "wallpaperDim" }
+    static func blurKey(_ owner: UUID?) -> String { owner.map { "wallpaperBlur.\($0.uuidString)" } ?? "wallpaperBlur" }
+    static let defaultDim = 0.15
+
+    static func adjustments(for owner: UUID?) -> (dim: Double, blur: Double) {
+        let d = UserDefaults.standard
+        return (d.object(forKey: dimKey(owner)) as? Double ?? defaultDim, d.double(forKey: blurKey(owner)))
+    }
+
     /// 对话自己设了背景就用自己的，否则跟随全局
     static func resolve(for convoID: UUID, global: Int) -> (index: Int, owner: UUID?) {
         let own = UserDefaults.standard.object(forKey: key(convoID)) as? Int ?? -1
@@ -60,7 +70,7 @@ struct ChatVeil: View {
             let frame = geo.frame(in: .global)
             let screen = UIScreen.main.bounds
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
+                ClearBlur()
                     .mask(gradient(solidUntil: 0.62))
                 ChatWallpaper(index: index, owner: owner, edgeToEdge: false)
                     .frame(width: screen.width, height: screen.height)
@@ -82,6 +92,25 @@ struct ChatVeil: View {
     }
 }
 
+/// 只有模糊、没有颜色的毛玻璃：系统毛玻璃自带一层浅色（深色背景上会发白），这里把那层颜色去掉
+struct ClearBlur: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        DispatchQueue.main.async { Self.stripTint(view) }
+        return view
+    }
+
+    func updateUIView(_ view: UIVisualEffectView, context: Context) {
+        Self.stripTint(view)
+    }
+
+    private static func stripTint(_ view: UIVisualEffectView) {
+        for sub in view.subviews where String(describing: type(of: sub)).contains("VisualEffectSubview") {
+            sub.isHidden = true
+        }
+    }
+}
+
 struct ChatWallpaper: View {
     let index: Int
     var owner: UUID? = nil
@@ -97,13 +126,15 @@ struct ChatWallpaper: View {
     var body: some View {
         Group {
             if index == 3, let image = WallpaperStore.image(for: owner) {
+                let adjust = WallpaperStore.adjustments(for: owner)
                 Color.clear.overlay {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                        .blur(radius: adjust.blur, opaque: true)
                 }
                 .clipped()
-                .overlay(Palette.paper.opacity(0.18))
+                .overlay(adjust.dim >= 0 ? Color.white.opacity(adjust.dim) : Color.black.opacity(-adjust.dim))
             } else {
                 Self.swatches[min(max(index, 0), 2)].1
             }
@@ -118,6 +149,8 @@ struct WallpaperPicker: View {
     let owner: UUID?
     @AppStorage(WallpaperStore.stampKey) private var stamp = 0.0
     @AppStorage private var selection: Int
+    @AppStorage private var dim: Double
+    @AppStorage private var blur: Double
     @State private var item: PhotosPickerItem?
 
     init(owner: UUID?) {
@@ -127,9 +160,42 @@ struct WallpaperPicker: View {
         } else {
             _selection = AppStorage(wrappedValue: 0, Prefs.wallpaper)
         }
+        _dim = AppStorage(wrappedValue: WallpaperStore.defaultDim, WallpaperStore.dimKey(owner))
+        _blur = AppStorage(wrappedValue: 0, WallpaperStore.blurKey(owner))
     }
 
+    private var hasPhoto: Bool { selection == 3 && WallpaperStore.image(for: owner) != nil }
+
     var body: some View {
+        VStack(spacing: Space.section) {
+            swatches
+            // 选了照片时可以调明暗和模糊
+            if hasPhoto {
+                VStack(spacing: Space.tight) {
+                    adjustRow("明暗", value: $dim, range: -0.6...0.6, low: "sun.min", high: "sun.max")
+                    adjustRow("模糊", value: $blur, range: 0...24, low: "drop", high: "drop.fill")
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(Motion.spring, value: hasPhoto)
+    }
+
+    private func adjustRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>,
+                           low: String, high: String) -> some View {
+        HStack(spacing: Space.item) {
+            Text(title).font(.system(size: 14)).foregroundStyle(Palette.ink).frame(width: 34, alignment: .leading)
+            Image(systemName: low).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+            Slider(value: value, in: range) { editing in
+                // 松手时让聊天页换上新的效果
+                if !editing { stamp = Date.now.timeIntervalSince1970 }
+            }
+            .tint(Palette.ink)
+            Image(systemName: high).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+        }
+    }
+
+    private var swatches: some View {
         HStack(spacing: 10) {
             if owner != nil {
                 pick(-1, "跟随") {
@@ -145,7 +211,12 @@ struct WallpaperPicker: View {
             PhotosPicker(selection: $item, matching: .images) {
                 swatch(3, "照片") {
                     if selection == 3, let image = WallpaperStore.image(for: owner) {
-                        Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill() }.id(stamp)
+                        // 小预览也跟着明暗、模糊实时变化
+                        Color.clear.overlay {
+                            Image(uiImage: image).resizable().scaledToFill().blur(radius: blur / 4, opaque: true)
+                        }
+                        .overlay(dim >= 0 ? Color.white.opacity(dim) : Color.black.opacity(-dim))
+                        .id(stamp)
                     } else {
                         ZStack {
                             Palette.paper

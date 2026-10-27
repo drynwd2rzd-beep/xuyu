@@ -20,6 +20,8 @@ final class Persona {
     var model: String = ""
     /// 推理强度，空字符串表示使用默认
     var effort: String = ""
+    /// 工作模式：允许在电脑的工作文件夹里读写文件、运行命令
+    var canWork: Bool = false
     var proactive: Bool = false
     /// 0 偶尔 · 1 每天 · 2 常常
     var proactiveFreq: Int = 1
@@ -106,6 +108,10 @@ final class Message {
     var modelLabel: String = ""
     /// 这条回复在电脑中继上的编号：App 被关掉后再打开，凭它取回没收完的回复
     var relayID: String = ""
+    /// 工作模式里做过的步骤，一行一步；名字旁的小箭头可以展开看
+    var steps: String = ""
+    /// 长按「引用」时带上的那句话，例如「Claude：周六去植物园吧」
+    var quote: String = ""
     /// 主动消息：提前生成，createdAt 是送达时间
     var isProactive: Bool = false
     var createdAt: Date = Date()

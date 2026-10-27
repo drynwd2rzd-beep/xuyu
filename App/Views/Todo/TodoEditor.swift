@@ -144,6 +144,7 @@ struct DiaryCard: View {
     @Query(sort: \DiaryEntry.createdAt) private var entries: [DiaryEntry]
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @State private var tab: DiaryAuthor = .ai
+    @Environment(RelayClient.self) private var relay
     @AppStorage(Prefs.diaryWriter) private var writerID = ""
     @AppStorage(Prefs.showMyDiary) private var showMine = true
     @State private var myText = ""
@@ -213,6 +214,12 @@ struct DiaryCard: View {
         .card()
         .animation(Motion.spring, value: tab)
         .onAppear { myText = myEntry?.text ?? "" }
+        // 看到今天的日记还没写、又已经过了 8 点：马上去写（不用等下次打开 App）
+        .task(id: "\(day.timeIntervalSince1970)-\(writerID)-\(relay.isConnected)") {
+            guard Calendar.current.isDateInToday(day), aiEntry == nil,
+                  Calendar.current.component(.hour, from: .now) >= 20 else { return }
+            await Companion.writeDiaries(context: context, relay: relay)
+        }
         .onChange(of: day) { _, _ in
             myText = myEntry?.text ?? ""
             expanded = false
@@ -250,7 +257,15 @@ struct DiaryCard: View {
     }
 
     private var placeholder: String {
-        Calendar.current.isDateInToday(day) ? "今晚 8 点以后，\(aiName) 会根据你们的聊天写下今天的日记。" : "这一天没有日记。"
+        if DiaryState.shared.writing.contains(day.startOfDay) { return "\(aiName) 正在写今天的日记…" }
+        guard Calendar.current.isDateInToday(day) else { return "这一天没有日记。" }
+        if Calendar.current.component(.hour, from: .now) < 20 {
+            return "今晚 8 点以后，\(aiName) 会根据你们的聊天写下今天的日记。"
+        }
+        if !Companion.enoughToWrite(on: day, context: context) {
+            return "今天聊得还不多，多聊几句，\(aiName) 就会写下今天的日记。"
+        }
+        return relay.isConnected ? "\(aiName) 马上就会写好今天的日记。" : "连上电脑后，\(aiName) 就会写好今天的日记。"
     }
 
     private func ensureMine() -> DiaryEntry {

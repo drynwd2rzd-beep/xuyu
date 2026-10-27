@@ -314,6 +314,8 @@ struct SettingRow<Trailing: View>: View {
             trailing
         }
         .padding(.horizontal, Space.card)
+        // 说明文字折成两行时上下也留出呼吸的空间
+        .padding(.vertical, subtitle == nil ? 0 : Space.tight)
         .frame(minHeight: subtitle == nil ? Space.row : Space.rowTall)
         .contentShape(Rectangle())
     }

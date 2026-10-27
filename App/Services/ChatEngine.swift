@@ -8,6 +8,7 @@ import UIKit
 final class StreamBuffer {
     var text = ""
     var reasoning = ""
+    var steps: [String] = []
 }
 
 struct OutgoingAttachment {
@@ -44,9 +45,10 @@ final class ChatEngine {
 
     // MARK: - 发送
 
-    func send(_ text: String, kind: MessageKind = .text, attachments: [OutgoingAttachment] = [],
+    func send(_ text: String, kind: MessageKind = .text, attachments: [OutgoingAttachment] = [], quote: String = "",
               in convo: Conversation, members: [Persona], context: ModelContext) {
         let message = Message(role: .user, kind: kind, content: text)
+        message.quote = quote
         message.conversation = convo
         context.insert(message)
         for (index, item) in attachments.enumerated() {
@@ -155,7 +157,8 @@ final class ChatEngine {
         var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
         try? context.save()
         var sent: [String] = []
-        var rich = false
+        // 工作模式的回复是一份完整的汇报，不拆成几条
+        var rich = persona.canWork
         typing[convo.id] = persona.id
 
         /// 像真人一样一句一句发：每说完一段（空一行），就把这段作为一条消息发出去，接着「输入中」
@@ -184,6 +187,12 @@ final class ChatEngine {
                 switch event {
                 case .text(let s): pendingText += s
                 case .reasoning(let s): pendingReasoning += s
+                case .step(let s):
+                    buffer.steps.append(s)
+                    message.steps = buffer.steps.joined(separator: "\n")
+                case .file(let name, let data):
+                    // 工作模式发回手机的文件：单独一条文件消息
+                    deliver(file: name, data: data, from: persona, in: convo, context: context)
                 }
                 if ContinuousClock.now - lastFlush > .milliseconds(50) {
                     buffer.text += pendingText
@@ -213,7 +222,8 @@ final class ChatEngine {
         buffers[message.id] = nil
         message.content = buffer.text.trimmed
         message.reasoning = buffer.reasoning.trimmed
-        if message.status == .done && message.content.isEmpty {
+        message.steps = buffer.steps.joined(separator: "\n")
+        if message.status == .done && message.content.isEmpty && message.steps.isEmpty {
             context.delete(message)
         } else if message.status == .done {
             sent.append(message.content)
@@ -223,6 +233,19 @@ final class ChatEngine {
         }
         convo.updatedAt = .now
         if router?.openConversation == convo.id { convo.lastReadAt = .now }
+        try? context.save()
+    }
+
+    /// 电脑发回来的文件：图片显示成照片，其他显示成文件卡片
+    private func deliver(file name: String, data: Data, from persona: Persona, in convo: Conversation, context: ModelContext) {
+        let ext = (name as NSString).pathExtension.lowercased()
+        let isImage = ["jpg", "jpeg", "png", "heic", "gif", "webp"].contains(ext)
+        let m = Message(role: .assistant, kind: isImage ? .images : .file, content: "", personaID: persona.id)
+        m.conversation = convo
+        context.insert(m)
+        let a = Attachment(kind: isImage ? "image" : "file", fileName: name, data: data, order: 0)
+        a.message = m
+        context.insert(a)
         try? context.save()
     }
 
@@ -244,9 +267,16 @@ final class ChatEngine {
             let siblings = (convo.messages ?? []).filter { $0.relayID == relayID }.sorted { $0.createdAt < $1.createdAt }
             guard let first = siblings.first else { continue }
             var text = ""
+            var steps: [String] = []
+            var files: [(String, Data)] = []
             do {
                 for try await event in relay.resume(relayID) {
-                    if case .text(let s) = event { text += s }
+                    switch event {
+                    case .text(let s): text += s
+                    case .step(let s): steps.append(s)
+                    case .file(let name, let data): files.append((name, data))
+                    case .reasoning: break
+                    }
                 }
             } catch {
                 for m in stuck {
@@ -256,10 +286,12 @@ final class ChatEngine {
                 try? context.save()
                 continue
             }
-            // 按和实时一样的规则重新分成几条：说完一段就是一条，带格式的整段一条
-            let parts = Self.looksRich(text) ? [text.trimmed]
+            // 按和实时一样的规则重新分成几条：说完一段就是一条，带格式的或工作汇报整段一条
+            let persona = first.personaID.flatMap { id in context.allPersonas().first { $0.id == id } }
+            let whole = Self.looksRich(text) || persona?.canWork == true
+            let parts = whole ? [text.trimmed].filter { !$0.isEmpty }
                 : text.components(separatedBy: "\n\n").map(\.trimmed).filter { !$0.isEmpty }
-            guard !parts.isEmpty else { continue }
+            guard !parts.isEmpty || !files.isEmpty else { continue }
             let start = first.createdAt
             let personaID = first.personaID
             let label = first.modelLabel
@@ -268,9 +300,13 @@ final class ChatEngine {
                 let m = Message(role: .assistant, content: part, personaID: personaID)
                 m.modelLabel = label
                 m.relayID = relayID
+                m.steps = i == 0 ? steps.joined(separator: "\n") : ""
                 m.createdAt = start.addingTimeInterval(Double(i) * 0.001)
                 m.conversation = convo
                 context.insert(m)
+            }
+            if let persona {
+                for (name, data) in files { deliver(file: name, data: data, from: persona, in: convo, context: context) }
             }
             convo.updatedAt = .now
             try? context.save()
@@ -347,6 +383,7 @@ enum PromptBuilder {
         case .note: body = "【写下的想法】\(m.content)"
         case .sticker: body = "[发了一个表情]"
         }
+        if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
         return "[\(Fmt.time24.string(from: m.createdAt))] \(who)：\(body)"
     }
 
@@ -389,7 +426,7 @@ enum PromptBuilder {
         }
         return RelayRequest(engine: persona.engine.rawValue, model: model(for: persona), effort: effort(for: persona),
                             system: system(for: persona, convo: convo, members: members),
-                            prompt: prompt, attachments: attachments)
+                            prompt: prompt, attachments: attachments, work: persona.canWork)
     }
 }
 
