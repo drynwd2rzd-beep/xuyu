@@ -17,7 +17,15 @@ export function resolveCommand(name) {
       .map((l) => l.trim())
       .filter(Boolean);
   } catch {
-    return null;
+    // 刚安装完时 PATH 可能还没刷新，去常见位置找
+    const home = process.env.USERPROFILE || '';
+    const guesses = [
+      path.join(process.env.APPDATA || '', 'npm', `${name}.cmd`),
+      path.join(home, '.local', 'bin', `${name}.exe`),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', name, `${name}.exe`),
+    ];
+    lines = guesses.filter((g) => fs.existsSync(g));
+    if (!lines.length) return null;
   }
   const exe = lines.find((l) => l.toLowerCase().endsWith('.exe'));
   if (exe) return { file: exe, pre: [] };
@@ -28,10 +36,13 @@ export function resolveCommand(name) {
 function fromPath(file) {
   if (!file.toLowerCase().endsWith('.cmd')) return { file, pre: [] };
   const text = fs.readFileSync(file, 'utf8');
-  // npm 包装里可能是 .js 入口（用 node 运行），也可能直接是原生 .exe
-  const match = text.match(/"%(?:~?dp0)%?\\([^"]+?\.(?:(?:c|m)?js|exe))"/i);
-  if (!match) return null;
-  const target = path.join(path.dirname(file), match[1]);
-  if (target.toLowerCase().endsWith('.exe')) return { file: target, pre: [] };
-  return { file: process.execPath, pre: [target] };
+  // npm 包装里可能是 .js 入口（用 node 运行），也可能直接是原生 .exe；跳过包装自带的 node.exe
+  const found = [...text.matchAll(/"%(?:~?dp0)%?\\([^"]+?\.(?:(?:c|m)?js|exe))"/gi)]
+    .map((m) => m[1])
+    .filter((p) => !/(^|\\)node\.exe$/i.test(p));
+  const script = found.find((p) => /\.(c|m)?js$/i.test(p));
+  const exe = found.find((p) => /\.exe$/i.test(p));
+  if (script) return { file: process.execPath, pre: [path.join(path.dirname(file), script)] };
+  if (exe) return { file: path.join(path.dirname(file), exe), pre: [] };
+  return null;
 }

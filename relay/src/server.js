@@ -4,7 +4,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { WebSocketServer } from 'ws';
-import { loadConfig, paths } from './config.js';
+import { loadConfig, saveConfig, paths } from './config.js';
 import { resolveCommand } from './resolve.js';
 import { runEngine } from './engines.js';
 
@@ -148,32 +148,64 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+/** 手机能连的局域网地址（排除代理/VPN 的虚拟网卡），Tailscale 地址放在后面 */
 function lanAddresses() {
-  const out = [];
+  const lan = [];
+  const tailscale = [];
   for (const list of Object.values(os.networkInterfaces())) {
     for (const a of list || []) {
-      if (a.family === 'IPv4' && !a.internal) out.push(a.address);
+      if (a.family !== 'IPv4' || a.internal) continue;
+      const [p, q] = a.address.split('.').map(Number);
+      if (p === 192 && q === 168 || p === 10 || p === 172 && q >= 16 && q <= 31) lan.push(a.address);
+      else if (p === 100 && q >= 64 && q <= 127) tailscale.push(a.address);
     }
   }
-  return out;
+  return [...lan, ...tailscale];
 }
 
-server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE') {
-    console.error(`端口 ${config.port} 已被占用。是不是已经开着一个中继了？`);
-  } else {
-    console.error(e.message);
-  }
-  process.exit(1);
-});
+// WebSocketServer 会转发底层的 error 事件，这里统一在 listen 时处理
+wss.on('error', () => {});
 
-server.listen(config.port, '0.0.0.0', async () => {
+// 端口被占用或被系统保留时，自动换下一个，并记住能用的端口
+const candidates = [...new Set([config.port, 51888, 52888, 53888, 54888, 47823])];
+
+function listen(index) {
+  const port = candidates[index];
+  if (port === undefined) {
+    console.error('找不到可用的端口，请重启电脑后再试。');
+    process.exit(1);
+  }
+  const onListening = () => {
+    server.off('error', onError);
+    if (port !== config.port) {
+      config.port = port;
+      saveConfig(config);
+    }
+    banner(port);
+  };
+  const onError = (e) => {
+    server.off('listening', onListening);
+    if (e.code === 'EADDRINUSE' || e.code === 'EACCES') {
+      listen(index + 1);
+    } else {
+      console.error(e.message);
+      process.exit(1);
+    }
+  };
+  server.once('error', onError);
+  server.once('listening', onListening);
+  server.listen(port, '0.0.0.0');
+}
+
+listen(0);
+
+async function banner(port) {
   const s = await status();
   const line = '─'.repeat(44);
   console.log(line);
   console.log('  絮语中继已启动');
   console.log(line);
-  for (const ip of lanAddresses()) console.log(`  地址    ${ip}:${config.port}`);
+  for (const ip of lanAddresses()) console.log(`  地址    ${ip}:${port}`);
   console.log(`  配对码  ${config.token}`);
   console.log(line);
   console.log(`  Claude Code  ${s.claude.installed ? s.claude.version : '未安装'}`);
@@ -181,4 +213,4 @@ server.listen(config.port, '0.0.0.0', async () => {
   console.log(line);
   console.log('  在 iPhone 的「设置 → 连接」里填上地址和配对码。');
   console.log('  这个窗口开着，手机才能聊天。');
-});
+}

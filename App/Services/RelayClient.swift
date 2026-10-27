@@ -139,7 +139,7 @@ final class RelayClient {
             host = String(host.dropFirst(prefix.count))
         }
         while host.hasSuffix("/") { host.removeLast() }
-        if !host.contains(":") { host += ":8765" }
+        if !host.contains(":") { host += ":51888" }
         var comps = URLComponents(string: "ws://\(host)/ws")
         comps?.queryItems = [URLQueryItem(name: "token", value: code.trimmed.uppercased())]
         return comps?.url

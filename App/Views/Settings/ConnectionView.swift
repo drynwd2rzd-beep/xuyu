@@ -11,7 +11,7 @@ struct ConnectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.section) {
                 VStack(spacing: 0) {
-                    field("地址", text: $address, placeholder: "192.168.1.8:8765", keyboard: .URL)
+                    field("地址", text: $address, placeholder: "192.168.1.8:51888", keyboard: .URL)
                     Hairline()
                     field("配对码", text: $code, placeholder: "电脑窗口里显示的 8 位", keyboard: .asciiCapable)
                 }

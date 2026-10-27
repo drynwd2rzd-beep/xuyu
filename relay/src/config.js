@@ -15,7 +15,7 @@ export const paths = {
 };
 
 const defaults = {
-  port: 8765,
+  port: 51888,
   token: '',
   models: {
     claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
@@ -46,6 +46,10 @@ export function loadConfig() {
     commands: { ...defaults.commands, ...(saved.commands || {}) },
   };
   if (!config.token) config.token = newToken();
-  fs.writeFileSync(paths.config, JSON.stringify(config, null, 2));
+  saveConfig(config);
   return config;
+}
+
+export function saveConfig(config) {
+  fs.writeFileSync(paths.config, JSON.stringify(config, null, 2));
 }
