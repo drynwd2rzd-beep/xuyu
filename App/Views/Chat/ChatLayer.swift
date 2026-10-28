@@ -20,7 +20,8 @@ struct ChatLayer: View {
                 }
                 .navigationDestination(for: Route.self) { RouteView(route: $0) }
             }
-            .shadow(color: .black.opacity(drag > 0 ? 0.18 : 0), radius: 18, x: -4)
+            // 侧滑时左边投一道阴影（投在底板上，不是给页面里每样东西各投一层）
+            .background(Rectangle().fill(Palette.paper).shadow(color: .black.opacity(drag > 0 ? 0.18 : 0), radius: 18, x: -4).ignoresSafeArea())
             .offset(x: drag)
             // 从左边缘开始往右滑：返回。和按钮、滚动同时识别，不会挡住左上角的返回键和输入框旁的按钮；
             // 聊天里又点进别的页面时，交给系统自己的返回手势

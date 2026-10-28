@@ -97,9 +97,10 @@ struct HomeView: View {
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 22)
                         .frame(height: 50)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .background {
+                            Capsule().fill(.ultraThinMaterial).shadow(color: .black.opacity(0.09), radius: 18, y: 8)
+                        }
                         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
-                        .shadow(color: .black.opacity(0.09), radius: 18, y: 8)
                 }
                 .buttonStyle(ScaleButtonStyle())
                 .padding(.bottom, 6)

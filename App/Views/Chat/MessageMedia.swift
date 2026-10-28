@@ -107,13 +107,16 @@ struct NoteCard: View {
         }
         .padding(Space.card)
         .frame(maxWidth: 260, alignment: .leading)
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
+                .fill(Palette.card)
+                .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+        }
         .overlay(alignment: .top) {
             Rectangle().fill(Palette.clay.opacity(0.5)).frame(height: 3)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: Radius.tile, topTrailingRadius: Radius.tile, style: .continuous))
         }
         .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
     }
 }
 

@@ -174,9 +174,10 @@ struct FloatingTabBar: View {
             }
         }
         .padding(5)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background {
+            Capsule().fill(.ultraThinMaterial).shadow(color: .black.opacity(0.09), radius: 18, y: 8)
+        }
         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.09), radius: 18, y: 8)
         .padding(.bottom, 6)
         .sensoryFeedback(.selection, trigger: selection)
     }
@@ -200,8 +201,11 @@ struct InAppBanner: View {
             }
             .padding(.horizontal, Space.item)
             .padding(.vertical, 10)
-            .background(Palette.noir, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+            .background {
+                RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                    .fill(Palette.noir)
+                    .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+            }
         }
         .buttonStyle(ScaleButtonStyle())
         .sensoryFeedback(.impact(weight: .light), trigger: banner.id)

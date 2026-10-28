@@ -53,6 +53,6 @@ struct PhotoWidget: View {
         .id(stamp)
         .frame(maxWidth: .infinity, minHeight: 136, maxHeight: 136)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 14, y: 5)
+        .background { CardShadow() }
     }
 }

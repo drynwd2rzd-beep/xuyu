@@ -41,8 +41,11 @@ struct WhisperWidget: View {
         }
         .padding(Space.card + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.noir, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .shadow(color: .black.opacity(0.14), radius: 16, y: 10)
+        .background {
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .fill(Palette.noir)
+                .shadow(color: .black.opacity(0.14), radius: 16, y: 10)
+        }
     }
 }
 
@@ -266,6 +269,6 @@ struct MemoryWidget: View {
         }
         .frame(maxWidth: .infinity, minHeight: 136, maxHeight: 136)
         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 14, y: 5)
+        .background { CardShadow() }
     }
 }

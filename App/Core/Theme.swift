@@ -143,14 +143,27 @@ struct CardStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            // 阴影只投在卡片底板上：加在整块卡片上的话，里面每一行（各有白底）都会各投一圈阴影，看起来像一块块单独的小卡片
+            .background {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(Palette.card)
+                    .shadow(color: .black.opacity(0.035), radius: 14, y: 5)
+            }
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Palette.hairline.opacity(0.8), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.035), radius: 14, y: 5)
     }
 }
 
 extension View {
     func card(radius: CGFloat = Radius.card) -> some View { modifier(CardStyle(radius: radius)) }
+}
+
+/// 只要卡片的阴影（照片类小组件自己有内容铺满，阴影放在它们后面）
+struct CardShadow: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+            .fill(Palette.card)
+            .shadow(color: .black.opacity(0.05), radius: 14, y: 5)
+    }
 }
 
 /// 列表行：按下时底色淡淡浮现，松手后慢慢退去
