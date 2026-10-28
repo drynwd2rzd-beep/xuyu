@@ -98,6 +98,7 @@ struct MessageRow: View {
                         // 收起时不占 VStack 的间距
                         .padding(.bottom, reasoningOpen ? 0 : -5)
                 }
+                if let id = message.momentID { MomentRef(id: id) }
                 content(isUser: false)
                     .animation(Motion.reveal, value: isThinking)
                 // TA 引用了你说过的话

@@ -68,6 +68,10 @@ enum PromptBuilder {
         if let memory = convo?.memory.trimmed, !memory.isEmpty {
             parts.append("你记得的关于\(userName)、以及你们之间的事（来自更早的聊天）：\n\(memory)")
         }
+        // 最近的动态：TA 自己发的、你发的，聊天时能自然提起
+        if convo != nil, let context = persona.modelContext, let moments = MomentPrompt.chatContext(for: persona, context: context) {
+            parts.append(moments)
+        }
         // 这里只写到「今天」：一整天内开头都不变，模型的提示缓存才能一直命中；具体时间放在消息末尾
         parts.append("今天是 \(Fmt.day.string(from: .now))。")
         return parts.joined(separator: "\n\n")

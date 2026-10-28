@@ -35,6 +35,8 @@ enum ReplyText {
         var cancels: [String] = []
         /// 【语音】：这一段用语音说
         var voice = false
+        /// 【动态】：TA 提起自己最近发的那条动态
+        var moment = false
         /// 要念出来的话：保留语气标签（笑、叹气、停顿），body 里的已经去掉
         var spoken = ""
     }
@@ -45,6 +47,7 @@ enum ReplyText {
     private static let promiseMarker = try! Regex("[【\\[]约定[:：]\\s*(.+?)\\s*[|｜]\\s*(.+?)[】\\]]")
     private static let cancelMarker = try! Regex("[【\\[]取消约定[:：]\\s*(.+?)[】\\]]")
     private static let voiceMarker = try! Regex("[【\\[]语音[】\\]]")
+    private static let momentMarker = try! Regex("[【\\[]动态[】\\]]")
     /// TA 偶尔会用文字假装发表情（比如「[表情]」「【捂脸表情】」）
     private static let fakeSticker = try! Regex("[【\\[][^】\\]]{0,8}表情[^】\\]]{0,8}[】\\]]")
 
@@ -73,11 +76,13 @@ enum ReplyText {
             promises.append(Promise(time: time, what: what))
             body.removeSubrange(match.range)
         }
+        let moment = body.firstMatch(of: momentMarker) != nil
+        body = body.replacing(momentMarker, with: "")
         let voice = body.firstMatch(of: voiceMarker) != nil
         body = body.replacing(voiceMarker, with: "")
         body = body.replacing(fakeSticker, with: "")
         return Markers(body: VoiceTags.strip(body), quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels,
-                       voice: voice, spoken: body.trimmed)
+                       voice: voice, moment: moment, spoken: body.trimmed)
     }
 
     /// TA 引用的是你哪句话：从最近的往前找，包含这几个字的那条（或这几个字包含那条的开头）

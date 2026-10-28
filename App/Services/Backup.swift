@@ -19,6 +19,8 @@ enum Backup {
         var todos: [TodoDTO]
         var diaries: [DiaryDTO]
         var stickers: [StickerDTO]
+        var moments: [MomentDTO]?
+        var album: [AlbumDTO]?
         var prefs: [String: String]
         var myAvatar: Data?
     }
@@ -32,6 +34,7 @@ enum Backup {
         var voiceProvider: String?, voiceModel: String?
         var voiceSpeed: Double?, voiceVolume: Double?, voicePitch: Int?, voiceEmotion: String?
         var voiceStyle: String?
+        var momentsFreq: Int?, momentsMutual: Bool?
     }
 
     struct ConversationDTO: Codable {
@@ -46,6 +49,7 @@ enum Backup {
         var isProactive: Bool, readAt: Date?, recalled: Bool, createdAt: Date
         var quoteID: UUID?
         var translation: String?
+        var momentID: UUID?
         var attachments: [AttachmentDTO]
     }
 
@@ -61,6 +65,20 @@ enum Backup {
     struct DiaryDTO: Codable {
         var id: UUID, day: Date, authorRaw: String, text: String, mood: String, personaID: UUID?, createdAt: Date
         var reply: String, replyPersonaID: UUID?, repliedText: String
+    }
+
+    struct MomentDTO: Codable {
+        var id: UUID, personaID: UUID?, text: String, mood: String, photoIDs: [UUID], voice: Data?
+        var likedBy: [UUID], likedByMe: Bool, reacted: Bool, createdAt: Date
+        var comments: [CommentDTO]
+    }
+
+    struct CommentDTO: Codable {
+        var id: UUID, personaID: UUID?, replyTo: UUID?, replyToMe: Bool, text: String, createdAt: Date
+    }
+
+    struct AlbumDTO: Codable {
+        var id: UUID, personaID: UUID?, data: Data, caption: String, createdAt: Date
     }
 
     struct StickerDTO: Codable {
@@ -82,6 +100,8 @@ enum Backup {
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let diaries = (try? context.fetch(FetchDescriptor<DiaryEntry>())) ?? []
         let stickers = (try? context.fetch(FetchDescriptor<Sticker>())) ?? []
+        let moments = (try? context.fetch(FetchDescriptor<Moment>())) ?? []
+        let album = (try? context.fetch(FetchDescriptor<AlbumPhoto>())) ?? []
         let defaults = UserDefaults.standard
         var prefs: [String: String] = [:]
         for key in prefKeys {
@@ -96,7 +116,7 @@ enum Backup {
                            voiceID: $0.voiceID, voiceName: $0.voiceName, voiceFreq: $0.voiceFreq, language: $0.language, autoTranslate: $0.autoTranslate,
                            voiceProvider: $0.voiceProvider, voiceModel: $0.voiceModel,
                            voiceSpeed: $0.voiceSpeed, voiceVolume: $0.voiceVolume, voicePitch: $0.voicePitch, voiceEmotion: $0.voiceEmotion,
-                           voiceStyle: $0.voiceStyle)
+                           voiceStyle: $0.voiceStyle, momentsFreq: $0.momentsFreq, momentsMutual: $0.momentsMutual)
             },
             conversations: convos.map { c in
                 ConversationDTO(id: c.id, title: c.title, isGroup: c.isGroup, memberIDs: c.memberIDs, pinned: c.pinned, draft: c.draft,
@@ -107,6 +127,7 @@ enum Backup {
                                                personaID: m.personaID, statusRaw: m.statusRaw, errorText: m.errorText, modelLabel: m.modelLabel,
                                                steps: m.steps, quote: m.quote, isProactive: m.isProactive, readAt: m.readAt,
                                                recalled: m.recalled, createdAt: m.createdAt, quoteID: m.quoteID, translation: m.translation,
+                                               momentID: m.momentID,
                                                attachments: m.sortedAttachments.map {
                                                    AttachmentDTO(kindRaw: $0.kindRaw, fileName: $0.fileName, order: $0.order, data: $0.data)
                                                })
@@ -121,6 +142,15 @@ enum Backup {
                          createdAt: $0.createdAt, reply: $0.reply, replyPersonaID: $0.replyPersonaID, repliedText: $0.repliedText)
             },
             stickers: stickers.map { StickerDTO(id: $0.id, pack: $0.pack, data: $0.data, createdAt: $0.createdAt, lastUsedAt: $0.lastUsedAt) },
+            moments: moments.map { m in
+                MomentDTO(id: m.id, personaID: m.personaID, text: m.text, mood: m.mood, photoIDs: m.photoIDs, voice: m.voice,
+                          likedBy: m.likedBy, likedByMe: m.likedByMe, reacted: m.reacted, createdAt: m.createdAt,
+                          comments: (m.comments ?? []).map {
+                              CommentDTO(id: $0.id, personaID: $0.personaID, replyTo: $0.replyTo, replyToMe: $0.replyToMe,
+                                         text: $0.text, createdAt: $0.createdAt)
+                          })
+            },
+            album: album.map { AlbumDTO(id: $0.id, personaID: $0.personaID, data: $0.data, caption: $0.caption, createdAt: $0.createdAt) },
             prefs: prefs,
             myAvatar: MyAvatarStore.image?.jpegData(compressionQuality: 0.9))
         let encoder = JSONEncoder()
@@ -148,6 +178,9 @@ enum Backup {
         try context.delete(model: TodoItem.self)
         try context.delete(model: DiaryEntry.self)
         try context.delete(model: Sticker.self)
+        try context.delete(model: MomentComment.self)
+        try context.delete(model: Moment.self)
+        try context.delete(model: AlbumPhoto.self)
 
         for d in archive.personas {
             let p = Persona(name: d.name, tint: d.tint, bio: d.bio, systemPrompt: d.systemPrompt)
@@ -159,6 +192,7 @@ enum Backup {
             p.voiceProvider = d.voiceProvider ?? "elevenlabs"; p.voiceModel = d.voiceModel ?? ""
             p.voiceSpeed = d.voiceSpeed ?? 1; p.voiceVolume = d.voiceVolume ?? 1
             p.voicePitch = d.voicePitch ?? 0; p.voiceEmotion = d.voiceEmotion ?? ""; p.voiceStyle = d.voiceStyle ?? ""
+            p.momentsFreq = d.momentsFreq ?? 1; p.momentsMutual = d.momentsMutual ?? true
             context.insert(p)
         }
         for d in archive.conversations {
@@ -173,6 +207,7 @@ enum Backup {
                 m.modelLabel = md.modelLabel; m.steps = md.steps; m.quote = md.quote; m.isProactive = md.isProactive
                 m.readAt = md.readAt; m.recalled = md.recalled; m.createdAt = md.createdAt; m.quoteID = md.quoteID
                 m.translation = md.translation ?? ""
+                m.momentID = md.momentID
                 m.conversation = c
                 context.insert(m)
                 for ad in md.attachments {
@@ -198,6 +233,21 @@ enum Backup {
             let s = Sticker(pack: d.pack, data: d.data)
             s.id = d.id; s.createdAt = d.createdAt; s.lastUsedAt = d.lastUsedAt
             context.insert(s)
+        }
+        for d in archive.album ?? [] {
+            let p = AlbumPhoto(personaID: d.personaID, data: d.data)
+            p.id = d.id; p.caption = d.caption; p.createdAt = d.createdAt
+            context.insert(p)
+        }
+        for d in archive.moments ?? [] {
+            let m = Moment(personaID: d.personaID, text: d.text, mood: d.mood, createdAt: d.createdAt)
+            m.id = d.id; m.photoIDs = d.photoIDs; m.voice = d.voice; m.likedBy = d.likedBy; m.likedByMe = d.likedByMe; m.reacted = d.reacted
+            context.insert(m)
+            for cd in d.comments {
+                let c = MomentComment(personaID: cd.personaID, text: cd.text, replyTo: cd.replyTo, replyToMe: cd.replyToMe, createdAt: cd.createdAt)
+                c.id = cd.id
+                m.add(c, context: context)
+            }
         }
         try context.save()
 

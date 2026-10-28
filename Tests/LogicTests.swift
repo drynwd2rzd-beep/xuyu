@@ -98,6 +98,44 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Waveform.heights(seed: "a", count: 9), Waveform.heights(seed: "a", count: 9))
     }
 
+    // MARK: - 动态
+
+    func testMomentPostParsing() {
+        let post = MomentText.parse("心情：惬意\n动态：傍晚去植物园走了一圈，\n银杏黄了一半。\n配图：2\n语音：无")
+        XCTAssertEqual(post?.mood, "惬意")
+        XCTAssertEqual(post?.text, "傍晚去植物园走了一圈，\n银杏黄了一半。")
+        XCTAssertEqual(post?.photo, 2)
+        XCTAssertNil(post?.spoken)
+        XCTAssertNil(MomentText.parse("心情：开心\n配图：无")?.text, "没有正文就不发")
+        XCTAssertNil(MomentText.parse("动态：「今天的天空很适合发呆」\n配图：无")?.photo)
+        XCTAssertEqual(MomentText.parse("动态：「今天的天空很适合发呆」")?.text, "今天的天空很适合发呆")
+        let r = MomentText.parseReaction("喜欢：是\n评论：银杏黄一半的时候最好看")
+        XCTAssertTrue(r.like)
+        XCTAssertEqual(r.comment, "银杏黄一半的时候最好看")
+        XCTAssertNil(MomentText.parseReaction("喜欢：否\n评论：无").comment)
+    }
+
+    func testMomentScheduleKeepsGap() {
+        let now = Date.now
+        // 刚发过一条：下一条至少隔开「偶尔」16 小时、「常常」4 小时
+        XCTAssertGreaterThanOrEqual(MomentsPlanner.nextTime(after: now, last: now, freq: 1).timeIntervalSince(now), 16 * 3600)
+        XCTAssertGreaterThanOrEqual(MomentsPlanner.nextTime(after: now, last: now, freq: 2).timeIntervalSince(now), 4 * 3600)
+        let markers = ReplyText.markers(in: "【动态】你看到我下午发的了吗")
+        XCTAssertTrue(markers.moment)
+        XCTAssertEqual(markers.body, "你看到我下午发的了吗")
+    }
+
+    func testMomentCommentsAppearInOrder() throws {
+        let context = try makeContext()
+        let m = Moment(personaID: UUID(), text: "今天的天空很适合发呆")
+        context.insert(m)
+        m.add(MomentComment(personaID: nil, text: "好看", createdAt: .now.addingTimeInterval(-60)), context: context)
+        m.add(MomentComment(personaID: UUID(), text: "还没到点", createdAt: .now.addingTimeInterval(600)), context: context)
+        XCTAssertEqual(m.visibleComments().map(\.text), ["好看"])
+        XCTAssertEqual(context.visibleMoments(by: nil).count, 0)
+        XCTAssertEqual(context.visibleMoments().count, 1)
+    }
+
     func testVoiceStyleKeepsDefaultsAndRoundTrips() {
         // 没设过、或者旧版本存的缺项：都用默认值
         XCTAssertEqual(VoiceStyle.decode(""), VoiceStyle())

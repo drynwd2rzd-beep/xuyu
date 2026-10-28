@@ -14,6 +14,10 @@ enum Route: Hashable {
     case backup
     case privacy
     case voice
+    /// 全部动态
+    case moments
+    /// 某个角色的主页和动态
+    case momentsOf(UUID)
 }
 
 @Observable
@@ -140,6 +144,11 @@ enum DemoMode {
         case "persona":
             router.tab = .chats
             if let p = context.allPersonas().first { router.open(.persona(p.id)) }
+        case "moments":
+            router.open(.moments)
+        case "profile":
+            router.tab = .chats
+            if let p = context.allPersonas().first { router.open(.momentsOf(p.id)) }
         case "motion":
             router.tab = .chats
             DemoMotion.run(router: router, context: context, engine: engine)

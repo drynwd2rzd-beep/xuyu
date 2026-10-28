@@ -177,7 +177,7 @@ struct ChatView: View {
             .accessibilityLabel("返回")
             Spacer()
             Button {
-                if convo.isGroup { showInfo = true } else if let p = members.first { router.open(.persona(p.id)) }
+                if convo.isGroup { showInfo = true } else if let p = members.first { router.open(.momentsOf(p.id)) }
             } label: {
                 VStack(spacing: 4) {
                     if convo.isGroup {

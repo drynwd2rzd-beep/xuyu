@@ -50,6 +50,8 @@ for mode in light dark; do
   shoot "$mode-8-stickers" stickers
   shoot "$mode-9-calendar" calendar
   shoot "$mode-10-backup" backup
+  shoot "$mode-11-moments" moments
+  shoot "$mode-12-profile" profile
 done
 # 动画录屏：深色模式、照片背景下跑一遍演示剧本（进出聊天、发消息、回复、侧滑），之后逐帧检查
 xcrun simctl ui "$UDID" appearance dark

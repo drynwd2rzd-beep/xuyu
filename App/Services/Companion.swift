@@ -33,6 +33,7 @@ enum Companion {
         await followUps(context: context, relay: relay, personas: personas)
         await proactive(context: context, relay: relay, personas: personas)
         await Appointments.refresh(context: context, relay: relay)
+        await MomentsPlanner.refresh(context: context, relay: relay)
         Reminders.syncDiaryReminder()
         await Backup.autoBackupIfNeeded(context: context, relay: relay)
     }

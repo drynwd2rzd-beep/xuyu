@@ -262,6 +262,27 @@ struct PersonaEditor: View {
                     .animation(Motion.spring, value: persona.language)
                 }
 
+                // 动态：多常发、去不去看别人的；相册里的照片是 TA 发动态时挑的配图
+                if !persona.canWork {
+                    SettingsGroup(title: "动态") {
+                        SettingRow(title: "发动态") {
+                            Segmented(items: [(0, "不发"), (1, "偶尔"), (2, "常常")], selection: $persona.momentsFreq)
+                                .fixedSize()
+                        }
+                        if persona.momentsFreq > 0 {
+                            Hairline()
+                            SettingRow(title: "和别的角色互动") {
+                                InkToggle(isOn: $persona.momentsMutual, label: "和别的角色互动")
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                    .animation(Motion.spring, value: persona.momentsFreq > 0)
+                    SettingsGroup(title: "相册") {
+                        AlbumGrid(personaID: persona.id).padding(Space.item)
+                    }
+                }
+
                 // 怎么互动
                 SettingsGroup(title: "互动") {
                     SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }

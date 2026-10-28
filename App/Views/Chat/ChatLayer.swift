@@ -20,18 +20,17 @@ struct ChatLayer: View {
                 }
                 .navigationDestination(for: Route.self) { RouteView(route: $0) }
             }
-            // 导航本身铺满整块屏幕（里面的内容照样避开状态栏和底部横条，由系统按窗口算）。
+            // 导航铺满整块屏幕，里面的内容照样避开状态栏和底部横条（由系统按窗口算）。
             // 圆角裁切会被系统做成遮罩、只罩住导航自己那块：它只占安全区的话，状态栏和底部那两截就被切掉，露出上下黑边
             .ignoresSafeArea(.container)
             // 侧滑时四角跟屏幕一样圆
-            .clipShape(ScreenShape(radius: swipe > 0 ? Radius.screen : 0, top: 0, bottom: 0))
+            .clipShape(ScreenShape(radius: swipe > 0 ? Radius.screen : 0))
             .background {
                 // 影子只在侧滑时出现，投在左边，像一张纸叠在列表上
                 if swipe > 0 {
-                    ScreenShape(radius: Radius.screen, top: 0, bottom: 0)
+                    ScreenShape(radius: Radius.screen)
                         .fill(Palette.paper)
                         .shadow(color: .black.opacity(0.22 * (1 - swipe)), radius: 20, x: -6)
-                        .ignoresSafeArea(.container)
                 }
             }
             .scaleEffect(1 - 0.06 * swipe)
@@ -57,12 +56,9 @@ struct ChatLayer: View {
     }
 }
 
-/// 整块屏幕的形状：这一层只占安全区，往上下各伸出 top / bottom（状态栏、底部横条那一截）。
-/// radius 为 0 时再往外多伸很多，等于不裁切
+/// 整块屏幕的圆角形状（聊天层铺满屏幕）。radius 为 0 时往外多伸很多，等于不裁切
 struct ScreenShape: Shape {
     var radius: CGFloat
-    var top: CGFloat
-    var bottom: CGFloat
 
     var animatableData: CGFloat {
         get { radius }
@@ -71,8 +67,7 @@ struct ScreenShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         if radius <= 0.5 { return Path(rect.insetBy(dx: -2000, dy: -2000)) }
-        let screen = CGRect(x: rect.minX, y: rect.minY - top, width: rect.width, height: rect.height + top + bottom)
-        return Path(roundedRect: screen, cornerRadius: radius, style: .continuous)
+        return Path(roundedRect: rect, cornerRadius: radius, style: .continuous)
     }
 }
 
@@ -137,26 +132,15 @@ struct ShuttleEffect: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         let q = 1 - progress
         let screen = UIScreen.main.bounds
-        let insets = Screen.insets
         // 没有那一行（从主页、通知进来）：从屏幕中间
         let from = origin ?? CGRect(x: 0, y: screen.midY - 36, width: screen.width, height: 72)
-        // 这一层的中心是安全区的中心，不是屏幕的中心
-        let center = CGPoint(x: screen.midX, y: insets.top + (screen.height - insets.top - insets.bottom) / 2)
+        // 这一层铺满整块屏幕（见 RootView），中心就是屏幕中心
         return content
-            .clipShape(ScreenShape(radius: leaving ? 0 : q * 40, top: insets.top, bottom: insets.bottom))
+            .clipShape(ScreenShape(radius: leaving ? 0 : q * 40))
             .scaleEffect(leaving ? 1 + 0.08 * q : 0.18 + 0.82 * progress)
-            .offset(x: leaving ? 0 : (from.midX - center.x) * q, y: leaving ? 0 : (from.midY - center.y) * q)
+            .offset(x: leaving ? 0 : (from.midX - screen.midX) * q, y: leaving ? 0 : (from.midY - screen.midY) * q)
             .blur(radius: leaving ? 14 * q : 0)
             .opacity(leaving ? Double(progress) : Double(min(1, progress * 1.4)))
-    }
-}
-
-/// 屏幕四周的安全区（状态栏、底部横条）
-enum Screen {
-    static var insets: UIEdgeInsets {
-        UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-            .first?.safeAreaInsets ?? .zero
     }
 }
 

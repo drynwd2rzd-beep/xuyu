@@ -3,14 +3,15 @@ import SwiftData
 import PhotosUI
 
 enum HomeWidget: String, CaseIterable, Identifiable {
-    case whisper, days, todo, diary, countdown, mood, memory, photo
+    case whisper, moments, days, todo, diary, countdown, mood, memory, photo
 
     var id: String { rawValue }
-    var wide: Bool { self == .whisper || self == .diary }
+    var wide: Bool { self == .whisper || self == .diary || self == .moments }
 
     var label: String {
         switch self {
         case .whisper: "今日一句"
+        case .moments: "动态"
         case .days: "在一起"
         case .todo: "今日待办"
         case .diary: "日记"
@@ -24,6 +25,7 @@ enum HomeWidget: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .whisper: "sparkle"
+        case .moments: "photo.on.rectangle.angled"
         case .days: "heart"
         case .todo: "checklist"
         case .diary: "book.closed"
@@ -34,7 +36,7 @@ enum HomeWidget: String, CaseIterable, Identifiable {
         }
     }
 
-    static let defaults: [HomeWidget] = [.whisper, .days, .todo, .diary]
+    static let defaults: [HomeWidget] = [.whisper, .moments, .days, .todo, .diary]
 }
 
 struct HomeView: View {
@@ -107,6 +109,7 @@ struct HomeView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .onAppear(perform: addMomentsOnce)
         .sheet(isPresented: $showGallery) {
             WidgetGallery(added: Set(widgets)) { add($0) }
                 .presentationDetents([.height(500), .large])
@@ -199,6 +202,16 @@ struct HomeView: View {
         }
     }
 
+    /// 动态是后来才有的：已经在用的人，主页上自动加一次（放在今日一句后面）；之后删了就不再加
+    private func addMomentsOnce() {
+        guard !UserDefaults.standard.bool(forKey: Prefs.momentsWidgetAdded) else { return }
+        UserDefaults.standard.set(true, forKey: Prefs.momentsWidgetAdded)
+        guard !widgets.contains(.moments) else { return }
+        var list = widgets
+        list.insert(.moments, at: list.firstIndex(of: .whisper).map { $0 + 1 } ?? 0)
+        widgetsRaw = list.map(\.rawValue).joined(separator: ",")
+    }
+
     private func open(_ widget: HomeWidget) {
         switch widget {
         case .whisper, .days, .memory:
@@ -211,6 +224,8 @@ struct HomeView: View {
             withAnimation(Motion.spring) { router.tab = .todo }
         case .photo:
             pickPhoto = true
+        case .moments:
+            router.open(.moments)
         }
     }
 }
@@ -280,6 +295,7 @@ private struct WidgetCell: View {
     private var content: some View {
         switch widget {
         case .whisper: WhisperWidget()
+        case .moments: MomentsWidget()
         case .days: DaysWidget()
         case .todo: TodoProgressWidget()
         case .diary: DiaryWidget()

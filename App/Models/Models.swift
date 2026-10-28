@@ -47,6 +47,10 @@ final class Persona {
     var voiceEmotion: String = ""
     /// 其余的声音设置（音色微调、音效、混合声音、读音纠正、ElevenLabs 的稳定性等），存成一段 JSON，见 VoiceStyle
     var voiceStyle: String = ""
+    /// 多常发动态：0 不发 · 1 偶尔 · 2 常常
+    var momentsFreq: Int = 1
+    /// 会去看别的角色的动态，点赞、评论
+    var momentsMutual: Bool = true
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 
@@ -156,6 +160,8 @@ final class Message {
     var recalled: Bool = false
     /// 翻译（长按「翻译」或自动翻译语音时生成；空 = 没翻译或收起了）
     var translation: String = ""
+    /// TA 在聊天里提起的那条动态（消息上面附一张小卡片）
+    var momentID: UUID?
     var createdAt: Date = Date()
     var conversation: Conversation?
     @Relationship(deleteRule: .cascade, inverse: \Attachment.message) var attachments: [Attachment]? = []
@@ -298,5 +304,6 @@ extension ModelContext {
 
 enum Schema1 {
     static let models: [any PersistentModel.Type] = [Persona.self, Conversation.self, Message.self, Attachment.self,
-                                                       TodoItem.self, DiaryEntry.self, Sticker.self]
+                                                       TodoItem.self, DiaryEntry.self, Sticker.self,
+                                                       Moment.self, MomentComment.self, AlbumPhoto.self]
 }

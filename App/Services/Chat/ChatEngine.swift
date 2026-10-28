@@ -467,6 +467,8 @@ final class ChatEngine {
         for promise in markers.promises {
             Appointments.promise(promise, persona: persona, convo: convo, context: context, relay: relay)
         }
+        // TA 提起自己的动态：消息上附上 TA 最近那条
+        if markers.moment, let latest = context.visibleMoments(by: persona.id).first { message.momentID = latest.id }
         let stickers = markers.stickerPacks.isEmpty ? [] : (try? context.fetch(FetchDescriptor<Sticker>())) ?? []
         for pack in markers.stickerPacks {
             // 找不到这个分类就不发

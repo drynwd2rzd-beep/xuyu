@@ -20,6 +20,10 @@ enum Prefs {
     static let myAvatarStamp = "myAvatarStamp"
     static let widgetPhotoStamp = "widgetPhotoStamp"
     static let homeWidgets = "homeWidgets"
+    /// 上次看动态的时间：之后发的算「新的」
+    static let momentsSeenAt = "momentsSeenAt"
+    /// 动态小组件已经自动加到主页过一次（之后你删了就不再加）
+    static let momentsWidgetAdded = "momentsWidgetAdded"
 
     // MARK: 聊天
     /// 上次键盘的高度：面板和键盘一样高，切换时不跳

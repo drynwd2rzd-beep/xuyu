@@ -272,3 +272,69 @@ struct MemoryWidget: View {
         .background { CardShadow() }
     }
 }
+
+/// 主页的动态：最新一条的一句话（像引言）、谁发的，右边一张歪着的拍立得；上面是没看过的那几位的头像
+struct MomentsWidget: View {
+    @Query(sort: \Moment.createdAt, order: .reverse) private var moments: [Moment]
+    @Query private var personas: [Persona]
+    @Query private var photos: [AlbumPhoto]
+    @AppStorage(Prefs.momentsSeenAt) private var seenAt = 0.0
+
+    var body: some View {
+        TimelineView(.everyMinute) { ctx in
+            let visible = moments.filter { $0.createdAt <= ctx.date && $0.personaID != nil }
+            let latest = visible.first
+            let fresh = visible.filter { $0.createdAt.timeIntervalSince1970 > seenAt }
+            let posters = fresh.compactMap { m in personas.first { $0.id == m.personaID } }.reduce(into: [Persona]()) { list, p in
+                if !list.contains(where: { $0.id == p.id }) { list.append(p) }
+            }
+            HStack(alignment: .center, spacing: Space.item) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: Space.tight) {
+                        Text("moments").font(Typo.serif(13)).foregroundStyle(Palette.inkSoft)
+                        if !posters.isEmpty {
+                            HStack(spacing: -6) {
+                                ForEach(posters.prefix(3)) { AvatarView(persona: $0, size: 20, ring: true) }
+                            }
+                        }
+                    }
+                    if let latest {
+                        let name = personas.first { $0.id == latest.personaID }?.name ?? ""
+                        Text("“\(Self.excerpt(latest.text))”")
+                            .font(Typo.serif(19))
+                            .lineSpacing(4)
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("— \(name), \(Fmt.hm.string(from: latest.createdAt))")
+                            .font(Typo.serif(13).italic())
+                            .foregroundStyle(Palette.inkSoft)
+                    } else {
+                        Text("TA 们发的动态会出现在这里。")
+                            .font(Typo.serif(17))
+                            .foregroundStyle(Palette.ink2)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let id = latest?.photoIDs.first, let photo = photos.first(where: { $0.id == id }) {
+                    Polaroid(photo: photo, width: 92, height: 104, tilt: 4, border: 4)
+                        .padding(.trailing, 2)
+                }
+            }
+            .padding(.leading, Space.card + 4)
+            .padding(.trailing, Space.card)
+            .padding(.vertical, Space.card + 2)
+            .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
+            .card()
+        }
+    }
+
+    /// 取第一句；太长就截一段
+    static func excerpt(_ text: String) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        if let end = flat.firstIndex(where: { "。！？!?".contains($0) }), flat.distance(from: flat.startIndex, to: end) <= 34 {
+            return String(flat[..<end])
+        }
+        return flat.count > 34 ? String(flat.prefix(32)) + "…" : flat
+    }
+}

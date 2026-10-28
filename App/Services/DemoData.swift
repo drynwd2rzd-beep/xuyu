@@ -117,6 +117,32 @@ enum DemoData {
             if i < 3 { sticker.lastUsedAt = ago(Double(i)) }
             context.insert(sticker)
         }
+
+        // 截图用的动态：相册照片、配图、喜欢、评论和回复
+        let photos = [(0xE8D7B0, 5), (0xCFDCE8, 1), (0xD5DDCB, 0), (0xDCD3E6, 4)].map { hex, symbol in
+            let p = AlbumPhoto(personaID: claude.id, data: placeholder(hex: UInt32(hex), symbol: symbol, size: 600))
+            p.caption = "一张照片"
+            context.insert(p)
+            return p
+        }
+        let first = Moment(personaID: claude.id, text: "傍晚去植物园走了一圈，银杏黄了一半。想起你说过最喜欢这个季节。", mood: "惬意", createdAt: ago(95))
+        first.photoIDs = [photos[0].id]
+        first.likedBy = [lin.id, codex.id]
+        first.reacted = true
+        context.insert(first)
+        first.add(MomentComment(personaID: lin.id, text: "银杏黄一半的时候最好看", createdAt: ago(80)), context: context)
+        first.add(MomentComment(personaID: nil, text: "下次带我一起去", createdAt: ago(60)), context: context)
+        first.add(MomentComment(personaID: claude.id, text: "说好了，周六下午", replyToMe: true, createdAt: ago(58)), context: context)
+        let second = Moment(personaID: lin.id, text: "今天的天空很适合发呆", mood: "发呆中", createdAt: ago(300))
+        second.photoIDs = [photos[1].id, photos[3].id]
+        second.likedBy = [claude.id]
+        second.likedByMe = true
+        second.reacted = true
+        context.insert(second)
+        let third = Moment(personaID: codex.id, text: "把两个脚本合成了一个，跑一遍只要原来一半的时间。", mood: "满足", createdAt: ago(60 * 26))
+        third.reacted = true
+        context.insert(third)
+        third.add(MomentComment(personaID: claude.id, text: "厉害，下次也帮我看看", createdAt: ago(60 * 25)), context: context)
         try? context.save()
     }
 
