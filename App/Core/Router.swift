@@ -20,11 +20,13 @@ enum Route: Hashable {
 final class Router {
     var tab: AppTab = .home
     var path = NavigationPath()
-    /// 打开着的聊天：盖在所有页面上面，用自己的景深过渡打开和返回（见 ChatLayer）
+    /// 打开着的聊天：盖在所有页面上面，像穿梭一样从点的那一行飞进去、返回时像雾一样散开（见 ChatLayer）
     private(set) var chat: UUID?
+    /// 从哪儿飞进聊天：点的那一行在屏幕上的位置（从主页、通知进来时没有，就从屏幕中间）
+    private(set) var chatOrigin: CGRect?
     /// 从聊天里再点进去的页面（角色设置等），在聊天这一层里推进
     var chatPath = NavigationPath()
-    /// 侧滑返回聊天的进度 0～1：聊天页跟着手指往右移，底下的页面跟着回到前面。每次打开聊天都从 0 开始
+    /// 侧滑返回聊天的进度 0～1：聊天页跟着手指缩小，底下的页面跟着回来。每次打开聊天都从 0 开始
     var chatSwipe: CGFloat = 0
     /// 当前打开的对话（用来决定要不要弹 App 内提示）
     var openConversation: UUID?
@@ -32,12 +34,14 @@ final class Router {
     var homeEditing = false
     @ObservationIgnored var demoApplied = false
 
-    func open(_ route: Route) {
+    /// from：从哪一行点进来的（屏幕上的位置），聊天会从那里飞进去
+    func open(_ route: Route, from origin: CGRect? = nil) {
         if case .chat(let id) = route {
             chatPath = NavigationPath()
-            // 先清零：刚侧滑关掉、还没完全消失的聊天页被重新打开时，不会还停在屏幕外面
+            chatOrigin = origin
+            // 先清零：刚侧滑关掉、还没完全消失的聊天页被重新打开时，不会还缩在那儿
             chatSwipe = 0
-            withAnimation(Motion.depth) { chat = id }
+            withAnimation(Motion.shuttleIn) { chat = id }
         } else if chat != nil {
             chatPath.append(route)
         } else {
@@ -46,7 +50,7 @@ final class Router {
     }
 
     func closeChat() {
-        withAnimation(Motion.depth) { chat = nil }
+        withAnimation(Motion.shuttleOut) { chat = nil }
     }
 }
 

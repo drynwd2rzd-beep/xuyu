@@ -13,13 +13,15 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
+            // 列表淡开时，后面露出的是纸色，不是黑的
+            Palette.paper.ignoresSafeArea()
             pages
-                // 聊天开着时往后退；侧滑返回时跟着手指一点点回到前面
+                // 聊天开着时朝你放大、淡开；侧滑返回时跟着手指一点点回来
                 .recede(router.chat == nil ? 0 : 1 - router.chatSwipe)
             if let id = router.chat {
                 ChatLayer(id: id)
                     .id(id)
-                    .transition(.depth)
+                    .transition(.shuttle(from: router.chatOrigin))
                     .zIndex(1)
             }
         }

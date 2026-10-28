@@ -129,8 +129,10 @@ enum Motion {
     static let pressOut = Animation.spring(duration: 0.5, bounce: 0.18)
     /// 拖动松手后的归位：跟着手势速度，柔和收尾
     static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
-    /// 打开、返回聊天：底下的页面往后退、聊天页浮上来（反过来就是返回），一气呵成不回弹
-    static let depth = Animation.spring(duration: 0.55, bounce: 0)
+    /// 打开聊天：从点的那一行飞进去，一气呵成不回弹
+    static let shuttleIn = Animation.spring(duration: 0.5, bounce: 0)
+    /// 返回：聊天页像雾一样散开，列表退回原位
+    static let shuttleOut = Animation.timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46)
     /// TA 的一句话冒出来：气泡从小点撑开成文字的大小，平滑不回弹
     static let reveal = Animation.smooth(duration: 0.45)
 }

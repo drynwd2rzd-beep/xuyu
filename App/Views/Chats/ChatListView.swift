@@ -10,6 +10,8 @@ struct ChatListView: View {
     @State private var query = ""
     @State private var openRow: UUID?
     @State private var pendingRemoval: Conversation?
+    /// 每一行现在在屏幕上的位置：点开聊天时从那一行飞进去。记在普通对象里，滚动时更新不会让列表重画
+    @State private var rowFrames = RowFrames()
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -58,9 +60,10 @@ struct ChatListView: View {
                                               title: convo.pinned ? "取消置顶" : "置顶", tint: Palette.ink) { togglePin(convo) },
                          trailing: SwipeAction(icon: "trash.fill", title: convo.isGroup ? "删除" : "清空",
                                                tint: Palette.danger) { pendingRemoval = convo }) {
-                    Button { router.open(.chat(convo.id)) } label: {
+                    Button { router.open(.chat(convo.id), from: rowFrames.rects[convo.id]) } label: {
                         ConversationRow(convo: convo, members: members(convo), personaMap: personaMap,
                                         typing: engine.isBusy(convo))
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rowFrames.rects[convo.id] = $0 }
                     }
                     .buttonStyle(PressableRowStyle())
                     .accessibilityIdentifier("chatRow")
@@ -189,4 +192,9 @@ struct ConversationRow: View {
         }
         return flat
     }
+}
+
+/// 聊天列表每一行在屏幕上的位置（普通对象：改它不会触发重画）
+final class RowFrames {
+    var rects: [UUID: CGRect] = [:]
 }

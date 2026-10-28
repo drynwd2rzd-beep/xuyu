@@ -85,6 +85,7 @@ struct VoicePicker: View {
     @State private var voices: [Voice.Choice] = []
     @State private var failure: String?
     @State private var query = ""
+    @State private var customID = ""
     @State private var loadingPreview: String?
     @State private var previews: [String: Data] = [:]
 
@@ -102,6 +103,22 @@ struct VoicePicker: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Space.section) {
+                    // 刚克隆好的声音，要合成过一次才会出现在下面的列表里：直接填它的 ID 也能马上用
+                    HStack(spacing: Space.tight) {
+                        TextField("填写声音 ID", text: $customID)
+                            .font(.system(size: 15))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.done)
+                            .onSubmit(useCustomID)
+                        Button("使用", action: useCustomID)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(customID.trimmed.isEmpty ? Palette.faint : Palette.ink)
+                            .disabled(customID.trimmed.isEmpty)
+                    }
+                    .padding(.horizontal, Space.card)
+                    .frame(minHeight: Space.row)
+                    .card()
                     if voices.count > 12 {
                         SearchField(text: $query, placeholder: "搜索")
                     }
@@ -132,6 +149,16 @@ struct VoicePicker: View {
             do { voices = try await Voice.voices(provider) } catch { failure = error.localizedDescription }
         }
         .onDisappear { player.stop() }
+    }
+
+    /// 用填进来的声音 ID（名字就先显示 ID）
+    private func useCustomID() {
+        let id = customID.trimmed
+        guard !id.isEmpty else { return }
+        persona.voiceID = id
+        persona.voiceName = id
+        if persona.voiceFreq == 0 { persona.voiceFreq = 1 }
+        dismiss()
     }
 
     private func row(_ v: Voice.Choice) -> some View {
