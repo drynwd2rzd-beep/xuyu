@@ -55,6 +55,16 @@ private struct VoiceKeyGroup: View {
                 .padding(.horizontal, Space.card)
                 .frame(minHeight: Space.row)
             }
+            Hairline()
+            // 打开这家的充值页面（在 Safari 里登录、充值、看余额）
+            Link(destination: provider.topUpURL) {
+                SettingRow(title: "充值与余额") {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.faint)
+                }
+            }
+            .buttonStyle(PressableRowStyle())
         }
         .onAppear { configured = Voice.isConfigured(provider) }
         .task(id: "\(configured)-\(region)") { await check() }
@@ -343,4 +353,116 @@ struct CloneSource: Identifiable {
     let id = UUID()
     let data: Data
     let name: String
+}
+
+/// 声音调节：语速、音量、音调、情绪，调完马上试听。只显示这家服务支持的几项
+struct VoiceTuneSheet: View {
+    @Bindable var persona: Persona
+    @Environment(\.dismiss) private var dismiss
+    @State private var previewing = false
+    @State private var failure: String?
+
+    private var provider: VoiceProvider { Voice.provider(of: persona) }
+    private var player: VoicePlayer { VoicePlayer.shared }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: Space.section) {
+                    SettingsGroup(title: "调节") {
+                        slider("语速", value: $persona.voiceSpeed,
+                               range: provider == .minimax ? 0.5...2 : 0.7...1.2, step: 0.05,
+                               label: String(format: "%.2g×", persona.voiceSpeed))
+                        if provider == .minimax {
+                            Hairline()
+                            slider("音量", value: $persona.voiceVolume, range: 0.3...3, step: 0.1,
+                                   label: String(format: "%.1f", persona.voiceVolume))
+                            Hairline()
+                            slider("音调", value: Binding(get: { Double(persona.voicePitch) }, set: { persona.voicePitch = Int($0.rounded()) }),
+                                   range: -12...12, step: 1, label: persona.voicePitch > 0 ? "+\(persona.voicePitch)" : "\(persona.voicePitch)")
+                            Hairline()
+                            SettingRow(title: "情绪") {
+                                Menu {
+                                    ForEach(Voice.emotions, id: \.0) { e in
+                                        Button { persona.voiceEmotion = e.0 } label: {
+                                            if persona.voiceEmotion == e.0 { Label(LocalizedStringKey(e.1), systemImage: "checkmark") } else { Text(LocalizedStringKey(e.1)) }
+                                        }
+                                    }
+                                } label: {
+                                    MenuValue(text: Voice.emotions.first { $0.0 == persona.voiceEmotion }?.1 ?? "自动")
+                                }
+                            }
+                        }
+                    }
+                    HStack(spacing: Space.item) {
+                        Button("恢复默认") {
+                            withAnimation(Motion.spring) {
+                                persona.voiceSpeed = 1
+                                persona.voiceVolume = 1
+                                persona.voicePitch = 0
+                                persona.voiceEmotion = ""
+                            }
+                        }
+                        .font(.system(size: 15))
+                        .foregroundStyle(Palette.inkSoft)
+                        Spacer()
+                        Button(action: preview) {
+                            HStack(spacing: 6) {
+                                if previewing { ProgressView().controlSize(.small).tint(Palette.inkInverse) }
+                                Text("试听")
+                            }
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Palette.inkInverse)
+                            .padding(.horizontal, 22)
+                            .frame(height: 40)
+                            .background(Palette.ink, in: Capsule())
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                        .disabled(previewing || persona.voiceID.isEmpty)
+                    }
+                    .padding(.horizontal, 6)
+                    if let failure {
+                        Text(failure).font(.system(size: 13)).foregroundStyle(Palette.inkSoft)
+                    }
+                }
+                .padding(Space.page)
+            }
+            .background(Palette.paper.ignoresSafeArea())
+            .navigationTitle("声音调节")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.fontWeight(.semibold) }
+            }
+        }
+        .onDisappear { player.stop() }
+    }
+
+    private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(LocalizedStringKey(title)).font(.system(size: 16)).foregroundStyle(Palette.ink)
+                Spacer()
+                Text(label).font(.system(size: 14).monospacedDigit()).foregroundStyle(Palette.inkSoft)
+            }
+            Slider(value: value, in: range, step: step).tint(Palette.ink)
+        }
+        .padding(.horizontal, Space.card)
+        .padding(.vertical, Space.item)
+    }
+
+    /// 用现在的调节念一句
+    private func preview() {
+        previewing = true
+        failure = nil
+        Task {
+            defer { previewing = false }
+            do {
+                let text = persona.language == "ko" ? "오늘 하루 어땠어? 나는 네 생각 많이 했어." : "今天过得怎么样？我可是一直在想你哦。"
+                let data = try await Voice.speak(text, for: persona)
+                player.toggle("tune-\(persona.id)", data: data)
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+    }
 }

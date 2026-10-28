@@ -30,6 +30,7 @@ enum Backup {
         var followUp: Int?
         var voiceID: String?, voiceName: String?, voiceFreq: Int?, language: String?, autoTranslate: Bool?
         var voiceProvider: String?, voiceModel: String?
+        var voiceSpeed: Double?, voiceVolume: Double?, voicePitch: Int?, voiceEmotion: String?
     }
 
     struct ConversationDTO: Codable {
@@ -91,7 +92,8 @@ enum Backup {
                            engineRaw: $0.engineRaw, model: $0.model, effort: $0.effort, canWork: $0.canWork, proactive: $0.proactive,
                            proactiveFreq: $0.proactiveFreq, sortIndex: $0.sortIndex, createdAt: $0.createdAt, followUp: $0.followUp,
                            voiceID: $0.voiceID, voiceName: $0.voiceName, voiceFreq: $0.voiceFreq, language: $0.language, autoTranslate: $0.autoTranslate,
-                           voiceProvider: $0.voiceProvider, voiceModel: $0.voiceModel)
+                           voiceProvider: $0.voiceProvider, voiceModel: $0.voiceModel,
+                           voiceSpeed: $0.voiceSpeed, voiceVolume: $0.voiceVolume, voicePitch: $0.voicePitch, voiceEmotion: $0.voiceEmotion)
             },
             conversations: convos.map { c in
                 ConversationDTO(id: c.id, title: c.title, isGroup: c.isGroup, memberIDs: c.memberIDs, pinned: c.pinned, draft: c.draft,
@@ -152,6 +154,8 @@ enum Backup {
             p.followUp = d.followUp ?? 1
             p.voiceID = d.voiceID ?? ""; p.voiceName = d.voiceName ?? ""; p.voiceFreq = d.voiceFreq ?? 0; p.language = d.language ?? "zh"; p.autoTranslate = d.autoTranslate ?? false
             p.voiceProvider = d.voiceProvider ?? "elevenlabs"; p.voiceModel = d.voiceModel ?? ""
+            p.voiceSpeed = d.voiceSpeed ?? 1; p.voiceVolume = d.voiceVolume ?? 1
+            p.voicePitch = d.voicePitch ?? 0; p.voiceEmotion = d.voiceEmotion ?? ""
             context.insert(p)
         }
         for d in archive.conversations {

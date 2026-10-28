@@ -40,6 +40,11 @@ final class Persona {
     var language: String = "zh"
     /// TA 发语音后自动在下面显示翻译
     var autoTranslate: Bool = false
+    /// 声音调节：语速（1 = 正常）、音量（1 = 正常）、音调（0 = 正常，-12～12）、情绪（空 = 自动）
+    var voiceSpeed: Double = 1
+    var voiceVolume: Double = 1
+    var voicePitch: Int = 0
+    var voiceEmotion: String = ""
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 

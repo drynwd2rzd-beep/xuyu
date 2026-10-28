@@ -177,6 +177,7 @@ struct PersonaEditor: View {
     @State private var chat: Conversation?
     @State private var pickingVoice = false
     @State private var pickingModel = false
+    @State private var tuning = false
     /// 约定存在本机设置里：读这个让列表跟着变
     @AppStorage(Prefs.appointments) private var appointmentsRaw = ""
 
@@ -239,6 +240,18 @@ struct PersonaEditor: View {
                             Button { pickingModel = true } label: {
                                 SettingRow(title: "模型", subtitle: voiceModelNote) {
                                     Text(voiceModelName)
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Palette.inkSoft)
+                                        .lineLimit(1)
+                                    Chevron()
+                                }
+                            }
+                            .buttonStyle(PressableRowStyle())
+                            .transition(.opacity)
+                            Hairline()
+                            Button { tuning = true } label: {
+                                SettingRow(title: "声音调节") {
+                                    Text(tuneSummary)
                                         .font(.system(size: 14))
                                         .foregroundStyle(Palette.inkSoft)
                                         .lineLimit(1)
@@ -400,6 +413,12 @@ struct PersonaEditor: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
+        .sheet(isPresented: $tuning) {
+            VoiceTuneSheet(persona: persona)
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(Radius.sheet)
+                .presentationBackground(Palette.paper)
+        }
         .sheet(isPresented: $pickingModel) {
             VoiceModelPicker(persona: persona)
                 .presentationDetents([.medium, .large])
@@ -424,6 +443,15 @@ struct PersonaEditor: View {
         } message: {
             Text("和 TA 的单聊记录会一起删除。")
         }
+    }
+
+    /// 「声音调节」那一行右边：调过的才写出来，都是默认就显示「默认」
+    private var tuneSummary: String {
+        var parts: [String] = []
+        if abs(persona.voiceSpeed - 1) > 0.01 { parts.append(String(format: "%.2g×", persona.voiceSpeed)) }
+        if persona.voicePitch != 0 { parts.append(persona.voicePitch > 0 ? "+\(persona.voicePitch)" : "\(persona.voicePitch)") }
+        if let e = Voice.emotions.first(where: { $0.0 == persona.voiceEmotion }), !e.0.isEmpty { parts.append(String(localized: String.LocalizationValue(e.1))) }
+        return parts.isEmpty ? String(localized: "默认") : parts.joined(separator: " · ")
     }
 
     /// 角色页「模型」那一行：现在用的语音模型和它的侧重点

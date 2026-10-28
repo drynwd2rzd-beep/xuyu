@@ -32,6 +32,18 @@ enum VoiceProvider: String, CaseIterable, Identifiable {
     }
 
     fileprivate var keyAccount: String { rawValue }
+
+    /// 充值、看余额的网页（MiniMax 国内版和国际版是两个平台）
+    var topUpURL: URL {
+        switch self {
+        case .elevenlabs:
+            return URL(string: "https://elevenlabs.io/app/subscription")!
+        case .minimax:
+            let global = UserDefaults.standard.string(forKey: Prefs.minimaxRegion) == "global"
+            return URL(string: global ? "https://platform.minimax.io/user-center/payment/balance"
+                                      : "https://platform.minimaxi.com/user-center/payment/balance")!
+        }
+    }
 }
 
 enum Voice {
@@ -120,6 +132,12 @@ enum Voice {
         }
     }
 
+    /// MiniMax 能选的情绪（空 = 自动）
+    static let emotions: [(String, String)] = [
+        ("", "自动"), ("happy", "开心"), ("calm", "平静"), ("sad", "悲伤"), ("angry", "生气"),
+        ("surprised", "惊讶"), ("fearful", "害怕"), ("disgusted", "厌恶"), ("whisper", "耳语"), ("fluent", "平稳"),
+    ]
+
     // MARK: - 声音
 
     static func voices(_ provider: VoiceProvider) async throws -> [Choice] {
@@ -150,9 +168,11 @@ enum Voice {
             do {
                 switch provider {
                 case .elevenlabs:
-                    return try await ElevenLabs.speak(text, voiceID: persona.voiceID, model: model)
+                    return try await ElevenLabs.speak(text, voiceID: persona.voiceID, model: model, speed: persona.voiceSpeed)
                 case .minimax:
-                    return try await MiniMax.speak(text, voiceID: persona.voiceID, model: model, korean: persona.language == "ko")
+                    return try await MiniMax.speak(text, voiceID: persona.voiceID, model: model, korean: persona.language == "ko",
+                                                   tune: Tune(speed: persona.voiceSpeed, volume: persona.voiceVolume,
+                                                              pitch: persona.voicePitch, emotion: persona.voiceEmotion))
                 }
             } catch Failure.other(let message) {
                 // 这个模型用不了：换下一个
@@ -161,6 +181,14 @@ enum Voice {
         }
         throw lastError
     }
+}
+
+/// 声音调节（MiniMax 全都能调；ElevenLabs 只用语速）
+struct Tune {
+    var speed: Double
+    var volume: Double
+    var pitch: Int
+    var emotion: String
 }
 
 // MARK: - ElevenLabs
@@ -191,7 +219,7 @@ private enum ElevenLabs {
         }
     }
 
-    static func speak(_ text: String, voiceID: String, model: String) async throws -> Data {
+    static func speak(_ text: String, voiceID: String, model: String, speed: Double) async throws -> Data {
         var req = request("v1/text-to-speech/\(voiceID)")
         req.url?.append(queryItems: [URLQueryItem(name: "output_format", value: "mp3_44100_128")])
         req.httpMethod = "POST"
@@ -200,7 +228,9 @@ private enum ElevenLabs {
             "text": text,
             "model_id": model,
             // 稍微放开稳定度、带一点风格：更像随口说话，而不是播音
-            "voice_settings": ["stability": 0.45, "similarity_boost": 0.8, "style": 0.3, "use_speaker_boost": true],
+            "voice_settings": ["stability": 0.45, "similarity_boost": 0.8, "style": 0.3, "use_speaker_boost": true,
+                               // ElevenLabs 只能调语速，范围 0.7～1.2
+                               "speed": min(1.2, max(0.7, speed))],
         ])
         let (data, response) = try await URLSession.shared.data(for: req)
         try check(response, data)
@@ -270,12 +300,18 @@ private enum MiniMax {
         return list
     }
 
-    static func speak(_ text: String, voiceID: String, model: String, korean: Bool) async throws -> Data {
+    static func speak(_ text: String, voiceID: String, model: String, korean: Bool, tune: Tune) async throws -> Data {
+        var setting: [String: Any] = ["voice_id": voiceID, "speed": min(2, max(0.5, tune.speed)),
+                                      "vol": min(10, max(0.1, tune.volume)), "pitch": min(12, max(-12, tune.pitch))]
+        // 情绪：空 = 让模型按文字自己判断；耳语、平稳只有 2.6 模型支持
+        if !tune.emotion.isEmpty && (!["whisper", "fluent"].contains(tune.emotion) || model.hasPrefix("speech-2.6")) {
+            setting["emotion"] = tune.emotion
+        }
         let root = try await post("v1/t2a_v2", json: [
             "model": model,
             "text": text,
             "stream": false,
-            "voice_setting": ["voice_id": voiceID, "speed": 1, "vol": 1, "pitch": 0],
+            "voice_setting": setting,
             "audio_setting": ["sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1],
             "language_boost": korean ? "Korean" : "Chinese",
         ])
