@@ -176,7 +176,6 @@ struct PersonaEditor: View {
     @State private var confirmClear = false
     @State private var chat: Conversation?
     @State private var pickingVoice = false
-    @State private var pickingModel = false
     @State private var tuning = false
     /// 约定存在本机设置里：读这个让列表跟着变
     @AppStorage(Prefs.appointments) private var appointmentsRaw = ""
@@ -208,38 +207,18 @@ struct PersonaEditor: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                // 语音：TA 打字的语言跟着 App 界面走，这里只管 TA 发语音时说哪种话
+                // 语音：先选发不发；发的话再选声音、调声音、说哪种话。TA 打字的语言跟着 App 界面走
                 if Voice.isConfigured && !persona.canWork {
                     SettingsGroup(title: "语音") {
-                        // 用哪家：每家的声音和模型不一样，换了就重新选声音
-                        SettingRow(title: "服务") {
-                            Segmented(items: VoiceProvider.allCases.map { ($0.rawValue, $0.label) },
-                                      selection: Binding(get: { persona.voiceProvider }, set: { new in
-                                          guard new != persona.voiceProvider else { return }
-                                          persona.voiceProvider = new
-                                          persona.voiceID = ""
-                                          persona.voiceName = ""
-                                          persona.voiceModel = ""
-                                      }))
+                        SettingRow(title: "发语音") {
+                            Segmented(items: [(0, "不发"), (1, "偶尔"), (2, "常常")], selection: $persona.voiceFreq)
                                 .fixedSize()
                         }
-                        Hairline()
-                        Button { pickingVoice = true } label: {
-                            SettingRow(title: "声音") {
-                                Text(persona.voiceName.isEmpty ? "未选择" : persona.voiceName)
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(Palette.inkSoft)
-                                    .lineLimit(1)
-                                Chevron()
-                            }
-                        }
-                        .buttonStyle(PressableRowStyle())
-                        .disabled(!Voice.isConfigured(Voice.provider(of: persona)))
-                        if !persona.voiceID.isEmpty {
+                        if persona.voiceFreq > 0 {
                             Hairline()
-                            Button { pickingModel = true } label: {
-                                SettingRow(title: "模型", subtitle: voiceModelNote) {
-                                    Text(voiceModelName)
+                            Button { pickingVoice = true } label: {
+                                SettingRow(title: "声音", subtitle: persona.voiceID.isEmpty ? nil : Voice.provider(of: persona).label) {
+                                    Text(persona.voiceName.isEmpty ? String(localized: "未选择") : persona.voiceName)
                                         .font(.system(size: 14))
                                         .foregroundStyle(Palette.inkSoft)
                                         .lineLimit(1)
@@ -248,39 +227,39 @@ struct PersonaEditor: View {
                             }
                             .buttonStyle(PressableRowStyle())
                             .transition(.opacity)
-                            Hairline()
-                            Button { tuning = true } label: {
-                                SettingRow(title: "声音调节") {
-                                    Text(tuneSummary)
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(Palette.inkSoft)
-                                        .lineLimit(1)
-                                    Chevron()
+                            if !persona.voiceID.isEmpty {
+                                Hairline()
+                                Button { tuning = true } label: {
+                                    SettingRow(title: "声音调节", subtitle: voiceModelName) {
+                                        Text(tuneSummary)
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(Palette.inkSoft)
+                                            .lineLimit(1)
+                                        Chevron()
+                                    }
                                 }
+                                .buttonStyle(PressableRowStyle())
+                                .transition(.opacity)
                             }
-                            .buttonStyle(PressableRowStyle())
-                            .transition(.opacity)
-                            Hairline()
-                            SettingRow(title: "发语音") {
-                                Segmented(items: [(0, "不发"), (1, "偶尔"), (2, "常常")], selection: $persona.voiceFreq)
-                                    .fixedSize()
-                            }
-                            .transition(.opacity)
                             Hairline()
                             SettingRow(title: "语音语言") {
                                 Segmented(items: [("zh", "中文"), ("ko", "한국어")], selection: $persona.language)
                                     .fixedSize()
                             }
                             .transition(.opacity)
-                            Hairline()
-                            SettingRow(title: "自动翻译语音") {
-                                InkToggle(isOn: $persona.autoTranslate, label: "自动翻译语音")
+                            // 语音和界面是同一种话就不用翻译
+                            if persona.language != Self.uiLanguage {
+                                Hairline()
+                                SettingRow(title: "自动翻译语音") {
+                                    InkToggle(isOn: $persona.autoTranslate, label: "自动翻译语音")
+                                }
+                                .transition(.opacity)
                             }
-                            .transition(.opacity)
                         }
                     }
+                    .animation(Motion.spring, value: persona.voiceFreq > 0)
                     .animation(Motion.spring, value: persona.voiceID)
-                    .animation(Motion.spring, value: persona.voiceProvider)
+                    .animation(Motion.spring, value: persona.language)
                 }
 
                 // 怎么互动
@@ -415,13 +394,6 @@ struct PersonaEditor: View {
         }
         .sheet(isPresented: $tuning) {
             VoiceTuneSheet(persona: persona)
-                .presentationDetents([.medium, .large])
-                .presentationCornerRadius(Radius.sheet)
-                .presentationBackground(Palette.paper)
-        }
-        .sheet(isPresented: $pickingModel) {
-            VoiceModelPicker(persona: persona)
-                .presentationDetents([.medium, .large])
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
@@ -451,17 +423,20 @@ struct PersonaEditor: View {
         if abs(persona.voiceSpeed - 1) > 0.01 { parts.append(String(format: "%.2g×", persona.voiceSpeed)) }
         if persona.voicePitch != 0 { parts.append(persona.voicePitch > 0 ? "+\(persona.voicePitch)" : "\(persona.voicePitch)") }
         if let e = Voice.emotions.first(where: { $0.0 == persona.voiceEmotion }), !e.0.isEmpty { parts.append(String(localized: String.LocalizationValue(e.1))) }
+        let style = persona.style
+        if let e = VoiceStyle.effects.first(where: { $0.0 == style.effect }), !e.0.isEmpty { parts.append(String(localized: String.LocalizationValue(e.1))) }
+        if !style.mixes.isEmpty { parts.append(String(localized: "混合 \(style.mixes.count + 1) 个声音")) }
         return parts.isEmpty ? String(localized: "默认") : parts.joined(separator: " · ")
     }
 
-    /// 角色页「模型」那一行：现在用的语音模型和它的侧重点
+    /// 「声音调节」那一行下面的小字：现在用的语音模型
     private var voiceModelName: String {
         persona.voiceModel.isEmpty ? Voice.provider(of: persona).defaultModel : persona.voiceModel
     }
 
-    private var voiceModelNote: String? {
-        let note = Voice.modelNote(voiceModelName)
-        return note.isEmpty ? nil : note
+    /// App 界面现在是哪种话
+    static var uiLanguage: String {
+        Bundle.main.preferredLocalizations.first?.hasPrefix("ko") == true ? "ko" : "zh"
     }
 
     static func followUpLabel(_ setting: Int) -> String {

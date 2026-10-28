@@ -35,6 +35,8 @@ enum ReplyText {
         var cancels: [String] = []
         /// 【语音】：这一段用语音说
         var voice = false
+        /// 要念出来的话：保留语气标签（笑、叹气、停顿），body 里的已经去掉
+        var spoken = ""
     }
 
     // 中英文括号都认：【】 和 []
@@ -74,8 +76,8 @@ enum ReplyText {
         let voice = body.firstMatch(of: voiceMarker) != nil
         body = body.replacing(voiceMarker, with: "")
         body = body.replacing(fakeSticker, with: "")
-        return Markers(body: body.trimmed, quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels,
-                       voice: voice)
+        return Markers(body: VoiceTags.strip(body), quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels,
+                       voice: voice, spoken: body.trimmed)
     }
 
     /// TA 引用的是你哪句话：从最近的往前找，包含这几个字的那条（或这几个字包含那条的开头）

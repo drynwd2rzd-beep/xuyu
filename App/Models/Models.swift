@@ -45,6 +45,8 @@ final class Persona {
     var voiceVolume: Double = 1
     var voicePitch: Int = 0
     var voiceEmotion: String = ""
+    /// 其余的声音设置（音色微调、音效、混合声音、读音纠正、ElevenLabs 的稳定性等），存成一段 JSON，见 VoiceStyle
+    var voiceStyle: String = ""
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 

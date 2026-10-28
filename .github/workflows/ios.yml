@@ -62,7 +62,9 @@ jobs:
         if: always()
         with:
           name: screenshots
-          path: shots/*.png
+          path: |
+            shots/*.png
+            shots/*.mp4
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: failure()

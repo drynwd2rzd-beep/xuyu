@@ -26,7 +26,7 @@ final class Router {
     private(set) var chatOrigin: CGRect?
     /// 从聊天里再点进去的页面（角色设置等），在聊天这一层里推进
     var chatPath = NavigationPath()
-    /// 侧滑返回聊天的进度 0～1：聊天页跟着手指缩小，底下的页面跟着回来。每次打开聊天都从 0 开始
+    /// 侧滑返回聊天的进度 0～1：聊天页跟着手指往右走，底下的页面跟着回来。每次打开聊天都从 0 开始
     var chatSwipe: CGFloat = 0
     /// 当前打开的对话（用来决定要不要弹 App 内提示）
     var openConversation: UUID?
@@ -51,6 +51,33 @@ final class Router {
 
     func closeChat() {
         withAnimation(Motion.shuttleOut) { chat = nil }
+    }
+
+    /// 侧滑松手、决定返回：聊天页带着手指的速度继续往右滑出屏幕，滑出去以后再悄悄拿掉（不播散开的动画）。
+    /// velocity：松手时每秒划过几个屏幕宽
+    func swipeAway(velocity: CGFloat) {
+        guard let id = chat else { return }
+        let left = max(0.05, 1 - chatSwipe)
+        withAnimation(.interpolatingSpring(stiffness: 240, damping: 31, initialVelocity: max(0, velocity) / left)) {
+            chatSwipe = 1
+        } completion: { [weak self] in
+            // 滑出去的这段时间里又打开了聊天：不要把新打开的关掉
+            guard let self, self.chat == id, self.chatSwipe == 1 else { return }
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                self.chat = nil
+                self.chatSwipe = 0
+            }
+        }
+    }
+
+    /// 侧滑松手、不返回：带着手指的速度弹回原位
+    func swipeBack(velocity: CGFloat) {
+        let left = max(0.05, chatSwipe)
+        withAnimation(.interpolatingSpring(stiffness: 260, damping: 32, initialVelocity: max(0, -velocity) / left)) {
+            chatSwipe = 0
+        }
     }
 }
 
@@ -92,7 +119,7 @@ enum DemoMode {
     static var screen: String { UserDefaults.standard.string(forKey: Prefs.demoScreen) ?? "" }
 
     @MainActor
-    static func apply(router: Router, context: ModelContext) {
+    static func apply(router: Router, context: ModelContext, engine: ChatEngine) {
         guard isOn, !router.demoApplied else { return }
         router.demoApplied = true
         switch screen {
@@ -113,6 +140,9 @@ enum DemoMode {
         case "persona":
             router.tab = .chats
             if let p = context.allPersonas().first { router.open(.persona(p.id)) }
+        case "motion":
+            router.tab = .chats
+            DemoMotion.run(router: router, context: context, engine: engine)
         default: break
         }
     }

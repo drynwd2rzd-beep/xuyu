@@ -55,8 +55,14 @@ enum PromptBuilder {
             let often = persona.voiceFreq >= 2 ? "可以常用，像爱发语音的人那样" : "偶尔用，大多数时候还是打字"
             // 语音说哪种话由角色单独设：比如打字用中文，语音用韩语
             let spoken = persona.language == "ko" ? "【语音】后面要念的话一定用韩语说（打字照常）。" : "【语音】后面要念的话用中文说。"
+            // 模型能念语气：可以在要念的话里加笑声、叹气、停顿
+            let tags: String = switch Voice.tagStyle(for: persona) {
+            case .minimax: "要念的话里可以在合适的地方加语气：(laughs) 笑、(chuckle) 轻笑、(sighs) 叹气、(breath) 换气、(emm) 嗯、(humming) 哼歌，停顿写 <#0.5#>（秒数）；自然地点缀，别每句都加。"
+            case .elevenlabs: "要念的话里可以在合适的地方加语气：[laughs] 笑、[giggles] 咯咯笑、[sighs] 叹气、[whispers] 小声说、[excited] 兴奋、[sad] 难过；自然地点缀，别每句都加。"
+            case nil: ""
+            }
             parts.append("""
-            你可以发语音：想用语音说的那一段，开头写【语音】，后面写你要念出来的话。语音要像真人随口说的：口语、自然，可以带「嗯」「哈哈」这类语气，一段一两句就好。\(spoken)\(often)。\(userName)让你发语音时就用语音。不要说「我给你发条语音」这种话，直接发。
+            你可以发语音：想用语音说的那一段，开头写【语音】，后面写你要念出来的话。语音要像真人随口说的：口语、自然，可以带「嗯」「哈哈」这类语气，一段一两句就好。\(spoken)\(tags)\(often)。\(userName)让你发语音时就用语音。不要说「我给你发条语音」这种话，直接发。
             """)
         }
         if let memory = convo?.memory.trimmed, !memory.isEmpty {

@@ -88,9 +88,28 @@ final class LogicTests: XCTestCase {
         XCTAssertTrue(m.voice)
         XCTAssertEqual(m.body, "嗯…今天辛苦啦，早点睡哈")
         XCTAssertFalse(ReplyText.markers(in: "普通的一句话").voice)
+        // 语气标签：念的时候留着，显示的文字里去掉
+        let tagged = ReplyText.markers(in: "【语音】(laughs)你也太逗了 <#0.5#> [sighs]好吧")
+        XCTAssertEqual(tagged.spoken, "(laughs)你也太逗了 <#0.5#> [sighs]好吧")
+        XCTAssertEqual(tagged.body, "你也太逗了 好吧")
+        XCTAssertEqual(VoiceTags.strip("（笑）普通括号(不是标签)不动"), "（笑）普通括号(不是标签)不动")
         XCTAssertEqual(VoiceBubble.bars(for: 1), 7)
         XCTAssertEqual(VoiceBubble.bars(for: 60), 26)
         XCTAssertEqual(Waveform.heights(seed: "a", count: 9), Waveform.heights(seed: "a", count: 9))
+    }
+
+    func testVoiceStyleKeepsDefaultsAndRoundTrips() {
+        // 没设过、或者旧版本存的缺项：都用默认值
+        XCTAssertEqual(VoiceStyle.decode(""), VoiceStyle())
+        XCTAssertEqual(VoiceStyle.decode("{\"timbre\":30}").timbre, 30)
+        XCTAssertEqual(VoiceStyle.decode("{\"timbre\":30}").similarity, VoiceStyle().similarity)
+        XCTAssertEqual(VoiceStyle().encoded, "")
+        let p = Persona(name: "Karina")
+        p.style.effect = "spacious_echo"
+        p.style.mixes.append(.init(id: "v2", name: "另一个", weight: 40))
+        XCTAssertEqual(p.style.effect, "spacious_echo")
+        XCTAssertEqual(p.style.mixes.first?.weight, 40)
+        XCTAssertFalse(p.voiceStyle.isEmpty)
     }
 
     func testVoicePerPersona() {

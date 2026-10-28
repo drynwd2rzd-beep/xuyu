@@ -33,6 +33,8 @@ enum Prefs {
     static let followUpSettled = "followUpSettled"
     /// MiniMax 用国内版（minimaxi.com）还是国际版（minimax.io）：两边的密钥不通用
     static let minimaxRegion = "minimaxRegion"
+    /// 自己给声音起的名字（声音 ID → 名字，JSON）
+    static let voiceNames = "voiceNames"
 
     // MARK: 日记与今日一句
     /// 谁来写 AI 日记（角色 ID）

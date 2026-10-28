@@ -50,7 +50,7 @@ struct XuyuApp: App {
                 .onAppear {
                     engine.attach(relay: relay, banners: banners, router: router)
                     AppDelegate.router = router
-                    DemoMode.apply(router: router, context: container.mainContext)
+                    DemoMode.apply(router: router, context: container.mainContext, engine: engine)
                     if !DemoMode.isOn {
                         relay.connectIfConfigured()
                         Task { await engine.recover(context: container.mainContext) }

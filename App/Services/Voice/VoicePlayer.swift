@@ -1,0 +1,60 @@
+import SwiftUI
+import AVFoundation
+import Observation
+
+/// 播放语音消息：同一时间只放一条，放下一条时上一条自动停
+@MainActor
+@Observable
+final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
+    static let shared = VoicePlayer()
+
+    /// 正在放的是哪条（语音消息的 id，或试听的声音 id）
+    private(set) var playing: String?
+    /// 播放进度 0～1
+    private(set) var progress: Double = 0
+    @ObservationIgnored private var player: AVAudioPlayer?
+    @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var durations: [String: TimeInterval] = [:]
+
+    func toggle(_ id: String, data: Data) {
+        if playing == id { return stop() }
+        stop()
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        guard let player = try? AVAudioPlayer(data: data) else { return }
+        player.delegate = self
+        player.play()
+        self.player = player
+        playing = id
+        progress = 0
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard let self, let p = self.player, p.duration > 0 else { continue }
+                self.progress = p.currentTime / p.duration
+            }
+        }
+    }
+
+    func stop() {
+        ticker?.cancel()
+        player?.stop()
+        player = nil
+        withAnimation(Motion.snappy) {
+            playing = nil
+            progress = 0
+        }
+    }
+
+    /// 语音有多长（算一次记下来）
+    func duration(_ id: String, data: Data) -> TimeInterval {
+        if let known = durations[id] { return known }
+        let seconds = (try? AVAudioPlayer(data: data))?.duration ?? 0
+        durations[id] = seconds
+        return seconds
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.stop() }
+    }
+}

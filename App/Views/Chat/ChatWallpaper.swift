@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UIKit
 import PhotosUI
+import CoreImage
 
 /// 聊天背景：全局一张，每个对话也可以单独设一张（owner 为对话 id）
 enum WallpaperStore {
@@ -21,6 +22,7 @@ enum WallpaperStore {
         try? jpeg.write(to: url(owner), options: .atomic)
         cache[owner] = nil
         brightness[owner] = nil
+        blurCache.removeAll()
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
     }
 
@@ -29,6 +31,7 @@ enum WallpaperStore {
         try? FileManager.default.removeItem(at: url(owner))
         cache[owner] = nil
         brightness[owner] = nil
+        blurCache.removeAll()
         UserDefaults.standard.removeObject(forKey: key(owner))
     }
 
@@ -70,6 +73,32 @@ enum WallpaperStore {
         }
         let dim = adjustments(for: owner).dim
         return dim >= 0 ? base + (1 - base) * dim : base * (1 + dim)
+    }
+
+    /// 每张背景只留最近一次的模糊结果（拖模糊滑杆时不会越存越多）
+    private static var blurCache: [UUID?: (radius: Int, image: UIImage)] = [:]
+    private static let ciContext = CIContext()
+
+    /// 模糊过的背景：算一次存起来。每一帧现算模糊的话，进出聊天、滚动时都会掉帧。
+    /// 模糊后看不出细节，先缩小再算，快很多；半径换算成和屏幕上看到的一样
+    static func blurred(for owner: UUID?, radius: Double) -> UIImage? {
+        guard let image = image(for: owner) else { return nil }
+        guard radius > 0.5, let cg = image.cgImage else { return image }
+        let key = Int(radius * 10)
+        if let hit = blurCache[owner], hit.radius == key { return hit.image }
+        let width = CGFloat(cg.width), height = CGFloat(cg.height)
+        let screen = UIScreen.main.bounds.size
+        // 铺满屏幕时，1 个像素占多少点
+        let fill = max(screen.width / width, screen.height / height)
+        let shrink = min(1, 1000 / max(width, height))
+        var input = CIImage(cgImage: cg)
+        if shrink < 1 { input = input.transformed(by: CGAffineTransform(scaleX: shrink, y: shrink)) }
+        let extent = input.extent
+        let output = input.clampedToExtent().applyingGaussianBlur(sigma: radius / fill * shrink).cropped(to: extent)
+        guard let rendered = ciContext.createCGImage(output, from: extent) else { return image }
+        let result = UIImage(cgImage: rendered)
+        blurCache[owner] = (key, result)
+        return result
     }
 
     static func image(for owner: UUID? = nil) -> UIImage? {
@@ -162,13 +191,12 @@ struct ChatWallpaper: View {
 
     var body: some View {
         Group {
-            if index == 3, let image = WallpaperStore.image(for: owner) {
+            if index == 3, let image = WallpaperStore.blurred(for: owner, radius: WallpaperStore.adjustments(for: owner).blur) {
                 let adjust = WallpaperStore.adjustments(for: owner)
                 Color.clear.overlay {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
-                        .blur(radius: adjust.blur, opaque: true)
                 }
                 .clipped()
                 .overlay(adjust.dim >= 0 ? Color.white.opacity(adjust.dim) : Color.black.opacity(-adjust.dim))

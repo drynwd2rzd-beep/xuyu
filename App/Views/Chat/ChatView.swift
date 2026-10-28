@@ -251,7 +251,6 @@ struct ChatView: View {
                                        selecting: selecting,
                                        picked: picked.contains(m.id),
                                        actions: actions)
-                            .riseIn(fresh: now.timeIntervalSince(m.createdAt) < 3)
                             // 从引用跳过来时，原文这一条轻轻亮一下
                             .background {
                                 RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
@@ -259,6 +258,9 @@ struct ChatView: View {
                                     .padding(-4)
                             }
                             .padding(.top, first ? 14 : 4)
+                            // 刚发出、刚收到的：这一行慢慢撑开，气泡从自己那一边的下角冒出来
+                            .riseIn(fresh: now.timeIntervalSince(m.createdAt) < 3,
+                                    anchor: m.role == .user ? .bottomTrailing : .bottomLeading)
                             .id(m.id)
                             if m.id == receipt { ReadReceipt() }
                         }
@@ -294,15 +296,10 @@ struct ChatView: View {
                 }
             }
             .onAppear {
-                // 打开聊天（包括从顶部提示点进来）就停在最新的消息；图片解码后高度会变，稍后再对齐几次
+                // 打开聊天（包括从顶部提示点进来）就停在最新的消息。图片解码后变高，由「内容变高也贴着底部」跟上；
+                // 不再隔一会儿补滚几次：那几下正好落在进场动画里，看起来像抽了一下
                 follow = true
                 proxy.scrollTo("bottom", anchor: .bottom)
-                Task {
-                    for delay in [60, 300, 700] {
-                        try? await Task.sleep(for: .milliseconds(delay))
-                        proxy.scrollTo("bottom", anchor: .bottom)
-                    }
-                }
             }
             .onChange(of: pinBottom) {
                 // 点输入框、打开表情或加号面板：聊天跟着到最底下

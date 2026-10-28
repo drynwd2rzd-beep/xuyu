@@ -51,6 +51,18 @@ for mode in light dark; do
   shoot "$mode-9-calendar" calendar
   shoot "$mode-10-backup" backup
 done
+# 动画录屏：深色模式、照片背景下跑一遍演示剧本（进出聊天、发消息、回复、侧滑），之后逐帧检查
+xcrun simctl ui "$UDID" appearance dark
+xcrun simctl terminate "$UDID" app.xuyu.ios >/dev/null 2>&1 || true
+xcrun simctl io "$UDID" recordVideo --codec h264 --force shots/motion.mp4 &
+REC=$!
+sleep 2
+xcrun simctl launch "$UDID" app.xuyu.ios -demo YES -demoScreen motion >/dev/null
+sleep 24
+kill -INT $REC || true
+wait $REC || true
+xcrun simctl terminate "$UDID" app.xuyu.ios >/dev/null 2>&1 || true
+echo "已录屏 motion.mp4"
 xcrun simctl ui "$UDID" appearance light
 
 # 自动操作测试：把主要流程点一遍（闪退会让这一步失败）

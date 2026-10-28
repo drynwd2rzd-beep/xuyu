@@ -249,6 +249,18 @@ final class ChatEngine {
         return (message, buffer)
     }
 
+    /// 演示（云端录屏检查动画用）：走和真回复一样的路径，先冒出「正在输入」的小点，过一会儿在原地变成文字
+    func demoReply(_ text: String, as persona: Persona, in convo: Conversation, context: ModelContext) async {
+        let (message, _) = newBubble(persona, in: convo, context: context, label: "", relayID: "")
+        try? await Task.sleep(for: .seconds(1.6))
+        message.createdAt = max(.now, message.createdAt)
+        withAnimation(Motion.reveal) {
+            buffers[message.id] = nil
+            message.content = text
+            message.status = .done
+        }
+    }
+
     private func reply(as persona: Persona, in convo: Conversation, members: [Persona], context: ModelContext,
                        discussing: Bool = false) async {
         // 正在打字、还没出字的那条不算聊天记录
@@ -291,7 +303,7 @@ final class ChatEngine {
             guard voiceOn else { return nil }
             let marks = ReplyText.markers(in: text)
             guard marks.voice, !marks.body.isEmpty else { return nil }
-            return try? await Voice.speak(marks.body, for: persona)
+            return try? await Voice.speak(marks.spoken, for: persona)
         }
 
         func attach(_ audio: Data, to m: Message) {

@@ -135,6 +135,8 @@ enum Motion {
     static let shuttleOut = Animation.timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46)
     /// TA 的一句话冒出来：气泡从小点撑开成文字的大小，平滑不回弹
     static let reveal = Animation.smooth(duration: 0.45)
+    /// 新消息出现：这一行慢慢撑开、上面的消息让开，气泡轻轻放大显现，最后一点点回弹
+    static let bubble = Animation.spring(duration: 0.5, bounce: 0.1)
 }
 
 struct CardStyle: ViewModifier {
@@ -184,26 +186,54 @@ struct ScaleButtonStyle: ButtonStyle {
     }
 }
 
-/// 新出现的内容（刚发出/刚收到的消息）从下方轻轻浮起；旧内容直接显示，不重播
+/// 新出现的消息：这一行的高度从 0 平滑长到原本的高度，上面的消息被柔和地推上去（而不是一下子跳上去），
+/// 气泡同时从它那一边的下角轻轻放大、显现。旧内容直接显示，不重播
 struct RiseIn: ViewModifier {
     let fresh: Bool
+    var anchor: UnitPoint = .bottom
     @State private var shown = false
 
     func body(content: Content) -> some View {
         let on = !fresh || shown
-        content
-            .opacity(on ? 1 : 0)
-            .offset(y: on ? 0 : 14)
-            .scaleEffect(on ? 1 : 0.97, anchor: .bottom)
-            .onAppear {
-                guard fresh, !shown else { return }
-                withAnimation(Motion.spring) { shown = true }
-            }
+        GrowIn(progress: on ? 1 : 0) {
+            content
+                .scaleEffect(on ? 1 : 0.86, anchor: anchor)
+                .opacity(on ? 1 : 0)
+        }
+        .onAppear {
+            guard fresh, !shown else { return }
+            withAnimation(Motion.bubble) { shown = true }
+        }
+    }
+}
+
+/// 高度跟着进度伸缩的容器。进度每一帧都真的改变布局高度：聊天贴着底部时，滚动区域一帧一帧变高，
+/// 上面的内容就一帧一帧平滑上移（普通的出现动画只改画面，布局高度一下子就到位，内容会跳）
+struct GrowIn: Layout {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let size = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: proposal.width ?? size.width, height: size.height * min(1, max(0, progress)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        let size = child.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        // 贴着底边放：这一行长高时，气泡停在原地，是上面的内容在让开
+        child.place(at: CGPoint(x: bounds.minX, y: bounds.maxY - size.height), anchor: .topLeading,
+                    proposal: ProposedViewSize(width: bounds.width, height: size.height))
     }
 }
 
 extension View {
-    func riseIn(fresh: Bool) -> some View { modifier(RiseIn(fresh: fresh)) }
+    func riseIn(fresh: Bool, anchor: UnitPoint = .bottom) -> some View { modifier(RiseIn(fresh: fresh, anchor: anchor)) }
 }
 
 /// 根页面的大标题
