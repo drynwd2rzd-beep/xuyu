@@ -108,7 +108,7 @@ struct ShuttleEffect: ViewModifier, Animatable {
             return AnyView(content
                 .scaleEffect(1 + 0.08 * (1 - p))
                 .blur(radius: 14 * (1 - p))
-                .opacity(p))
+                .opacity(Double(p)))
         }
         let screen = UIScreen.main.bounds
         // 没有那一行（从主页、通知进来）：从屏幕中间
@@ -117,7 +117,7 @@ struct ShuttleEffect: ViewModifier, Animatable {
             .clipShape(RoundedRectangle(cornerRadius: (1 - p) * 40, style: .continuous))
             .scaleEffect(0.18 + 0.82 * p)
             .offset(x: (from.midX - screen.midX) * (1 - p), y: (from.midY - screen.midY) * (1 - p))
-            .opacity(min(1, p * 1.4)))
+            .opacity(Double(min(1, p * 1.4))))
     }
 }
 
@@ -138,6 +138,6 @@ extension View {
     /// 只用缩放和透明度，不模糊；放大不会露出边
     func recede(_ amount: CGFloat) -> some View {
         scaleEffect(1 + 0.12 * amount)
-            .opacity(1 - 0.85 * amount)
+            .opacity(Double(1 - 0.85 * amount))
     }
 }
