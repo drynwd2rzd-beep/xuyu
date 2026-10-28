@@ -101,7 +101,7 @@ struct MomentProfileView: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
             }
-            Text("\(momentCount) moments · \(albumCount) photos")
+            Text(verbatim: "\(momentCount) \(momentCount == 1 ? "moment" : "moments") · \(albumCount) \(albumCount == 1 ? "photo" : "photos")")
                 .font(Typo.serif(13))
                 .foregroundStyle(Palette.faint)
                 .padding(.top, 4)

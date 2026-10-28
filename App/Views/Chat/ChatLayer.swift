@@ -9,10 +9,13 @@ struct ChatLayer: View {
     let id: UUID
     @Environment(Router.self) private var router
     @Environment(\.modelContext) private var context
+    @AppStorage(Prefs.wallpaper) private var globalWallpaper = 0
+    @AppStorage(WallpaperStore.stampKey) private var wallpaperStamp = 0.0
 
     var body: some View {
         @Bindable var router = router
         let swipe = router.chatSwipe
+        let paper = WallpaperStore.resolve(for: id, global: globalWallpaper)
         GeometryReader { geo in
             NavigationStack(path: $router.chatPath) {
                 Group {
@@ -23,6 +26,12 @@ struct ChatLayer: View {
             // 导航铺满整块屏幕，里面的内容照样避开状态栏和底部横条（由系统按窗口算）。
             // 圆角裁切会被系统做成遮罩、只罩住导航自己那块：它只占安全区的话，状态栏和底部那两截就被切掉，露出上下黑边
             .ignoresSafeArea(.container)
+            // 底下再铺一张同样的聊天背景：穿梭动画里系统有时只画导航的安全区那块，
+            // 状态栏和底部横条那两截露出来的就是这张背景，不会是后面深色的列表
+            .background {
+                ChatWallpaper(index: paper.index, owner: paper.owner)
+                    .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
+            }
             // 侧滑时四角跟屏幕一样圆
             .clipShape(ScreenShape(radius: swipe > 0 ? Radius.screen : 0))
             .background {
