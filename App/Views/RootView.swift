@@ -19,6 +19,12 @@ struct RootView: View {
                 // 聊天开着时朝你放大、淡开；侧滑返回时跟着手指一点点回来
                 .recede(router.chat == nil ? 0 : 1 - router.chatSwipe)
             if let id = router.chat {
+                // 整屏的聊天背景：在聊天层外面、和它一起动，进场途中状态栏和底部横条那两截也有图（见 ChatLayer）
+                ChatBackdrop(id: id)
+                    .ignoresSafeArea()
+                    .id(id)
+                    .transition(.shuttle(from: router.chatOrigin, fullScreen: true))
+                    .zIndex(0.5)
                 ChatLayer(id: id)
                     .id(id)
                     .transition(.shuttle(from: router.chatOrigin))

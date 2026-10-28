@@ -10,15 +10,13 @@ import UIKit
 /// 动画时状态栏和底部横条那两截就被切掉、露出黑边。也不让它忽略安全区：那样动画中系统按缩小后的位置算留白，
 /// 动画结束才改回来，内容会跳一下
 ///
-/// 聊天背景在这一层的最外面（系统导航容器外面）再铺一张整屏的：真机录屏看到，进场动画途中系统只画导航容器
-/// 自己那块（安全区），聊天页里伸到状态栏和底部横条的背景被切掉，露出后面的列表；动画一结束又补满，像抽了一下。
-/// 外面这张和聊天页里那张是同一张图、同样铺满，平时完全重合看不出来，动画中替它把上下两截补上
+/// 进场动画途中，这一层整个只被画在安全区里（真机录屏：伸到状态栏和底部横条的背景被切掉、露出后面的列表，
+/// 动画一结束又补满，像抽了一下）。所以整屏的聊天背景不放在这一层里，而是在它外面单独一层 ChatBackdrop，
+/// 跟着同一个穿梭动画、同一个侧滑一起动，替它把上下两截补上
 struct ChatLayer: View {
     let id: UUID
     @Environment(Router.self) private var router
     @Environment(\.modelContext) private var context
-    @AppStorage(Prefs.wallpaper) private var globalWallpaper = 0
-    @AppStorage(WallpaperStore.stampKey) private var wallpaperStamp = 0.0
 
     var body: some View {
         @Bindable var router = router
@@ -31,17 +29,12 @@ struct ChatLayer: View {
                 .navigationDestination(for: Route.self) { RouteView(route: $0) }
             }
             .background {
-                ZStack {
-                    // 影子只在侧滑时出现，投在左边，像一张纸叠在列表上
-                    if swipe > 0 {
-                        Rectangle()
-                            .fill(Palette.paper)
-                            .shadow(color: .black.opacity(0.22 * (1 - swipe)), radius: 20, x: -6)
-                            .ignoresSafeArea()
-                    }
-                    let paper = wallpaper
-                    ChatWallpaper(index: paper.index, owner: paper.owner)
-                        .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
+                // 影子只在侧滑时出现，投在左边，像一张纸叠在列表上
+                if swipe > 0 {
+                    Rectangle()
+                        .fill(Palette.paper)
+                        .shadow(color: .black.opacity(0.22 * (1 - swipe)), radius: 20, x: -6)
+                        .ignoresSafeArea()
                 }
             }
             .offset(x: swipe * geo.size.width)
@@ -65,10 +58,22 @@ struct ChatLayer: View {
         }
     }
 
-    /// 和聊天页里用的是同一张背景（对话自己设的优先，否则跟随全局）
-    private var wallpaper: (index: Int, owner: UUID?) {
-        _ = wallpaperStamp
-        return WallpaperStore.resolve(for: id, global: globalWallpaper)
+}
+
+/// 聊天层后面那张整屏的聊天背景（见 ChatLayer 的说明）：和聊天页里是同一张图、同样铺满，平时完全重合看不出来；
+/// 进场、散开、侧滑时和聊天层一起动，状态栏和底部横条那两截一直有图
+struct ChatBackdrop: View {
+    let id: UUID
+    @Environment(Router.self) private var router
+    @AppStorage(Prefs.wallpaper) private var globalWallpaper = 0
+    @AppStorage(WallpaperStore.stampKey) private var wallpaperStamp = 0.0
+
+    var body: some View {
+        let paper = WallpaperStore.resolve(for: id, global: globalWallpaper)
+        ChatWallpaper(index: paper.index, owner: paper.owner)
+            .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
+            .offset(x: router.chatSwipe * UIScreen.main.bounds.width)
+            .allowsHitTesting(false)
     }
 }
 
@@ -125,6 +130,8 @@ struct ShuttleEffect: ViewModifier, Animatable {
     var progress: CGFloat
     let origin: CGRect?
     let leaving: Bool
+    /// 整屏的那张背景（ChatBackdrop）：绕安全区的中心缩放，和聊天层每一帧都严丝合缝
+    var fullScreen = false
 
     var animatableData: CGFloat {
         get { progress }
@@ -141,8 +148,9 @@ struct ShuttleEffect: ViewModifier, Animatable {
         let center = CGPoint(x: screen.midX, y: insets.top + (screen.height - insets.top - insets.bottom) / 2)
         // 减少动态效果：不飞、不放大、不模糊，只淡入淡出
         let still = Motion.reduced
+        let anchor = fullScreen ? UnitPoint(x: 0.5, y: center.y / screen.height) : .center
         return content
-            .scaleEffect(still ? 1 : leaving ? 1 + 0.08 * q : 0.18 + 0.82 * progress)
+            .scaleEffect(still ? 1 : leaving ? 1 + 0.08 * q : 0.18 + 0.82 * progress, anchor: anchor)
             .offset(x: still || leaving ? 0 : (from.midX - center.x) * q, y: still || leaving ? 0 : (from.midY - center.y) * q)
             .blur(radius: !still && leaving ? 14 * q : 0)
             .opacity(leaving ? Double(progress) : Double(min(1, progress * 1.4)))
@@ -151,12 +159,12 @@ struct ShuttleEffect: ViewModifier, Animatable {
 
 extension AnyTransition {
     /// 进出聊天的穿梭过渡：从 origin（点的那一行）飞进来，返回时像雾一样散开
-    static func shuttle(from origin: CGRect?) -> AnyTransition {
+    static func shuttle(from origin: CGRect?, fullScreen: Bool = false) -> AnyTransition {
         .asymmetric(
-            insertion: .modifier(active: ShuttleEffect(progress: 0, origin: origin, leaving: false),
-                                 identity: ShuttleEffect(progress: 1, origin: origin, leaving: false)),
-            removal: .modifier(active: ShuttleEffect(progress: 0, origin: origin, leaving: true),
-                               identity: ShuttleEffect(progress: 1, origin: origin, leaving: true))
+            insertion: .modifier(active: ShuttleEffect(progress: 0, origin: origin, leaving: false, fullScreen: fullScreen),
+                                 identity: ShuttleEffect(progress: 1, origin: origin, leaving: false, fullScreen: fullScreen)),
+            removal: .modifier(active: ShuttleEffect(progress: 0, origin: origin, leaving: true, fullScreen: fullScreen),
+                               identity: ShuttleEffect(progress: 1, origin: origin, leaving: true, fullScreen: fullScreen))
         )
     }
 }
