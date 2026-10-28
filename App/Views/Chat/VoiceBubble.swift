@@ -1,49 +1,37 @@
 import SwiftUI
 
-/// 语音消息：点一下播放 / 暂停。波形随播放从左到右变深，右边是时长；
-/// 长按「转文字」后，下面淡淡地显示说的话。语音越长，气泡越宽（像微信）
+/// 语音消息：点一下播放 / 暂停。波形随播放从左到右变深，右边是时长。语音越长，气泡越宽（像微信）
 struct VoiceBubble: View {
     let id: String
     let data: Data
     let time: String
-    var transcript: String?
 
     private var player: VoicePlayer { VoicePlayer.shared }
     private var isPlaying: Bool { player.playing == id }
 
     var body: some View {
         let seconds = player.duration(id, data: data)
-        VStack(alignment: .leading, spacing: 8) {
-            Button { player.toggle(id, data: data) } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Palette.inkInverse)
-                        .frame(width: 28, height: 28)
-                        .background(Palette.ink, in: Circle())
-                        .contentTransition(.symbolEffect(.replace))
-                    Waveform(seed: id, bars: Self.bars(for: seconds), progress: isPlaying ? player.progress : 0)
-                        .frame(height: 22)
-                    Text(Self.length(seconds))
-                        .font(TimedText.stampFont)
-                        .foregroundStyle(TimedText.stampColor)
-                    Text(time)
-                        .font(TimedText.stampFont)
-                        .foregroundStyle(TimedText.stampColor)
-                }
-                .contentShape(Rectangle())
+        Button { player.toggle(id, data: data) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.inkInverse)
+                    .frame(width: 28, height: 28)
+                    .background(Palette.ink, in: Circle())
+                    .contentTransition(.symbolEffect(.replace))
+                Waveform(seed: id, bars: Self.bars(for: seconds), progress: isPlaying ? player.progress : 0)
+                    .frame(height: 22)
+                Text(Self.length(seconds))
+                    .font(TimedText.stampFont)
+                    .foregroundStyle(TimedText.stampColor)
+                Text(time)
+                    .font(TimedText.stampFont)
+                    .foregroundStyle(TimedText.stampColor)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isPlaying ? "暂停语音" : "播放语音")
-            if let transcript {
-                Text(transcript)
-                    .font(.system(size: 14))
-                    .lineSpacing(3)
-                    .foregroundStyle(Palette.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.reveal)
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isPlaying ? "暂停语音" : "播放语音")
         .animation(Motion.snappy, value: isPlaying)
     }
 
@@ -54,6 +42,24 @@ struct VoiceBubble: View {
 
     static func length(_ seconds: TimeInterval) -> String {
         "\(max(1, Int(seconds.rounded())))″"
+    }
+}
+
+/// 语音转出来的文字：语音气泡下面的一张浅色小卡片（和引用条同一种样子）
+struct TranscriptCard: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 14))
+            .lineSpacing(3)
+            .foregroundStyle(Palette.ink2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+            .textSelection(.enabled)
     }
 }
 

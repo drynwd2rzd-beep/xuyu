@@ -28,7 +28,7 @@ enum Backup {
         var engineRaw: String, model: String, effort: String, canWork: Bool
         var proactive: Bool, proactiveFreq: Int, sortIndex: Int, createdAt: Date
         var followUp: Int?
-        var voiceID: String?, voiceName: String?, voiceFreq: Int?
+        var voiceID: String?, voiceName: String?, voiceFreq: Int?, language: String?
     }
 
     struct ConversationDTO: Codable {
@@ -88,7 +88,7 @@ enum Backup {
                 PersonaDTO(id: $0.id, name: $0.name, bio: $0.bio, systemPrompt: $0.systemPrompt, tint: $0.tint, avatarData: $0.avatarData,
                            engineRaw: $0.engineRaw, model: $0.model, effort: $0.effort, canWork: $0.canWork, proactive: $0.proactive,
                            proactiveFreq: $0.proactiveFreq, sortIndex: $0.sortIndex, createdAt: $0.createdAt, followUp: $0.followUp,
-                           voiceID: $0.voiceID, voiceName: $0.voiceName, voiceFreq: $0.voiceFreq)
+                           voiceID: $0.voiceID, voiceName: $0.voiceName, voiceFreq: $0.voiceFreq, language: $0.language)
             },
             conversations: convos.map { c in
                 ConversationDTO(id: c.id, title: c.title, isGroup: c.isGroup, memberIDs: c.memberIDs, pinned: c.pinned, draft: c.draft,
@@ -147,7 +147,7 @@ enum Backup {
             p.canWork = d.canWork; p.proactive = d.proactive; p.proactiveFreq = d.proactiveFreq; p.sortIndex = d.sortIndex
             p.createdAt = d.createdAt
             p.followUp = d.followUp ?? 1
-            p.voiceID = d.voiceID ?? ""; p.voiceName = d.voiceName ?? ""; p.voiceFreq = d.voiceFreq ?? 0
+            p.voiceID = d.voiceID ?? ""; p.voiceName = d.voiceName ?? ""; p.voiceFreq = d.voiceFreq ?? 0; p.language = d.language ?? "zh"
             context.insert(p)
         }
         for d in archive.conversations {

@@ -134,6 +134,20 @@ struct AppearanceSettingsView: View {
             SettingsGroup(title: "消息") {
                 SettingRow(title: "名字旁显示模型图标") { InkToggle(isOn: $showEngineLogo, label: "名字旁显示模型图标") }
             }
+            // 界面语言跟着系统「设置 › 絮语 › 语言」走：点一下直接跳过去
+            SettingsGroup(title: "语言") {
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                } label: {
+                    SettingRow(title: "界面语言") {
+                        Text(Fmt.ui.identifier.hasPrefix("ko") ? "한국어" : "中文")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Palette.inkSoft)
+                        Chevron()
+                    }
+                }
+                .buttonStyle(PressableRowStyle())
+            }
         }
     }
 }
@@ -219,7 +233,7 @@ struct BackupView: View {
         }
         .overlay(alignment: .top) {
             if let note = working ?? toast {
-                Text(note)
+                Text(LocalizedStringKey(note))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.onNoir)
                     .padding(.horizontal, Space.card)

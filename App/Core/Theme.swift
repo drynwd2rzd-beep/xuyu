@@ -39,7 +39,6 @@ enum Palette {
     static let botBubble = Color.dynamic(light: 0xFFFFFF, dark: 0x1D1D20)
     static let noir = Color.dynamic(light: 0x1D1D1E, dark: 0xF1F0EC)
     static let onNoir = Color.dynamic(light: 0xF4F3EF, dark: 0x141415)
-    static let switchOff = Color.dynamic(light: 0xD9D8D3, dark: 0x3A3A3D)
     static let danger = Color.dynamic(light: 0xB8463A, dark: 0xE0705F)
     static let highlight = Color.dynamic(light: 0xEADFC4, dark: 0x4A4232)
     static let clay = Color(hex: 0xD97757)
@@ -55,10 +54,7 @@ enum Typo {
 }
 
 /// 统一圆角：所有页面只从这里取值，全部使用 iPhone 屏幕同款的连续曲率圆角（.continuous）。
-/// 贴着屏幕边缘的元素与屏幕圆角同心：半径 = 屏幕圆角 − 与屏幕边缘的距离。
 enum Radius {
-    /// iPhone 屏幕圆角（Face ID 机型约 55pt）
-    static let screen: CGFloat = 55
     /// 卡片、列表容器
     static let card: CGFloat = 26
     /// 小方块：表情、组件库图标、代码块
@@ -69,9 +65,6 @@ enum Radius {
     static let sheet: CGFloat = 38
     /// 小控件：头像底色块、分段内块
     static let control: CGFloat = 12
-
-    /// 与屏幕同心的圆角
-    static func concentric(inset: CGFloat) -> CGFloat { max(screen - inset, control) }
 }
 
 extension Shape where Self == RoundedRectangle {
@@ -136,6 +129,8 @@ enum Motion {
     static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
     /// 打开、返回聊天：底下的页面往后退、聊天页浮上来（反过来就是返回），一气呵成不回弹
     static let depth = Animation.spring(duration: 0.55, bounce: 0)
+    /// TA 的一句话冒出来：气泡从小点撑开成文字的大小，平滑不回弹
+    static let reveal = Animation.smooth(duration: 0.45)
 }
 
 struct CardStyle: ViewModifier {
@@ -254,10 +249,24 @@ struct CircleIconButton: View {
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text)
+        Text(LocalizedStringKey(text))
             .font(Typo.serif(13.5))
             .foregroundStyle(Palette.inkSoft)
             .padding(.leading, 6)
+    }
+}
+
+/// 设置行右边「当前值 ⌃⌄」：点开是一个菜单（模型、推理强度、追问时间等都用它，样子统一）
+struct MenuValue: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(LocalizedStringKey(text)).lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
+        }
+        .font(.system(size: 15))
+        .foregroundStyle(Palette.ink2)
     }
 }
 
@@ -275,7 +284,7 @@ struct Segmented<T: Hashable>: View {
                 Button {
                     withAnimation(Motion.snappy) { selection = item.0 }
                 } label: {
-                    Text(item.1)
+                    Text(LocalizedStringKey(item.1))
                         .font(.system(size: 13.5, weight: on ? .semibold : .regular))
                         .foregroundStyle(on ? Palette.ink : Palette.inkSoft)
                         .padding(.horizontal, 13)
@@ -305,7 +314,7 @@ struct InkToggle: View {
     var label: String
 
     var body: some View {
-        Toggle(label, isOn: $isOn)
+        Toggle(LocalizedStringKey(label), isOn: $isOn)
             .labelsHidden()
             .tint(Palette.ink)
     }
@@ -320,9 +329,9 @@ struct SettingRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16)).foregroundStyle(Palette.ink)
+                Text(LocalizedStringKey(title)).font(.system(size: 16)).foregroundStyle(Palette.ink)
                 if let subtitle {
-                    Text(subtitle).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft)
+                    Text(LocalizedStringKey(subtitle)).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft)
                 }
             }
             Spacer(minLength: 8)
@@ -377,9 +386,19 @@ enum Fmt {
     static let bubble = make("h:mm a", en)
     /// 发给模型的时间：24 小时制，不会有歧义
     static let time24 = make("HH:mm")
-    static let md = make("M月d日")
-    static let weekday = make("EEE")
-    static let weekdayMD = make("EEE · M月d日")
+    /// App 界面现在用的语言（跟着系统里给絮语选的语言）
+    static let ui = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "zh-Hans")
+
+    private static func template(_ template: String) -> DateFormatter {
+        let f = DateFormatter()
+        f.locale = ui
+        f.setLocalizedDateFormatFromTemplate(template)
+        return f
+    }
+
+    static let md = template("MMMd")
+    static let weekday = template("EEE")
+    static let weekdayMD = template("MMMdEEE")
     static let enLong = make("EEEE, MMMM d", en)
     static let enMonth = make("MMMM", en)
     static let ymd = make("yyyy.M.d")
@@ -400,7 +419,7 @@ extension Date {
     var listStamp: String {
         let cal = Calendar.current
         if cal.isDateInToday(self) { return Fmt.hm.string(from: self) }
-        if cal.isDateInYesterday(self) { return "昨天" }
+        if cal.isDateInYesterday(self) { return String(localized: "昨天") }
         if let days = cal.dateComponents([.day], from: cal.startOfDay(for: self), to: cal.startOfDay(for: .now)).day, days < 7 {
             return Fmt.weekday.string(from: self)
         }
@@ -409,8 +428,8 @@ extension Date {
 
     var separatorStamp: String {
         let cal = Calendar.current
-        if cal.isDateInToday(self) { return "今天 " + Fmt.hm.string(from: self) }
-        if cal.isDateInYesterday(self) { return "昨天 " + Fmt.hm.string(from: self) }
+        if cal.isDateInToday(self) { return String(localized: "今天") + " " + Fmt.hm.string(from: self) }
+        if cal.isDateInYesterday(self) { return String(localized: "昨天") + " " + Fmt.hm.string(from: self) }
         return Fmt.md.string(from: self) + " " + Fmt.hm.string(from: self)
     }
 

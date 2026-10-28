@@ -10,15 +10,14 @@ struct RootView: View {
     @State private var revealed = true
     @State private var direction: CGFloat = 1
     @State private var entering = false
-    /// 聊天页侧滑返回的进度：底下的页面跟着手指一点点回到前面
-    @State private var chatSwipe: CGFloat = 0
 
     var body: some View {
         ZStack {
             pages
-                .recede(router.chat == nil ? 0 : 1 - chatSwipe)
+                // 聊天开着时往后退；侧滑返回时跟着手指一点点回到前面
+                .recede(router.chat == nil ? 0 : 1 - router.chatSwipe)
             if let id = router.chat {
-                ChatLayer(id: id, swipe: $chatSwipe)
+                ChatLayer(id: id)
                     .id(id)
                     .transition(.depth)
                     .zIndex(1)
@@ -39,9 +38,7 @@ struct RootView: View {
             }
         }
         .onChange(of: router.chat) { _, open in
-            guard open == nil else { return }
-            chatSwipe = 0
-            settleKeyboard()
+            if open == nil { settleKeyboard() }
         }
     }
 
@@ -195,7 +192,7 @@ struct InAppBanner: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text(banner.title).font(Typo.serif(13.5)).foregroundStyle(Palette.onNoir.opacity(0.7))
-                    Text(banner.body).font(.system(size: 14.5)).foregroundStyle(Palette.onNoir).lineLimit(1)
+                    Text(banner.body).font(.system(size: 14)).foregroundStyle(Palette.onNoir).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -269,7 +266,7 @@ struct SubpageHeader<Trailing: View>: View {
     var body: some View {
         // 标题始终居中，左右按钮各占固定宽度
         ZStack {
-            Text(title).font(Typo.serif(18, .medium)).foregroundStyle(Palette.ink)
+            Text(LocalizedStringKey(title)).font(Typo.serif(18, .medium)).foregroundStyle(Palette.ink)
             HStack {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")

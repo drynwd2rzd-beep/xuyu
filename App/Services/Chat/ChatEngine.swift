@@ -307,16 +307,19 @@ final class ChatEngine {
                 // 藏着打字的这条，以真正冒出来的时刻为准
                 message.createdAt = max(.now, message.createdAt)
                 let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
-                buffers[message.id] = nil
-                if cleaned.isEmpty {
-                    // 这一段只有一个表情：表情已经单独发出，空气泡不要了
-                    context.delete(message)
-                } else {
-                    message.content = cleaned
-                    message.status = .done
-                    if let audio { attach(audio, to: message) }
-                    sent.append(audio == nil ? cleaned : "[语音]")
+                // 小点变成文字、气泡撑开、「已读」淡出：放在同一个平滑动画里一起完成
+                withAnimation(Motion.reveal) {
+                    buffers[message.id] = nil
+                    if cleaned.isEmpty {
+                        // 这一段只有一个表情：表情已经单独发出，空气泡不要了
+                        context.delete(message)
+                    } else {
+                        message.content = cleaned
+                        message.status = .done
+                        if let audio { attach(audio, to: message) }
+                    }
                 }
+                if !cleaned.isEmpty { sent.append(audio == nil ? cleaned : "[语音]") }
                 speaking.insert(convo.id)
                 lastCommit = .now
                 if pending[convo.id] != nil {
@@ -401,17 +404,23 @@ final class ChatEngine {
             }
         }
 
-        buffers[message.id] = nil
-        message.content = message.status == .done
+        let final = message.status == .done
             ? applyMarkers(buffer.text.trimmed, to: message, persona: persona, convo: convo, context: context)
             : buffer.text.trimmed
-        message.reasoning = buffer.reasoning.trimmed
-        message.steps = buffer.steps.joined(separator: "\n")
-        if message.status == .done && message.content.isEmpty && message.steps.isEmpty {
-            context.delete(message)
-        } else if message.status == .done {
-            if let lastAudio { attach(lastAudio, to: message) }
-            sent.append(lastAudio == nil ? message.content : "[语音]")
+        // 最后一句也和前面一样：小点变成文字、气泡撑开，在同一个平滑动画里完成
+        withAnimation(Motion.reveal) {
+            buffers[message.id] = nil
+            message.content = final
+            message.reasoning = buffer.reasoning.trimmed
+            message.steps = buffer.steps.joined(separator: "\n")
+            if message.status == .done && message.content.isEmpty && message.steps.isEmpty {
+                context.delete(message)
+            } else if message.status == .done, let lastAudio {
+                attach(lastAudio, to: message)
+            }
+        }
+        if !final.isEmpty && message.status == .done {
+            sent.append(lastAudio == nil ? final : "[语音]")
         }
         if let last = sent.last {
             notify(convo: convo, persona: persona, text: last)

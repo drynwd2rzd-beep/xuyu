@@ -64,7 +64,9 @@ enum Companion {
     /// 最近几句里有人道别了（晚安、拜拜、先去忙…）：聊天自然结束了
     nonisolated static func endedNaturally(_ lines: [String]) -> Bool {
         let farewells = ["晚安", "拜拜", "再见", "886", "bye", "先睡", "去睡", "睡觉了", "睡了哈", "先忙", "去忙", "忙去了",
-                         "下次聊", "回头聊", "明天聊", "改天聊", "先下了", "先撤", "我先走"]
+                         "下次聊", "回头聊", "明天聊", "改天聊", "先下了", "先撤", "我先走",
+                         // 韩语角色的道别
+                         "잘 자", "잘자", "굿나잇", "바이", "내일 봐", "다음에 봐", "나중에 얘기", "먼저 잘게", "들어가"]
         return lines.contains { line in
             let text = line.lowercased()
             return farewells.contains { text.contains($0) }

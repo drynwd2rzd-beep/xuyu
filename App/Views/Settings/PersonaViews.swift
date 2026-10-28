@@ -190,94 +190,36 @@ struct PersonaEditor: View {
             VStack(alignment: .leading, spacing: Space.section) {
                 avatarSection
 
-                VStack(spacing: 0) {
+                // 是谁
+                SettingsGroup(title: "资料") {
                     inputRow("名字", text: $persona.name)
                     Hairline()
                     inputRow("简介", text: $persona.bio)
                 }
-                .card()
 
-                VStack(spacing: 0) {
-                    SettingRow(title: "由谁驱动") {
-                        Segmented(items: Engine.allCases.map { ($0, $0.label) }, selection: $persona.engine)
-                            .fixedSize()
-                    }
-                    Hairline()
-                    SettingRow(title: "模型") {
-                        Menu {
-                            Button("跟随默认") { persona.model = "" }
-                            ForEach(models) { m in
-                                Button(m.name) { persona.model = m.id }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(persona.model.isEmpty ? "跟随默认" : ModelNames.name(persona.model, engine: persona.engine, status: relay.status))
-                                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
-                            }
-                            .font(.system(size: 15))
-                            .foregroundStyle(Palette.ink2)
-                        }
-                    }
-                    Hairline()
-                    SettingRow(title: "推理强度") {
-                        EffortMenu(options: ModelNames.efforts(for: persona.model, engine: persona.engine, status: relay.status),
-                                   selection: $persona.effort)
-                    }
-                }
-                .card()
-
-                VStack(alignment: .leading, spacing: Space.tight) {
-                    Text("人设").font(.system(size: 15)).foregroundStyle(Palette.inkSoft)
+                SettingsGroup(title: "人设") {
                     TextField("TA 的性格、说话方式、记得关于你的事…", text: $persona.systemPrompt, axis: .vertical)
                         .font(.system(size: 15))
                         .lineSpacing(5)
                         .lineLimit(3...12)
+                        .padding(Space.card)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(Space.card)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .card()
 
-                VStack(spacing: 0) {
-                    SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
-                    if persona.proactive {
+                // 怎么说话
+                SettingsGroup(title: "语言与语音") {
+                    SettingRow(title: "语言") {
+                        Segmented(items: [("zh", "中文"), ("ko", "한국어")], selection: $persona.language)
+                            .fixedSize()
+                    }
+                    if Voice.isConfigured && !persona.canWork {
                         Hairline()
-                        SettingRow(title: "多久一次") {
-                            Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
-                                .fixedSize()
-                        }
-                        .transition(.opacity)
-                    }
-                    Hairline()
-                    SettingRow(title: "没回消息会来追问", subtitle: "TA 发的消息你一直没回，过一阵子会来问你") {
-                        Menu {
-                            ForEach([1, 2, 3, 0], id: \.self) { option in
-                                Button {
-                                    persona.followUp = option
-                                } label: {
-                                    let title = Self.followUpLabel(option)
-                                    if persona.followUp == option { Label(title, systemImage: "checkmark") } else { Text(title) }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(Self.followUpLabel(persona.followUp))
-                                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
-                            }
-                            .font(.system(size: 15))
-                            .foregroundStyle(Palette.ink2)
-                        }
-                    }
-                }
-                .card()
-                .animation(Motion.spring, value: persona.proactive)
-
-                if Voice.isConfigured && !persona.canWork {
-                    VStack(spacing: 0) {
                         Button { pickingVoice = true } label: {
                             SettingRow(title: "声音") {
                                 Text(persona.voiceName.isEmpty ? "未选择" : persona.voiceName)
                                     .font(.system(size: 14))
                                     .foregroundStyle(Palette.inkSoft)
+                                    .lineLimit(1)
                                 Chevron()
                             }
                         }
@@ -291,15 +233,37 @@ struct PersonaEditor: View {
                             .transition(.opacity)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                    .card()
-                    .animation(Motion.spring, value: persona.voiceID)
-                    .sheet(isPresented: $pickingVoice) {
-                        VoicePicker(persona: persona)
-                            .presentationCornerRadius(Radius.sheet)
-                            .presentationBackground(Palette.paper)
+                }
+                .animation(Motion.spring, value: persona.voiceID)
+
+                // 怎么互动
+                SettingsGroup(title: "互动") {
+                    SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
+                    if persona.proactive {
+                        Hairline()
+                        SettingRow(title: "多久一次") {
+                            Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
+                                .fixedSize()
+                        }
+                        .transition(.opacity)
+                    }
+                    Hairline()
+                    SettingRow(title: "没回消息会来追问") {
+                        Menu {
+                            ForEach([1, 2, 3, 0], id: \.self) { option in
+                                Button {
+                                    persona.followUp = option
+                                } label: {
+                                    let title = Self.followUpLabel(option)
+                                    if persona.followUp == option { Label(title, systemImage: "checkmark") } else { Text(title) }
+                                }
+                            }
+                        } label: {
+                            MenuValue(text: Self.followUpLabel(persona.followUp))
+                        }
                     }
                 }
+                .animation(Motion.spring, value: persona.proactive)
 
                 if !appointments.isEmpty {
                     SettingsGroup(title: "约定") {
@@ -322,24 +286,44 @@ struct PersonaEditor: View {
                     .transition(.opacity)
                 }
 
-                SettingRow(title: "允许操作电脑", subtitle: "只在电脑的「絮语工作区」文件夹里读写文件、运行命令，做好的文件会发到手机") {
-                    InkToggle(isOn: $persona.canWork, label: "允许操作电脑")
-                }
-                .card()
-
-                preview
-
-                if let chat {
-                    MemoryEditor(memory: Binding(get: { chat.memory }, set: { chat.memory = $0 }))
-                    VStack(alignment: .leading, spacing: Space.tight) {
-                        SectionLabel(text: "聊天背景")
-                        WallpaperPicker(owner: chat.id)
-                            .padding(Space.card)
-                            .card()
+                // 用什么模型
+                SettingsGroup(title: "模型") {
+                    SettingRow(title: "由谁驱动") {
+                        Segmented(items: Engine.allCases.map { ($0, $0.label) }, selection: $persona.engine)
+                            .fixedSize()
+                    }
+                    Hairline()
+                    SettingRow(title: "模型") {
+                        Menu {
+                            Button("跟随默认") { persona.model = "" }
+                            ForEach(models) { m in
+                                Button(m.name) { persona.model = m.id }
+                            }
+                        } label: {
+                            MenuValue(text: persona.model.isEmpty ? "跟随默认" : ModelNames.name(persona.model, engine: persona.engine, status: relay.status))
+                        }
+                    }
+                    Hairline()
+                    SettingRow(title: "推理强度") {
+                        EffortMenu(options: ModelNames.efforts(for: persona.model, engine: persona.engine, status: relay.status),
+                                   selection: $persona.effort)
+                    }
+                    Hairline()
+                    SettingRow(title: "允许操作电脑", subtitle: "只在电脑的「絮语工作区」里读写文件、运行命令") {
+                        InkToggle(isOn: $persona.canWork, label: "允许操作电脑")
                     }
                 }
 
-                VStack(spacing: 0) {
+                // 这段聊天
+                if let chat {
+                    MemoryEditor(memory: Binding(get: { chat.memory }, set: { chat.memory = $0 }))
+                    SettingsGroup(title: "聊天背景") {
+                        WallpaperPicker(owner: chat.id)
+                            .padding(Space.card)
+                    }
+                }
+
+                SettingsGroup(title: "管理") {
                     Button { confirmClear = true } label: {
                         SettingRow(title: "清空聊天记录") { EmptyView() }
                     }
@@ -356,8 +340,6 @@ struct PersonaEditor: View {
                     }
                     .buttonStyle(PressableRowStyle())
                 }
-                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                .card()
             }
             .padding(.horizontal, Space.page)
             .padding(.bottom, 40)
@@ -378,6 +360,11 @@ struct PersonaEditor: View {
                 }
                 photoItem = nil
             }
+        }
+        .sheet(isPresented: $pickingVoice) {
+            VoicePicker(persona: persona)
+                .presentationCornerRadius(Radius.sheet)
+                .presentationBackground(Palette.paper)
         }
         .onAppear { chat = context.chat(for: persona) }
         .onDisappear {
@@ -401,7 +388,7 @@ struct PersonaEditor: View {
 
     static func followUpLabel(_ setting: Int) -> String {
         switch setting {
-        case 0: "关闭"
+        case 0: "不追问"
         case 2: "1～3 小时"
         case 3: "3～6 小时"
         default: "20 分钟～1 小时"
@@ -458,28 +445,6 @@ struct PersonaEditor: View {
         }
         .padding(.horizontal, Space.card)
         .frame(height: Space.row)
-    }
-
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: Space.tight) {
-            SectionLabel(text: "预览")
-            HStack(alignment: .top, spacing: 10) {
-                AvatarView(persona: persona, size: 34, ring: true)
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        EngineLogo(engine: persona.engine, size: 14)
-                        Text(persona.name).font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
-                    }
-                    TimedText(text: "你好呀，我是\(persona.name)。今天想聊点什么？", time: Fmt.hm.string(from: .now))
-                        .padding(.horizontal, 13)
-                        .padding(.top, 9)
-                        .padding(.bottom, 7)
-                        .background(Palette.botBubble, in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
-                }
-            }
-            .padding(.horizontal, 4)
-        }
     }
 
     private func deletePersona() {

@@ -93,6 +93,14 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Waveform.heights(seed: "a", count: 9), Waveform.heights(seed: "a", count: 9))
     }
 
+    func testKoreanPersonaSpeaksKorean() {
+        let karina = Persona(name: "Karina")
+        XCTAssertFalse(PromptBuilder.system(for: karina, convo: nil, members: [karina]).contains("说韩语"))
+        karina.language = "ko"
+        XCTAssertTrue(PromptBuilder.system(for: karina, convo: nil, members: [karina]).contains("说韩语"))
+        XCTAssertTrue(Companion.endedNaturally(["오늘 고마웠어, 잘 자"]))
+    }
+
     // MARK: - 约定
 
     func testPromiseMarkers() {

@@ -120,7 +120,8 @@ extension AnyTransition {
     static var reveal: AnyTransition {
         .asymmetric(
             insertion: .modifier(active: RevealModifier(shown: false), identity: RevealModifier(shown: true))
-                .animation(.smooth(duration: 0.5).delay(0.06)),
+                // 等气泡差不多撑开了，文字再由虚变实浮现，不会比气泡先到
+                .animation(.smooth(duration: 0.36).delay(0.16)),
             removal: .opacity
         )
     }

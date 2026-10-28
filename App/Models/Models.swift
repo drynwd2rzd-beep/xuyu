@@ -32,6 +32,8 @@ final class Persona {
     var voiceName: String = ""
     /// 多常发语音：0 不发 · 1 偶尔 · 2 常常
     var voiceFreq: Int = 0
+    /// TA 用哪种语言和你聊天、发语音：zh 中文 · ko 韩语
+    var language: String = "zh"
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 

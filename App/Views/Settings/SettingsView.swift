@@ -303,12 +303,7 @@ struct EffortMenu: View {
             item("", "默认")
             ForEach(options, id: \.self) { e in item(e, EffortName.label(e)) }
         } label: {
-            HStack(spacing: 4) {
-                Text(EffortName.label(selection))
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
-            }
-            .font(.system(size: 15))
-            .foregroundStyle(Palette.ink2)
+            MenuValue(text: EffortName.label(selection))
         }
         .sensoryFeedback(.selection, trigger: selection)
     }

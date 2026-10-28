@@ -22,6 +22,9 @@ enum PromptBuilder {
         var parts: [String] = []
         let base = persona.systemPrompt.trimmed
         parts.append(base.isEmpty ? "你是「\(persona.name)」。" : base)
+        if persona.language == "ko" {
+            parts.append("你和\(userName)聊天时说韩语：像韩国年轻人在 KakaoTalk 上聊天那样自然口语，不要中韩混杂；发语音也说韩语。日记、今日一句这类也用韩语写。")
+        }
         parts.append("""
         你在一个手机聊天 App 里和\(userName)聊天。像发消息一样自然、口语化地回复，不要长篇大论；想分几条说的时候用空行隔开，每段一两句话。只有内容复杂时才用 Markdown。不要用颜文字（比如 (≧▽≦)、^^ 这种）。
         """)

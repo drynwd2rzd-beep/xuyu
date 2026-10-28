@@ -97,7 +97,7 @@ struct MessageRow: View {
                         .padding(.bottom, reasoningOpen ? 0 : -5)
                 }
                 content(isUser: false)
-                    .animation(.smooth(duration: 0.5), value: isThinking)
+                    .animation(Motion.reveal, value: isThinking)
                 // TA 引用了你说过的话
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 if message.status == .error { errorLine }
@@ -214,8 +214,12 @@ struct MessageRow: View {
         case .voice:
             if let audio = message.sortedAttachments.first {
                 bubble(isUser: isUser) {
-                    VoiceBubble(id: message.id.uuidString, data: audio.data, time: time,
-                                transcript: transcript ? message.content : nil)
+                    VoiceBubble(id: message.id.uuidString, data: audio.data, time: time)
+                }
+                // 转文字：语音气泡不动，说的话在下面另起一张浅色小卡片
+                if transcript {
+                    TranscriptCard(text: message.content)
+                        .transition(.opacity.combined(with: .offset(y: -6)))
                 }
             }
         case .note:
@@ -237,6 +241,8 @@ struct MessageRow: View {
             .padding(.bottom, 7)
             .background(isUser ? Palette.userBubble.opacity(0.94) : Palette.botBubble.opacity(0.9),
                         in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+            // 气泡从小点撑开成文字时，文字不会探出还在变大的气泡
+            .clipShape(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
             .overlay {
                 if !isUser {
                     RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.9), lineWidth: 0.5)
@@ -253,7 +259,13 @@ struct MessageRow: View {
     @ViewBuilder
     private var menu: some View {
         if message.kind == .voice {
-            Button { withAnimation(Motion.spring) { transcript.toggle() } } label: {
+            Button {
+                // 等长按菜单完全收起再展开，两个动画不会撞在一起
+                Task {
+                    try? await Task.sleep(for: .milliseconds(380))
+                    withAnimation(Motion.spring) { transcript.toggle() }
+                }
+            } label: {
                 Label(transcript ? "收起文字" : "转文字", systemImage: "text.bubble")
             }
         }
@@ -282,7 +294,7 @@ struct MessageRow: View {
     private var errorLine: some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.circle").font(.system(size: 13))
-            Text(message.errorText ?? "出错了").font(.system(size: 13)).lineLimit(3)
+            Text(LocalizedStringKey(message.errorText ?? "出错了")).font(.system(size: 13)).lineLimit(3)
             Button("重试") { actions.retry(message) }.font(.system(size: 13, weight: .semibold))
         }
         .foregroundStyle(Palette.danger)

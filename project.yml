@@ -33,6 +33,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         CFBundleLocalizations:
           - zh-Hans
+          - ko
         # 只留这一项：同时写 NSAllowsLocalNetworking 时 iOS 会忽略它，Tailscale 的 100.x 地址就被拦了
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true

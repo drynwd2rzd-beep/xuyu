@@ -1,0 +1,8 @@
+/* 시스템이 권한을 물을 때 보이는 문구 */
+"NSLocalNetworkUsageDescription" = "Claude, Codex와 대화하려면 컴퓨터의 중계에 연결해야 해요.";
+"NSCameraUsageDescription" = "사진을 찍어 AI에게 보내요.";
+"NSPhotoLibraryUsageDescription" = "사진을 AI에게 보내거나 프로필 사진, 채팅 배경, 이모티콘으로 써요.";
+"NSPhotoLibraryAddUsageDescription" = "대화 속 사진을 앨범에 저장해요.";
+"NSMicrophoneUsageDescription" = "음성으로 글자를 입력해요.";
+"NSSpeechRecognitionUsageDescription" = "말한 내용을 글자로 바꿔요.";
+"NSFaceIDUsageDescription" = "Xuyu를 열거나 AI가 컴퓨터를 조작하기 전에 본인인지 확인해요.";

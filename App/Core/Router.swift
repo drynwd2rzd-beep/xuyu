@@ -24,6 +24,8 @@ final class Router {
     private(set) var chat: UUID?
     /// 从聊天里再点进去的页面（角色设置等），在聊天这一层里推进
     var chatPath = NavigationPath()
+    /// 侧滑返回聊天的进度 0～1：聊天页跟着手指往右移，底下的页面跟着回到前面。每次打开聊天都从 0 开始
+    var chatSwipe: CGFloat = 0
     /// 当前打开的对话（用来决定要不要弹 App 内提示）
     var openConversation: UUID?
     /// 主页正在编辑小组件
@@ -33,6 +35,8 @@ final class Router {
     func open(_ route: Route) {
         if case .chat(let id) = route {
             chatPath = NavigationPath()
+            // 先清零：刚侧滑关掉、还没完全消失的聊天页被重新打开时，不会还停在屏幕外面
+            chatSwipe = 0
             withAnimation(Motion.depth) { chat = id }
         } else if chat != nil {
             chatPath.append(route)

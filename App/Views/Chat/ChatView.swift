@@ -110,7 +110,7 @@ struct ChatView: View {
         }
         .overlay(alignment: .top) {
             if let toast {
-                Text(toast)
+                Text(LocalizedStringKey(toast))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Palette.onNoir)
                     .padding(.horizontal, Space.card)
@@ -275,9 +275,6 @@ struct ChatView: View {
                     Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
-                // 「已读」、「正在输入」出现和消失时，旁边的气泡被柔和地推开或补上，不会一跳
-                .animation(Motion.spring, value: receipt)
-                .animation(Motion.spring, value: typing?.id)
                 // 回复逐字出现时，跟着往下走（你往上翻看时不打扰）
                 .background { StreamFollower(buffer: live) { if follow { proxy.scrollTo("bottom", anchor: .bottom) } } }
             }
