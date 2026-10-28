@@ -10,12 +10,55 @@ struct RootView: View {
     @State private var revealed = true
     @State private var direction: CGFloat = 1
     @State private var entering = false
-    /// 点聊天列表里的一行：这一行放大成聊天页（返回时缩回去），而不是从右边推进来
-    @Namespace private var chatZoom
+    /// 聊天页侧滑返回的进度：底下的页面跟着手指一点点回到前面
+    @State private var chatSwipe: CGFloat = 0
 
     var body: some View {
+        ZStack {
+            pages
+                .recede(router.chat == nil ? 0 : 1 - chatSwipe)
+            if let id = router.chat {
+                ChatLayer(id: id, swipe: $chatSwipe)
+                    .id(id)
+                    .transition(.depth)
+                    .zIndex(1)
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        // App 内的消息提示：盖在聊天上面，在别的聊天里也能看到
+        .overlay(alignment: .top) {
+            if let banner = banners.current {
+                InAppBanner(banner: banner) {
+                    banners.dismiss()
+                    router.tab = .chats
+                    router.path = NavigationPath()
+                    router.open(.chat(banner.conversationID))
+                }
+                .padding(.horizontal, Space.page)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .onChange(of: router.chat) { _, open in
+            guard open == nil else { return }
+            chatSwipe = 0
+            settleKeyboard()
+        }
+    }
+
+    /// 从聊天等页面回来时，确认键盘状态是真实的（避免底栏一直藏着）
+    private func settleKeyboard() {
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            let up = UIApplication.shared.connectedScenes
+                .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+                .first?.firstResponderIsTextInput ?? false
+            if !up { withAnimation(Motion.snappy) { keyboardShown = false } }
+        }
+    }
+
+    private var pages: some View {
         @Bindable var router = router
-        NavigationStack(path: $router.path) {
+        return NavigationStack(path: $router.path) {
             ZStack {
                 Palette.paper.ignoresSafeArea()
                 tabPage(.home) { HomeView() }
@@ -29,34 +72,12 @@ struct RootView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: Route.self) { RouteView(route: $0).environment(\.chatZoom, chatZoom) }
+            .navigationDestination(for: Route.self) { RouteView(route: $0) }
         }
-        .environment(\.chatZoom, chatZoom)
         .tint(Palette.ink)
-        .overlay(alignment: .top) {
-            if let banner = banners.current {
-                InAppBanner(banner: banner) {
-                    banners.dismiss()
-                    router.tab = .chats
-                    router.path = NavigationPath()
-                    router.open(.chat(banner.conversationID))
-                }
-                .padding(.horizontal, Space.page)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
         .onAppear { shownTab = router.tab }
-        // 从聊天等二级页面回来时，确认键盘状态是真实的（避免底栏一直藏着）
         .onChange(of: router.path.count) { _, count in
-            if count == 0 {
-                Task {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    let up = UIApplication.shared.connectedScenes
-                        .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-                        .first?.firstResponderIsTextInput ?? false
-                    if !up { withAnimation(Motion.snappy) { keyboardShown = false } }
-                }
-            }
+            if count == 0 { settleKeyboard() }
         }
         .onChange(of: router.tab) { _, new in switchTab(to: new) }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -187,38 +208,15 @@ struct InAppBanner: View {
     }
 }
 
-extension EnvironmentValues {
-    /// 聊天页放大打开用的命名空间（聊天列表的行和聊天页共用）
-    @Entry var chatZoom: Namespace.ID? = nil
-}
-
-extension View {
-    /// 标记「从这里放大打开聊天」：返回时也缩回到这里
-    @ViewBuilder
-    func zoomSource(id: UUID, in namespace: Namespace.ID?) -> some View {
-        if let namespace {
-            matchedTransitionSource(id: id, in: namespace) { $0.background(Palette.paper).clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
-        } else {
-            self
-        }
-    }
-}
-
 struct RouteView: View {
     let route: Route
     @Environment(\.modelContext) private var context
-    @Environment(\.chatZoom) private var chatZoom
 
     var body: some View {
         switch route {
-        case .chat(let id):
-            if let convo = context.conversation(id) {
-                if let chatZoom {
-                    ChatView(convo: convo).navigationTransition(.zoom(sourceID: id, in: chatZoom))
-                } else {
-                    ChatView(convo: convo)
-                }
-            } else { missing }
+        case .chat:
+            // 聊天不在这里推进，而是由 Router.open 打开在最上面的聊天层（ChatLayer）
+            missing
         case .settings:
             SettingsView()
         case .connection:

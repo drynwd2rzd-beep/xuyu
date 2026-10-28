@@ -134,6 +134,8 @@ enum Motion {
     static let pressOut = Animation.spring(duration: 0.5, bounce: 0.18)
     /// 拖动松手后的归位：跟着手势速度，柔和收尾
     static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
+    /// 打开、返回聊天：底下的页面往后退、聊天页浮上来（反过来就是返回），一气呵成不回弹
+    static let depth = Animation.spring(duration: 0.55, bounce: 0)
 }
 
 struct CardStyle: ViewModifier {

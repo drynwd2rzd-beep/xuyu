@@ -104,8 +104,43 @@ struct RecalledLine: View {
     }
 }
 
+/// 文字浮现：由虚变实，从下面一点点升到位（小点变成文字时用）
+struct RevealModifier: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .blur(radius: shown ? 0 : 5)
+            .offset(y: shown ? 0 : 4)
+    }
+}
+
+extension AnyTransition {
+    static var reveal: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(active: RevealModifier(shown: false), identity: RevealModifier(shown: true))
+                .animation(.smooth(duration: 0.5).delay(0.06)),
+            removal: .opacity
+        )
+    }
+}
+
 struct TypingDots: View {
+    /// 只要三个点，不要外面的气泡（放进已有的气泡里）
+    var bare = false
+
     var body: some View {
+        if bare { dots } else {
+            dots
+                .padding(.horizontal, Space.card)
+                .padding(.vertical, 9)
+                .background(Palette.botBubble.opacity(0.9), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+        }
+    }
+
+    private var dots: some View {
         TimelineView(.animation) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(spacing: 5) {
@@ -122,10 +157,6 @@ struct TypingDots: View {
             }
             .frame(height: 20)
         }
-        .padding(.horizontal, Space.card)
-        .padding(.vertical, 9)
-        .background(Palette.botBubble.opacity(0.9), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
         .accessibilityLabel("正在输入")
     }
 }

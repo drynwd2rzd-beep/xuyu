@@ -164,7 +164,7 @@ struct GroupInfoSheet: View {
                 Button("删除", role: .destructive) {
                     dismiss()
                     // 先退出聊天页，再删数据，避免页面还在显示已删除的对话
-                    if !router.path.isEmpty { router.path.removeLast() }
+                    router.closeChat()
                     let target = convo
                     Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(450))

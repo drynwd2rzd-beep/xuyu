@@ -95,7 +95,7 @@ struct MessageRow: View {
                         .padding(.bottom, reasoningOpen ? 0 : -5)
                 }
                 content(isUser: false)
-                    .animation(Motion.spring, value: isThinking)
+                    .animation(.smooth(duration: 0.5), value: isThinking)
                 // TA 引用了你说过的话
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 if message.status == .error { errorLine }
@@ -177,18 +177,23 @@ struct MessageRow: View {
     private func content(isUser: Bool) -> some View {
         switch message.kind {
         case .text:
-            if isThinking {
-                // 还没出字：一个气泡，里面三个点轮流跳
-                TypingDots().transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
-            } else if !text.isEmpty {
+            if isThinking || !text.isEmpty {
+                // 同一个气泡：还没出字时里面三个点轮流跳；这句打好了，小点淡出，气泡柔和地撑开，文字由虚变实浮现
                 bubble(isUser: isUser) {
-                    if !isUser && MarkdownParser.looksRich(text) {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            MarkdownView(text: text, fontSize: 15.5)
-                            timeLabel
+                    ZStack(alignment: .topLeading) {
+                        if isThinking {
+                            TypingDots(bare: true)
+                                .transition(.opacity.animation(.easeOut(duration: 0.18)))
+                        } else if !isUser && MarkdownParser.looksRich(text) {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                MarkdownView(text: text, fontSize: 15.5)
+                                timeLabel
+                            }
+                            .transition(.reveal)
+                        } else {
+                            TimedText(text: text, time: time)
+                                .transition(.reveal)
                         }
-                    } else {
-                        TimedText(text: text, time: time)
                     }
                 }
             }

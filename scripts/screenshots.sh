@@ -59,7 +59,7 @@ xcodebuild test -project Xuyu.xcodeproj -scheme Xuyu -destination "id=$UDID" -de
   CODE_SIGNING_ALLOWED=NO > ui-test.log 2>&1
 test_status=$?
 set -e
-grep -E "Test Case|error:|failed|闪退|没有出现" ui-test.log | tail -40 || true
+grep -E "Test Case|error:|failed|闪退|没有出现" ui-test.log | tail -120 || true
 if [ $test_status -ne 0 ]; then
   echo "自动操作测试没通过"
   exit $test_status

@@ -19,13 +19,30 @@ enum Route: Hashable {
 final class Router {
     var tab: AppTab = .home
     var path = NavigationPath()
+    /// 打开着的聊天：盖在所有页面上面，用自己的景深过渡打开和返回（见 ChatLayer）
+    private(set) var chat: UUID?
+    /// 从聊天里再点进去的页面（角色设置等），在聊天这一层里推进
+    var chatPath = NavigationPath()
     /// 当前打开的对话（用来决定要不要弹 App 内提示）
     var openConversation: UUID?
     /// 主页正在编辑小组件
     var homeEditing = false
     @ObservationIgnored var demoApplied = false
 
-    func open(_ route: Route) { path.append(route) }
+    func open(_ route: Route) {
+        if case .chat(let id) = route {
+            chatPath = NavigationPath()
+            withAnimation(Motion.depth) { chat = id }
+        } else if chat != nil {
+            chatPath.append(route)
+        } else {
+            path.append(route)
+        }
+    }
+
+    func closeChat() {
+        withAnimation(Motion.depth) { chat = nil }
+    }
 }
 
 /// App 内的顶部消息提示

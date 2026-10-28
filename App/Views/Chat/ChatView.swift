@@ -174,7 +174,7 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            Button { dismiss() } label: {
+            Button { router.closeChat() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Palette.ink)
@@ -224,13 +224,18 @@ struct ChatView: View {
         // 「正在输入」的小点不按时间排，永远在最底下（像 iMessage）：你这时再发消息，会插在小点上面
         let typing = window.last { isTypingOnly($0) }
         let messages = window.filter { !isTypingOnly($0) }
-        let rows = ChatRow.build(messages)
+        // 打字的那条接在最后：和打好后的消息是同一行（同一个 id），小点会在原地变成文字，而不是删掉再冒出新的一行
+        var rows = ChatRow.build(messages)
+        if let typing {
+            let first = !(messages.last?.role == .assistant && messages.last?.personaID == typing.personaID)
+            rows.append(ChatRow(id: typing.id.uuidString, kind: .message(typing, first: first)))
+        }
         let live = (typing ?? messages.last).flatMap { engine.buffers[$0.id] }
         let receipt = readReceiptTarget(messages)
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
-                    if all.count > messages.count {
+                    if all.count > window.count {
                         Button("查看更早的消息") { visibleLimit += 120 }
                             .font(.system(size: 13))
                             .foregroundStyle(Palette.inkSoft)
@@ -266,19 +271,6 @@ struct ChatView: View {
                             .id(m.id)
                             if m.id == receipt { ReadReceipt() }
                         }
-                    }
-                    if let typing {
-                        let first = !(messages.last?.role == .assistant && messages.last?.personaID == typing.personaID)
-                        MessageRow(message: typing,
-                                   persona: typing.personaID.flatMap { personaMap[$0] },
-                                   isGroup: convo.isGroup,
-                                   first: first,
-                                   selecting: false,
-                                   picked: false,
-                                   actions: actions)
-                            .padding(.top, first ? 14 : 4)
-                            .transition(.opacity.combined(with: .offset(y: 6)))
-                            .id(typing.id)
                     }
                     Color.clear.frame(height: Space.item).id("bottom")
                 }

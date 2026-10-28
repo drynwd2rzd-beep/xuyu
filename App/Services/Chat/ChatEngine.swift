@@ -32,6 +32,8 @@ final class ChatEngine {
     @ObservationIgnored private var pending: [UUID: [Persona]] = [:]
     /// 这一轮回复是不是已经开始出字了
     @ObservationIgnored private var speaking: Set<UUID> = []
+    /// TA 正在打字时被你插话：那个「正在输入」的气泡留着，TA 看完你的新消息接着在里面打（对话 ID -> 那条消息）
+    @ObservationIgnored private var carried: [UUID: Message] = [:]
     /// 切到后台时向系统多要一点时间，让正在进行的回复写完
     @ObservationIgnored private var background: [UUID: UIBackgroundTaskIdentifier] = [:]
     /// 正在取回中断的回复（见 ChatEngine+Recover），避免同时取两遍
@@ -143,7 +145,8 @@ final class ChatEngine {
     private func run(_ responders: [Persona], in convo: Conversation, members: [Persona], context: ModelContext,
                      react: Bool = false) {
         let convoID = convo.id
-        guard !responders.isEmpty, !busy.contains(convoID) else { return }
+        guard !busy.contains(convoID) else { return }
+        guard !responders.isEmpty else { return dropCarried(convoID, context: context) }
         busy.insert(convoID)
         holdBackground(convoID)
         // 群聊可以设置自动讨论几轮：第一轮按 @ 回复，之后大家接着彼此的话说
@@ -178,6 +181,7 @@ final class ChatEngine {
                 self.run(next, in: convo, members: members, context: context, react: true)
                 return
             }
+            self.dropCarried(convoID, context: context)
             self.releaseBackground(convoID)
             // 聊得够多了，就在后台把更早的部分整理进长期记忆
             if let relay = self.relay {
@@ -198,6 +202,29 @@ final class ChatEngine {
         UIApplication.shared.endBackgroundTask(task)
     }
 
+    /// 留着的「正在输入」最后没用上（比如换了别人回、或者不用回了）：轻轻撤掉
+    private func dropCarried(_ convoID: UUID, context: ModelContext) {
+        guard let kept = carried.removeValue(forKey: convoID) else { return }
+        withAnimation(Motion.spring) {
+            buffers[kept.id] = nil
+            context.delete(kept)
+        }
+        try? context.save()
+    }
+
+    /// 这一轮的第一个气泡：被插话时留下的那个「正在输入」接着用，否则新开一个
+    private func firstBubble(_ persona: Persona, in convo: Conversation, context: ModelContext, label: String,
+                             relayID: String) -> (Message, StreamBuffer) {
+        if let kept = carried[convo.id], kept.personaID == persona.id, let buffer = buffers[kept.id] {
+            carried[convo.id] = nil
+            kept.modelLabel = label
+            kept.relayID = relayID
+            return (kept, buffer)
+        }
+        dropCarried(convo.id, context: context)
+        return newBubble(persona, in: convo, context: context, label: label, relayID: relayID)
+    }
+
     private func newBubble(_ persona: Persona, in convo: Conversation, context: ModelContext, label: String,
                            relayID: String) -> (Message, StreamBuffer) {
         let message = Message(role: .assistant, content: "", personaID: persona.id)
@@ -215,14 +242,15 @@ final class ChatEngine {
 
     private func reply(as persona: Persona, in convo: Conversation, members: [Persona], context: ModelContext,
                        discussing: Bool = false) async {
-        let history = convo.visibleMessages()
+        // 正在打字、还没出字的那条不算聊天记录
+        let history = convo.visibleMessages().filter { $0.status != .streaming }
         let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing,
                                             diaryNotes: Companion.myDiaryNotes(context: context),
                                             sharedMemory: PromptBuilder.sharedMemory(of: persona, besides: convo, context: context),
                                             stickerCategories: PromptBuilder.stickerCategories(context: context),
                                             appointments: Appointments.summary(persona: persona, convo: convo))
         let relayID = UUID().uuidString
-        var (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
+        var (message, buffer) = firstBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
         try? context.save()
         var sent: [String] = []
         // 工作模式的回复是一份完整的汇报，不拆成几条
@@ -335,6 +363,13 @@ final class ChatEngine {
             buffer.hold = false
             message.status = .done
         } catch {
+            if (Task.isCancelled || error is CancellationError) && buffer.hold && pending[convo.id] != nil {
+                // 你插话打断了还没开口的 TA：这个「正在输入」留着，TA 看完你的新消息接着在里面打
+                buffer.text = ""
+                buffer.reasoning = ""
+                carried[convo.id] = message
+                return
+            }
             if Task.isCancelled || error is CancellationError {
                 message.status = .done
                 if buffer.hold { buffer.text = "" }
