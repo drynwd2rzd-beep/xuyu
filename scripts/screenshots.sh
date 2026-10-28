@@ -60,7 +60,7 @@ xcrun simctl io "$UDID" recordVideo --codec h264 --force shots/motion.mp4 &
 REC=$!
 sleep 2
 xcrun simctl launch "$UDID" app.xuyu.ios -demo YES -demoScreen motion >/dev/null
-sleep 24
+sleep 34
 kill -INT $REC || true
 wait $REC || true
 xcrun simctl terminate "$UDID" app.xuyu.ios >/dev/null 2>&1 || true

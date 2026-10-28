@@ -20,9 +20,6 @@ struct RootView: View {
                 .recede(router.chat == nil ? 0 : 1 - router.chatSwipe)
             if let id = router.chat {
                 ChatLayer(id: id)
-                    // 整层铺满屏幕：穿梭时的圆角裁切会被系统做成遮罩、只罩住这一层自己那块，
-                    // 它只占安全区的话，动画最后那一下状态栏和底部横条会露出暗边（里面的内容照样避开它们）
-                    .ignoresSafeArea(.container)
                     .id(id)
                     .transition(.shuttle(from: router.chatOrigin))
                     .zIndex(1)
