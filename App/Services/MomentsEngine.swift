@@ -90,7 +90,7 @@ enum MomentsPlanner {
     }
 
     /// 下一条动态的时间：按频率和你的作息挑，离上一条不能太近
-    nonisolated static func nextTime(after now: Date, last: Date?, freq: Int) -> Date {
+    static func nextTime(after now: Date, last: Date?, freq: Int) -> Date {
         let f = freq >= 2 ? 2 : 1
         var deliver = Companion.nextSlot(after: now, frequency: f)
         if let last {

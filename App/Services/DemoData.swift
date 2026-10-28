@@ -119,14 +119,14 @@ enum DemoData {
         }
 
         // 截图用的动态：相册照片、配图、喜欢、评论和回复
-        let photos = [(0xE8D7B0, 5), (0xCFDCE8, 1), (0xD5DDCB, 0), (0xDCD3E6, 4)].map { hex, symbol in
+        let album = [(0xE8D7B0, 5), (0xCFDCE8, 1), (0xD5DDCB, 0), (0xDCD3E6, 4)].map { hex, symbol in
             let p = AlbumPhoto(personaID: claude.id, data: placeholder(hex: UInt32(hex), symbol: symbol, size: 600))
             p.caption = "一张照片"
             context.insert(p)
             return p
         }
         let first = Moment(personaID: claude.id, text: "傍晚去植物园走了一圈，银杏黄了一半。想起你说过最喜欢这个季节。", mood: "惬意", createdAt: ago(95))
-        first.photoIDs = [photos[0].id]
+        first.photoIDs = [album[0].id]
         first.likedBy = [lin.id, codex.id]
         first.reacted = true
         context.insert(first)
@@ -134,7 +134,7 @@ enum DemoData {
         first.add(MomentComment(personaID: nil, text: "下次带我一起去", createdAt: ago(60)), context: context)
         first.add(MomentComment(personaID: claude.id, text: "说好了，周六下午", replyToMe: true, createdAt: ago(58)), context: context)
         let second = Moment(personaID: lin.id, text: "今天的天空很适合发呆", mood: "发呆中", createdAt: ago(300))
-        second.photoIDs = [photos[1].id, photos[3].id]
+        second.photoIDs = [album[1].id, album[3].id]
         second.likedBy = [claude.id]
         second.likedByMe = true
         second.reacted = true
