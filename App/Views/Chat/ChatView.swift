@@ -223,6 +223,7 @@ struct ChatView: View {
         let messages = Array(all.suffix(visibleLimit))
         let rows = ChatRow.build(messages)
         let live = messages.last.flatMap { engine.buffers[$0.id] }
+        let receipt = readReceiptTarget(messages)
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
@@ -260,14 +261,14 @@ struct ChatView: View {
                             }
                             .padding(.top, first ? 14 : 4)
                             .id(m.id)
+                            if m.id == receipt { ReadReceipt() }
                         }
-                    }
-                    if let last = messages.last, last.role == .user, !last.recalled, last.readAt != nil {
-                        ReadReceipt()
                     }
                     Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
+                // 「已读」出现、消失时，下面的气泡被柔和地推开或补上，不会一跳
+                .animation(Motion.spring, value: receipt)
                 // 回复逐字出现时，跟着往下走（你往上翻看时不打扰）
                 .background { StreamFollower(buffer: live) { if follow { proxy.scrollTo("bottom", anchor: .bottom) } } }
             }
@@ -346,6 +347,21 @@ struct ChatView: View {
                 scrollTarget = nil
             }
         }
+    }
+
+    /// 「已读」挂在哪条下面：你最后一条、TA 已经看过的消息。TA 正在打字（只有跳动的小点）时还留着，
+    /// 等 TA 第一句话真的冒出来才淡出，和 iMessage 一样
+    private func readReceiptTarget(_ messages: [Message]) -> UUID? {
+        guard let index = messages.lastIndex(where: { $0.role == .user && !$0.recalled }) else { return nil }
+        let mine = messages[index]
+        guard mine.readAt != nil else { return nil }
+        let replied = messages[(index + 1)...].contains { m in
+            guard m.status == .streaming else { return true }
+            // 只看「还藏着」这一个开关，不读正文，免得每冒一个字整个列表都重排一次
+            guard let buffer = engine.buffers[m.id] else { return false }
+            return !buffer.hold || !buffer.steps.isEmpty
+        }
+        return replied ? nil : mine.id
     }
 
     private var actions: MessageActions {

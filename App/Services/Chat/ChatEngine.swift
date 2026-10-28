@@ -253,8 +253,11 @@ final class ChatEngine {
             buffer.hold = false
         }
 
+        /// 你在 TA 说话途中又发了消息：TA 把正在打的这句发完就停下，剩下没说的不再接着念，回头看了你的新消息再回
+        var interrupted = false
+
         func commitParagraphs() async {
-            while !rich, let range = buffer.text.range(of: "\n\n") {
+            while !rich, !interrupted, let range = buffer.text.range(of: "\n\n") {
                 let head = String(buffer.text[..<range.lowerBound]).trimmed
                 let rest = String(buffer.text[range.upperBound...])
                 guard !head.isEmpty else { buffer.text = rest; continue }
@@ -275,6 +278,11 @@ final class ChatEngine {
                 }
                 speaking.insert(convo.id)
                 lastCommit = .now
+                if pending[convo.id] != nil {
+                    interrupted = true
+                    try? context.save()
+                    return
+                }
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
                 buffer.hold = true
                 buffer.text = rest
@@ -310,7 +318,16 @@ final class ChatEngine {
                     if !buffer.text.trimmed.isEmpty && !buffer.hold { speaking.insert(convo.id) }
                     if !rich && ReplyText.looksRich(buffer.text) { becomeRich() }
                     await commitParagraphs()
+                    if interrupted { break }
                 }
+            }
+            if interrupted {
+                // 刚发完的那句就是这一轮的最后一句：后面的不要了
+                if let last = sent.last { notify(convo: convo, persona: persona, text: last) }
+                convo.updatedAt = .now
+                if router?.openConversation == convo.id { convo.lastReadAt = .now }
+                try? context.save()
+                return
             }
             buffer.text += pendingText
             buffer.reasoning += pendingReasoning

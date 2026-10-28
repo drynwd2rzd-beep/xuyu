@@ -51,6 +51,26 @@ enum Companion {
     /// 切到后台和定时刷新可能同时触发：同一时间只准备一次，避免追问两遍
     private static var followingUp = false
 
+    /// 已经决定不追问的那几条（TA 最后发的消息），记在本机，下次不再问模型
+    private static var settled: [String] {
+        (UserDefaults.standard.string(forKey: Prefs.followUpSettled) ?? "").split(separator: ",").map(String.init)
+    }
+
+    private static func settle(_ id: UUID) {
+        let list = (settled + [id.uuidString]).suffix(40)
+        UserDefaults.standard.set(list.joined(separator: ","), forKey: Prefs.followUpSettled)
+    }
+
+    /// 最近几句里有人道别了（晚安、拜拜、先去忙…）：聊天自然结束了
+    nonisolated static func endedNaturally(_ lines: [String]) -> Bool {
+        let farewells = ["晚安", "拜拜", "再见", "886", "bye", "先睡", "去睡", "睡觉了", "睡了哈", "先忙", "去忙", "忙去了",
+                         "下次聊", "回头聊", "明天聊", "改天聊", "先下了", "先撤", "我先走"]
+        return lines.contains { line in
+            let text = line.lowercased()
+            return farewells.contains { text.contains($0) }
+        }
+    }
+
     /// 最后一条是 TA 发的、你一直没回：过一阵子 TA 会来问你怎么不回了，或者接着刚才的话题。每段话题只追问一次
     static func followUps(context: ModelContext, relay: RelayClient, personas: [Persona]) async {
         guard !DemoMode.isOn, relay.isConnected, !followingUp else { return }
@@ -61,7 +81,9 @@ enum Companion {
             let convo = context.chat(for: persona)
             let visible = convo.visibleMessages(at: now)
             guard let last = visible.last, last.role == .assistant, last.status == .done, !last.isProactive,
-                  now.timeIntervalSince(last.createdAt) < 12 * 3600 else { continue }
+                  now.timeIntervalSince(last.createdAt) < 12 * 3600, !settled.contains(last.id.uuidString) else { continue }
+            // 你们已经道过别（晚安、拜拜、去忙了…）：聊天自然结束了，不追问
+            if endedNaturally(visible.suffix(3).map(\.content)) { settle(last.id); continue }
             let range = followUpRange(persona.followUp)
             // 这段话题的追问时间附近已经排了消息（上次准备好的追问）就不再排；
             // 更远的主动消息（比如明天的）不算，不然开了「主动找我聊天」就永远等不到追问
@@ -79,9 +101,13 @@ enum Companion {
 
             \(PromptBuilder.transcript(Array(visible.suffix(20)), names: names))
 
-            你最后发的那条，\(PromptBuilder.userName)已经过了\(gap)还没回。像真人朋友一样再发一条：可以俏皮或关心地问 TA 怎么不回消息、是不是在忙，或者接着刚才没聊完的话题再说一句。一两句话，口语化，不要重复你上一条说过的话。只输出消息内容。
+            你最后发的那条，\(PromptBuilder.userName)已经过了\(gap)还没回。先想想真人朋友这时会不会再找 TA：
+            如果聊天已经自然收尾了（道了别、说了晚安、TA 说要去忙或去睡、你最后那条本来就不需要回），或者现在去追问会显得黏人、打扰，就只输出：不追问
+            否则像真人朋友一样再发一条：可以俏皮或关心地问 TA 怎么不回消息、是不是在忙，或者接着刚才没聊完的话题再说一句。一两句话，口语化，不要重复你上一条说过的话。只输出消息内容。
             """
             guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.trimmed.isEmpty else { continue }
+            // TA 觉得这时不该追问：记下，这段话题不再问
+            if text.contains("不追问") { settle(last.id); continue }
             // 生成的这段时间里你回了消息：就不用追问了
             guard convo.visibleMessages().last?.id == last.id else { continue }
             // 之后排好的主动消息是在不知道这条追问时写的，撤掉，等追问送达后再重新安排

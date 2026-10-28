@@ -29,6 +29,8 @@ enum Prefs {
     static let recentSearches = "recentSearches"
     /// 你和 TA 的约定（到点来找你），见 Appointments
     static let appointments = "appointments"
+    /// 决定不追问的那几条消息（聊天自然结束了）
+    static let followUpSettled = "followUpSettled"
 
     // MARK: 日记与今日一句
     /// 谁来写 AI 日记（角色 ID）

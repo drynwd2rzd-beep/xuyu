@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var revealed = true
     @State private var direction: CGFloat = 1
     @State private var entering = false
+    /// 点聊天列表里的一行：这一行放大成聊天页（返回时缩回去），而不是从右边推进来
+    @Namespace private var chatZoom
 
     var body: some View {
         @Bindable var router = router
@@ -27,8 +29,9 @@ struct RootView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: Route.self) { RouteView(route: $0) }
+            .navigationDestination(for: Route.self) { RouteView(route: $0).environment(\.chatZoom, chatZoom) }
         }
+        .environment(\.chatZoom, chatZoom)
         .tint(Palette.ink)
         .overlay(alignment: .top) {
             if let banner = banners.current {
@@ -184,14 +187,38 @@ struct InAppBanner: View {
     }
 }
 
+extension EnvironmentValues {
+    /// 聊天页放大打开用的命名空间（聊天列表的行和聊天页共用）
+    @Entry var chatZoom: Namespace.ID? = nil
+}
+
+extension View {
+    /// 标记「从这里放大打开聊天」：返回时也缩回到这里
+    @ViewBuilder
+    func zoomSource(id: UUID, in namespace: Namespace.ID?) -> some View {
+        if let namespace {
+            matchedTransitionSource(id: id, in: namespace) { $0.background(Palette.paper).clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous)) }
+        } else {
+            self
+        }
+    }
+}
+
 struct RouteView: View {
     let route: Route
     @Environment(\.modelContext) private var context
+    @Environment(\.chatZoom) private var chatZoom
 
     var body: some View {
         switch route {
         case .chat(let id):
-            if let convo = context.conversation(id) { ChatView(convo: convo) } else { missing }
+            if let convo = context.conversation(id) {
+                if let chatZoom {
+                    ChatView(convo: convo).navigationTransition(.zoom(sourceID: id, in: chatZoom))
+                } else {
+                    ChatView(convo: convo)
+                }
+            } else { missing }
         case .settings:
             SettingsView()
         case .connection:

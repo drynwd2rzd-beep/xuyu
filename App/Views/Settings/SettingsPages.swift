@@ -153,11 +153,11 @@ struct BackupView: View {
     @State private var showImporter = false
 
     enum RestoreSource: Identifiable {
-        case pc(String)
+        case pc(RelayClient.BackupInfo)
         case file(Data)
         var id: String {
             switch self {
-            case .pc(let name): name
+            case .pc(let b): b.name
             case .file: "file"
             }
         }
@@ -174,7 +174,9 @@ struct BackupView: View {
                           disabled: !relay.isConnected) {
                     run("正在备份…") {
                         let ok = await Backup.backupToPC(context: context, relay: relay)
-                        return ok ? "已备份到电脑" : "备份失败，请确认电脑连着"
+                        // 刷新下面「从电脑恢复」的列表，刚备份的这份马上能看到
+                        pcBackups = await relay.listBackups()
+                        return ok ? "已备份到电脑" : "电脑没有回应，备份没有完成"
                     }
                 }
             }
@@ -188,7 +190,7 @@ struct BackupView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(Space.card)
                 } else {
                     ForEach(pcBackups.prefix(8)) { b in
-                        Button { restoring = .pc(b.name) } label: {
+                        Button { restoring = .pc(b) } label: {
                             SettingRow(title: b.at.listStamp + " " + Fmt.hm.string(from: b.at),
                                        subtitle: ByteCountFormatter.string(fromByteCount: Int64(b.size), countStyle: .file)) {
                                 Text("恢复").font(.system(size: 14)).foregroundStyle(Palette.ink2)
@@ -272,7 +274,7 @@ struct BackupView: View {
         run("正在恢复…") {
             let data: Data?
             switch source {
-            case .pc(let name): data = await relay.fetchBackup(name)
+            case .pc(let b): data = await relay.fetchBackup(b)
             case .file(let d): data = d
             }
             guard let data else { return "取回备份失败" }

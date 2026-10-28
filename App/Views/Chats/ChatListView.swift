@@ -5,6 +5,7 @@ struct ChatListView: View {
     @Environment(\.modelContext) private var context
     @Environment(Router.self) private var router
     @Environment(ChatEngine.self) private var engine
+    @Environment(\.chatZoom) private var chatZoom
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @State private var query = ""
@@ -61,6 +62,7 @@ struct ChatListView: View {
                     Button { router.open(.chat(convo.id)) } label: {
                         ConversationRow(convo: convo, members: members(convo), personaMap: personaMap,
                                         typing: engine.isBusy(convo))
+                            .zoomSource(id: convo.id, in: chatZoom)
                     }
                     .buttonStyle(PressableRowStyle())
                     .accessibilityIdentifier("chatRow")

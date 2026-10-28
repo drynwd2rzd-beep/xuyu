@@ -196,6 +196,13 @@ final class LogicTests: XCTestCase {
 
     // MARK: - 追问和免打扰
 
+    func testFarewellEndsConversation() {
+        XCTAssertTrue(Companion.endedNaturally(["我去洗澡啦", "好，晚安"]))
+        XCTAssertTrue(Companion.endedNaturally(["先忙了，回头聊"]))
+        XCTAssertTrue(Companion.endedNaturally(["OK Bye"]))
+        XCTAssertFalse(Companion.endedNaturally(["今天吃了 188 块的火锅", "好吃吗？"]))
+    }
+
     func testFollowUpRanges() {
         XCTAssertEqual(Companion.followUpRange(1), 1200...3600)
         XCTAssertEqual(Companion.followUpRange(2), 3600...10800)

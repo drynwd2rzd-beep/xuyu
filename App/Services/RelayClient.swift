@@ -27,6 +27,8 @@ final class RelayClient {
     @ObservationIgnored private var retryDelay: Double = 2
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var pingTask: Task<Void, Never>?
+    /// 正在传的大备份有几份（传的时候心跳暂停检查）
+    @ObservationIgnored private var transfers = 0
     @ObservationIgnored private let session = URLSession(configuration: .default)
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
     @ObservationIgnored private var lastPath = ""
@@ -317,6 +319,8 @@ final class RelayClient {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
                 guard let self, let task = self.task else { return }
+                // 正在传大的备份：心跳排在它后面，回音会晚，这时不检查，免得把正在传的连接当成断了
+                guard self.transfers == 0 else { continue }
                 // ping 不通、或者 10 秒没回音，就说明连接已经断了：马上换线路重连，而不是一直往死连接里发
                 let pong = PongFlag()
                 task.sendPing { [weak self] error in
@@ -326,7 +330,7 @@ final class RelayClient {
                     }
                 }
                 try? await Task.sleep(for: .seconds(10))
-                if !pong.answered, self.task === task { self.fail(task, reason: "连接中断") }
+                if !pong.answered, self.task === task, self.transfers == 0 { self.fail(task, reason: "连接中断") }
             }
         }
     }
@@ -350,8 +354,8 @@ final class RelayClient {
 
     @ObservationIgnored private var replies: [String: CheckedContinuation<[String: Any], Never>] = [:]
 
-    /// 发一个请求，等电脑按同一个 id 回复（最多等 60 秒）
-    private func ask(_ payload: [String: Any]) async -> [String: Any] {
+    /// 发一个请求，等电脑按同一个 id 回复；等太久就当没回应。大的备份按大小多给时间，出门线路慢也够
+    private func ask(_ payload: [String: Any], wait: Duration = .seconds(60)) async -> [String: Any] {
         guard isConnected else { return [:] }
         let id = UUID().uuidString
         var body = payload
@@ -360,14 +364,22 @@ final class RelayClient {
             replies[id] = c
             sendJSON(body)
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(60))
+                try? await Task.sleep(for: wait)
                 self.replies.removeValue(forKey: id)?.resume(returning: [:])
             }
         }
     }
 
+    /// 传备份时等多久：每 MB 多等 15 秒
+    private static func wait(forBytes bytes: Int) -> Duration {
+        .seconds(60 + bytes / (1024 * 1024) * 15)
+    }
+
     func saveBackup(name: String, data: Data) async -> Bool {
-        let reply = await ask(["type": "backup", "name": name, "data": data.base64EncodedString()])
+        transfers += 1
+        defer { transfers -= 1 }
+        let reply = await ask(["type": "backup", "name": name, "data": data.base64EncodedString()],
+                              wait: Self.wait(forBytes: data.count))
         return reply["ok"] as? Bool == true
     }
 
@@ -388,8 +400,10 @@ final class RelayClient {
         }
     }
 
-    func fetchBackup(_ name: String) async -> Data? {
-        let reply = await ask(["type": "fetchBackup", "name": name])
+    func fetchBackup(_ backup: BackupInfo) async -> Data? {
+        transfers += 1
+        defer { transfers -= 1 }
+        let reply = await ask(["type": "fetchBackup", "name": backup.name], wait: Self.wait(forBytes: backup.size))
         return (reply["data"] as? String).flatMap { Data(base64Encoded: $0) }
     }
 
