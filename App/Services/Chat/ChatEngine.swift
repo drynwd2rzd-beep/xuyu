@@ -81,17 +81,11 @@ final class ChatEngine {
         try? context.save()
         let responders = Self.responders(for: text, convo: convo, members: members)
         if busy.contains(convo.id) {
-            // 像真人聊天一样可以连着发：对方还没开口就重新想；已经在说了，就说完这句再接着回。
-            // 连着 @ 了不同的人，这些人都要回
+            // 像真人聊天一样可以连着发。连着 @ 了不同的人，这些人都要回
             pending[convo.id] = Self.merge(pending[convo.id] ?? [], responders)
-            if speaking.contains(convo.id) {
-                // TA 正在打的下一条还没显示出来：挪到你这句下面
-                for m in convo.messages ?? [] where m.status == .streaming && buffers[m.id]?.hold == true {
-                    m.createdAt = .now
-                }
-            } else {
-                tasks[convo.id]?.cancel()
-            }
+            // TA 还没开口就重新看一遍再回；已经在说了，就把正在打的这句说完，再看了你的新消息一起回。
+            //（「正在输入」的小点一直排在最底下，你新发的消息插在它上面）
+            if !speaking.contains(convo.id) { tasks[convo.id]?.cancel() }
             return
         }
         run(responders, in: convo, members: members, context: context, react: true)

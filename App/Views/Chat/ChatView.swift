@@ -220,9 +220,12 @@ struct ChatView: View {
     private func messageList(now: Date) -> some View {
         let all = convo.visibleMessages(at: now)
         // 只排版最近的一段，避免懒加载估算高度导致跳动；更早的按需加载
-        let messages = Array(all.suffix(visibleLimit))
+        let window = Array(all.suffix(visibleLimit))
+        // 「正在输入」的小点不按时间排，永远在最底下（像 iMessage）：你这时再发消息，会插在小点上面
+        let typing = window.last { isTypingOnly($0) }
+        let messages = window.filter { !isTypingOnly($0) }
         let rows = ChatRow.build(messages)
-        let live = messages.last.flatMap { engine.buffers[$0.id] }
+        let live = (typing ?? messages.last).flatMap { engine.buffers[$0.id] }
         let receipt = readReceiptTarget(messages)
         return ScrollViewReader { proxy in
             ScrollView {
@@ -264,11 +267,25 @@ struct ChatView: View {
                             if m.id == receipt { ReadReceipt() }
                         }
                     }
+                    if let typing {
+                        let first = !(messages.last?.role == .assistant && messages.last?.personaID == typing.personaID)
+                        MessageRow(message: typing,
+                                   persona: typing.personaID.flatMap { personaMap[$0] },
+                                   isGroup: convo.isGroup,
+                                   first: first,
+                                   selecting: false,
+                                   picked: false,
+                                   actions: actions)
+                            .padding(.top, first ? 14 : 4)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                            .id(typing.id)
+                    }
                     Color.clear.frame(height: Space.item).id("bottom")
                 }
                 .padding(.horizontal, Space.item)
-                // 「已读」出现、消失时，下面的气泡被柔和地推开或补上，不会一跳
+                // 「已读」、「正在输入」出现和消失时，旁边的气泡被柔和地推开或补上，不会一跳
                 .animation(Motion.spring, value: receipt)
+                .animation(Motion.spring, value: typing?.id)
                 // 回复逐字出现时，跟着往下走（你往上翻看时不打扰）
                 .background { StreamFollower(buffer: live) { if follow { proxy.scrollTo("bottom", anchor: .bottom) } } }
             }
@@ -326,6 +343,11 @@ struct ChatView: View {
                 guard follow else { return }
                 withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            .onChange(of: typing?.id) {
+                // TA 开始打字：跟随时露出最底下的小点
+                guard follow else { return }
+                withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .onChange(of: keyboardShown) { _, shown in
                 // 键盘升起：一定回到最新；键盘收起：在跟随时也贴回底部，不会留下一大片空白
                 if shown { follow = true }
@@ -347,6 +369,12 @@ struct ChatView: View {
                 scrollTarget = nil
             }
         }
+    }
+
+    /// TA 已经开始回、但这句还没打完（只显示跳动的小点）。只看「还藏着」这个开关，不读正文，免得每冒一个字整个列表都重排
+    private func isTypingOnly(_ m: Message) -> Bool {
+        guard m.status == .streaming, let buffer = engine.buffers[m.id] else { return false }
+        return buffer.hold && buffer.steps.isEmpty
     }
 
     /// 「已读」挂在哪条下面：你最后一条、TA 已经看过的消息。TA 正在打字（只有跳动的小点）时还留着，

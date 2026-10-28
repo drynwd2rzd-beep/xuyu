@@ -244,7 +244,7 @@ struct Composer: View {
 
     private var field: some View {
         HStack(alignment: .bottom, spacing: 4) {
-            TextField(convo.isGroup ? "发消息" : "给 \(members.first?.name ?? "") 发消息…", text: $draft, axis: .vertical)
+            TextField(convo.isGroup ? "Message" : "Message \(members.first?.name ?? "")", text: $draft, axis: .vertical)
                 .font(.system(size: 15.5))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1...6)
