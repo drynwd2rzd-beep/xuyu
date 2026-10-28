@@ -34,6 +34,8 @@ final class Persona {
     var voiceFreq: Int = 0
     /// TA 用哪种语言和你聊天、发语音：zh 中文 · ko 韩语
     var language: String = "zh"
+    /// TA 发语音后自动在下面显示翻译
+    var autoTranslate: Bool = false
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 
@@ -134,6 +136,8 @@ final class Message {
     var readAt: Date?
     /// 你撤回了这条消息
     var recalled: Bool = false
+    /// 翻译（长按「翻译」或自动翻译语音时生成；空 = 没翻译或收起了）
+    var translation: String = ""
     var createdAt: Date = Date()
     var conversation: Conversation?
     @Relationship(deleteRule: .cascade, inverse: \Attachment.message) var attachments: [Attachment]? = []

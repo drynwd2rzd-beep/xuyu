@@ -29,6 +29,7 @@ struct MessageRow: View {
     let picked: Bool
     let actions: MessageActions
     @Environment(ChatEngine.self) private var engine
+    @Environment(\.modelContext) private var context
     @AppStorage(Prefs.showEngineLogo) private var showEngineLogo = true
     @State private var reasoningOpen = false
     @State private var detailHeight: CGFloat = 0
@@ -73,6 +74,7 @@ struct MessageRow: View {
             VStack(alignment: .trailing, spacing: 6) {
                 content(isUser: true)
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
+                translationView
             }
             UserAvatar(size: 34).opacity(first ? 1 : 0)
         }
@@ -100,9 +102,25 @@ struct MessageRow: View {
                     .animation(Motion.reveal, value: isThinking)
                 // TA 引用了你说过的话
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
+                translationView
                 if message.status == .error { errorLine }
             }
             Spacer(minLength: 28)
+        }
+    }
+
+    /// 翻译：翻好了显示在消息下面的浅色小卡片里；正在翻时显示「翻译中…」
+    @ViewBuilder
+    private var translationView: some View {
+        if !message.translation.isEmpty {
+            TranscriptCard(text: message.translation)
+                .transition(.opacity.combined(with: .offset(y: -6)))
+        } else if engine.translating.contains(message.id) {
+            Text("翻译中…")
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.inkSoft)
+                .padding(.horizontal, 6)
+                .transition(.opacity)
         }
     }
 
@@ -267,6 +285,21 @@ struct MessageRow: View {
                 }
             } label: {
                 Label(transcript ? "收起文字" : "转文字", systemImage: "text.bubble")
+            }
+        }
+        if !message.content.isEmpty && message.status == .done {
+            if message.translation.isEmpty {
+                Button {
+                    Task { await engine.translate(message, context: context) }
+                } label: { Label("翻译", systemImage: "character.bubble") }
+            } else {
+                Button {
+                    // 等长按菜单收起再收起翻译，两个动画不撞在一起
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(380))
+                        engine.hideTranslation(message, context: context)
+                    }
+                } label: { Label("收起翻译", systemImage: "character.bubble") }
             }
         }
         Button { actions.quote(message) } label: { Label("引用", systemImage: "quote.bubble") }

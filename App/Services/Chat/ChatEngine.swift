@@ -27,6 +27,8 @@ final class ChatEngine {
     /// 对话 ID -> 正在回复的角色 ID
     private(set) var typing: [UUID: UUID] = [:]
     private(set) var busy: Set<UUID> = []
+    /// 正在翻译的消息（下面显示「翻译中…」，见 ChatEngine+Translate）
+    var translating: Set<UUID> = []
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
     /// 回复途中用户又发了消息：等这一轮说完（或直接打断）后，再按新的上下文回复
     @ObservationIgnored private var pending: [UUID: [Persona]] = [:]
@@ -290,6 +292,10 @@ final class ChatEngine {
             let a = Attachment(kind: "audio", fileName: "voice.mp3", data: audio, order: 0)
             a.message = m
             context.insert(a)
+            // 开了「自动翻译语音」：语音一发出就在下面翻好
+            if persona.autoTranslate {
+                Task { await self.translate(m, context: context) }
+            }
         }
 
         /// 你在 TA 说话途中又发了消息：TA 把正在打的这句发完就停下，剩下没说的不再接着念，回头看了你的新消息再回

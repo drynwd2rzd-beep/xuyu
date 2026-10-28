@@ -231,6 +231,11 @@ struct PersonaEditor: View {
                                     .fixedSize()
                             }
                             .transition(.opacity)
+                            Hairline()
+                            SettingRow(title: "自动翻译语音") {
+                                InkToggle(isOn: $persona.autoTranslate, label: "自动翻译语音")
+                            }
+                            .transition(.opacity)
                         }
                     }
                 }
