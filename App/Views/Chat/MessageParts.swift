@@ -119,8 +119,7 @@ extension AnyTransition {
     static var reveal: AnyTransition {
         .asymmetric(
             insertion: .modifier(active: RevealModifier(shown: false), identity: RevealModifier(shown: true))
-                // 等气泡差不多撑开了，文字再由虚变实浮现，不会比气泡先到
-                .animation(.smooth(duration: 0.3).delay(0.24)),
+                .animation(Motion.bubbleText),
             removal: .opacity
         )
     }

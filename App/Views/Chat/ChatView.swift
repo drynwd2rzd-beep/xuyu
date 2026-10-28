@@ -79,14 +79,14 @@ struct ChatView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 // 顶部：屏幕最上面最模糊，往下渐渐减弱，到头像一半左右已经基本清晰
                 header.background {
-                    ChatVeil(edge: .top)
+                    ChatVeil(edge: .top, shown: router.chatSettled)
                         .padding(.bottom, -28)
                         .ignoresSafeArea(edges: .top)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomBar.background {
-                    ChatVeil(edge: .bottom)
+                    ChatVeil(edge: .bottom, shown: router.chatSettled)
                         .padding(.top, -24)
                         .ignoresSafeArea(edges: .bottom)
                 }
@@ -319,7 +319,8 @@ struct ChatView: View {
                 // 不再额外滚一次（两个动画互相拉扯，看起来会卡一下）
                 guard messages.last?.role == .user else { return }
                 follow = true
-                withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
+                // 和气泡撑开用同一条曲线：滚动和上面让开是同一个动作，不会一快一慢
+                withAnimation(Motion.bubble) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) { _, shown in
                 // 键盘升起：一定回到最新；键盘收起：在跟随时也贴回底部，不会留下一大片空白
@@ -408,7 +409,7 @@ struct ChatView: View {
             },
             recall: { m in
                 // 撤回：留一行「你撤回了一条消息」；TA 还没开口的话会重新看一遍再回
-                withAnimation(Motion.spring) { m.recalled = true }
+                withAnimation(Motion.bubble) { m.recalled = true }
                 try? context.save()
                 engine.reconsider(convo, members: members, context: context)
             },

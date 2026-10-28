@@ -135,9 +135,11 @@ enum WallpaperStore {
 /// 顶部从屏幕最上面模糊到头像一半左右基本清晰；底部只在输入栏后面轻轻一层
 struct ChatVeil: View {
     let edge: VerticalEdge
+    /// 聊天进出场动画途中不画（见 Router.chatSettled），演完再淡入
+    var shown = true
 
     var body: some View {
-        VariableBlur(radius: edge == .top ? 14 : 10, fromTop: edge == .top)
+        VariableBlur(radius: edge == .top ? 14 : 10, fromTop: edge == .top, shown: shown)
             .allowsHitTesting(false)
     }
 }
@@ -146,16 +148,22 @@ struct ChatVeil: View {
 struct VariableBlur: UIViewRepresentable {
     var radius: CGFloat
     var fromTop: Bool
+    var shown = true
 
     func makeUIView(context: Context) -> VariableBlurView {
-        VariableBlurView(radius: radius, fromTop: fromTop)
+        let view = VariableBlurView(radius: radius, fromTop: fromTop)
+        view.isHidden = !shown
+        return view
     }
 
-    func updateUIView(_ view: VariableBlurView, context: Context) {}
+    func updateUIView(_ view: VariableBlurView, context: Context) { view.setShown(shown) }
 }
 
 final class VariableBlurView: UIVisualEffectView {
+    private let radius: CGFloat
+
     init(radius: CGFloat, fromTop: Bool) {
+        self.radius = radius
         super.init(effect: UIBlurEffect(style: .regular))
         // 系统内部的可变模糊滤镜：用一张从黑到透明的渐变图告诉它哪里模糊、哪里清晰
         let name = String("retliFAC".reversed())
@@ -163,6 +171,7 @@ final class VariableBlurView: UIVisualEffectView {
         guard let type = NSClassFromString(name) as AnyObject as? NSObjectProtocol,
               type.responds(to: make),
               let filter = type.perform(make, with: "variableBlur")?.takeUnretainedValue() as? NSObject else { return }
+        filter.setValue("variableBlur", forKey: "name")
         filter.setValue(radius, forKey: "inputRadius")
         filter.setValue(Self.mask(fromTop: fromTop), forKey: "inputMaskImage")
         filter.setValue(true, forKey: "inputNormalizeEdges")
@@ -180,6 +189,19 @@ final class VariableBlurView: UIVisualEffectView {
     }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {}
+
+    /// 藏起来时完全不画（半透明的页面里画出来是黑的）；重新出现时模糊从 0 慢慢加深，不会一下子糊上去
+    func setShown(_ shown: Bool) {
+        guard shown == isHidden else { return }
+        isHidden = !shown
+        guard shown, let backdrop = subviews.first?.layer else { return }
+        let fade = CABasicAnimation(keyPath: "filters.variableBlur.inputRadius")
+        fade.fromValue = 0
+        fade.toValue = radius
+        fade.duration = 0.32
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        backdrop.add(fade, forKey: "fadeIn")
+    }
 
     /// 模糊强度的分布：边缘一小段最模糊，之后按缓和曲线一路减弱，最后一段淡到几乎察觉不到才归零，看不出边界
     private static func mask(fromTop: Bool) -> CGImage? {

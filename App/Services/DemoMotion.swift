@@ -20,7 +20,7 @@ enum DemoMotion {
             router.open(.chat(convo.id), from: row)
             await pause(2)
             let mine = Message(role: .user, content: "在干嘛")
-            withAnimation(Motion.reveal) {
+            withAnimation(Motion.bubble) {
                 convo.add(mine, context: context)
             }
             await pause(1.2)

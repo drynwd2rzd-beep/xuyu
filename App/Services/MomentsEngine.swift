@@ -21,7 +21,7 @@ final class MomentsEngine {
         let text = text.trimmed
         guard !text.isEmpty else { return }
         let mine = MomentComment(personaID: nil, text: text, replyTo: target?.personaID)
-        withAnimation(Motion.reveal) { moment.add(mine, context: context) }
+        withAnimation(Motion.bubble) { moment.add(mine, context: context) }
         try? context.save()
         // 谁来回：你回复的那个人；直接评论 TA 的动态就是 TA。你在自己的动态下直接留言，没有点名谁，就不回
         guard let who = (target?.personaID ?? moment.personaID).flatMap({ context.persona($0) }) else { return }
@@ -37,7 +37,7 @@ final class MomentsEngine {
         guard !text.isEmpty else { return }
         // 像真人一样打几个字的时间
         try? await Task.sleep(for: .seconds(Double.random(in: 1.2...2.6)))
-        withAnimation(Motion.reveal) {
+        withAnimation(Motion.bubble) {
             moment.add(MomentComment(personaID: persona.id, text: text, replyToMe: true), context: context)
         }
         try? context.save()
@@ -52,7 +52,7 @@ final class MomentsEngine {
             moment.photoIDs.append(photo.id)
         }
         moment.reacted = true
-        withAnimation(Motion.reveal) { context.insert(moment) }
+        withAnimation(Motion.bubble) { context.insert(moment) }
         try? context.save()
         Task { await MomentsPlanner.react(to: moment, context: context, relay: relay) }
     }

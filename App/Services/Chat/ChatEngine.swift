@@ -71,14 +71,15 @@ final class ChatEngine {
                 message.quote = quote
                 message.quoteID = quoteID
             }
-            // 你发出的消息：上面的消息平滑地往上让开
-            withAnimation(Motion.reveal) {
+            // 你发出的消息：上面的消息平滑地往上让开。图片、文件和消息一起放进去，
+            // 不会先冒出一个空的再变高
+            withAnimation(Motion.bubble) {
                 convo.add(message, context: context)
-            }
-            for (order, item) in part.items.enumerated() {
-                let a = Attachment(kind: item.kind, fileName: item.name, data: item.data, order: order)
-                a.message = message
-                context.insert(a)
+                for (order, item) in part.items.enumerated() {
+                    let a = Attachment(kind: item.kind, fileName: item.name, data: item.data, order: order)
+                    a.message = message
+                    context.insert(a)
+                }
             }
         }
         convo.updatedAt = .now
@@ -164,7 +165,7 @@ final class ChatEngine {
             if react {
                 // 先「已读」，过一会儿才开始打字
                 try? await Task.sleep(for: .seconds(Double.random(in: 0.9...2.2)))
-                if !Task.isCancelled { withAnimation(Motion.spring) { self?.markRead(convo, context: context) } }
+                if !Task.isCancelled { withAnimation(Motion.bubble) { self?.markRead(convo, context: context) } }
                 try? await Task.sleep(for: .seconds(Double.random(in: 0.4...1.8)))
             } else {
                 self?.markRead(convo, context: context)
@@ -209,7 +210,7 @@ final class ChatEngine {
     /// 留着的「正在输入」最后没用上（比如换了别人回、或者不用回了）：轻轻撤掉
     private func dropCarried(_ convoID: UUID, context: ModelContext) {
         guard let kept = carried.removeValue(forKey: convoID) else { return }
-        withAnimation(Motion.spring) {
+        withAnimation(Motion.bubble) {
             buffers[kept.id] = nil
             context.delete(kept)
         }
@@ -241,7 +242,7 @@ final class ChatEngine {
         buffer.hold = true
         buffers[message.id] = buffer
         // 「正在输入」的气泡出现时，上面的消息平滑地往上让开，不会突然冒出来
-        withAnimation(Motion.reveal) {
+        withAnimation(Motion.bubble) {
             convo.add(message, context: context)
         }
         return (message, buffer)
@@ -252,7 +253,7 @@ final class ChatEngine {
         let (message, _) = newBubble(persona, in: convo, context: context, label: "", relayID: "")
         try? await Task.sleep(for: .seconds(1.6))
         message.createdAt = max(.now, message.createdAt)
-        withAnimation(Motion.reveal) {
+        withAnimation(Motion.bubble) {
             buffers[message.id] = nil
             message.content = text
             message.status = .done
@@ -331,7 +332,7 @@ final class ChatEngine {
                 message.createdAt = max(.now, message.createdAt)
                 let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
                 // 小点变成文字、气泡撑开、「已读」淡出：放在同一个平滑动画里一起完成
-                withAnimation(Motion.reveal) {
+                withAnimation(Motion.bubble) {
                     buffers[message.id] = nil
                     if cleaned.isEmpty {
                         // 这一段只有一个表情：表情已经单独发出，空气泡不要了
@@ -431,7 +432,7 @@ final class ChatEngine {
             ? applyMarkers(buffer.text.trimmed, to: message, persona: persona, convo: convo, context: context)
             : buffer.text.trimmed
         // 最后一句也和前面一样：小点变成文字、气泡撑开，在同一个平滑动画里完成
-        withAnimation(Motion.reveal) {
+        withAnimation(Motion.bubble) {
             buffers[message.id] = nil
             message.content = final
             message.reasoning = buffer.reasoning.trimmed
@@ -475,10 +476,12 @@ final class ChatEngine {
             guard let pick = stickers.filter({ $0.pack == pack }).randomElement() else { continue }
             let sticker = Message(role: .assistant, kind: .sticker, content: "", personaID: persona.id)
             sticker.createdAt = max(.now, message.createdAt).addingTimeInterval(0.00001)
-            convo.add(sticker, context: context)
             let a = Attachment(kind: "image", fileName: "sticker.png", data: pick.data, order: 0)
-            a.message = sticker
-            context.insert(a)
+            withAnimation(Motion.bubble) {
+                convo.add(sticker, context: context)
+                a.message = sticker
+                context.insert(a)
+            }
         }
         return markers.body
     }
@@ -488,10 +491,12 @@ final class ChatEngine {
         let ext = (name as NSString).pathExtension.lowercased()
         let isImage = ["jpg", "jpeg", "png", "heic", "gif", "webp"].contains(ext)
         let m = Message(role: .assistant, kind: isImage ? .images : .file, content: "", personaID: persona.id)
-        convo.add(m, context: context)
         let a = Attachment(kind: isImage ? "image" : "file", fileName: name, data: data, order: 0)
-        a.message = m
-        context.insert(a)
+        withAnimation(Motion.bubble) {
+            convo.add(m, context: context)
+            a.message = m
+            context.insert(a)
+        }
         try? context.save()
     }
 

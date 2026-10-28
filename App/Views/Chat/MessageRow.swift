@@ -100,7 +100,7 @@ struct MessageRow: View {
                 }
                 if let id = message.momentID { MomentRef(id: id) }
                 content(isUser: false)
-                    .animation(Motion.reveal, value: isThinking)
+                    .animation(Motion.bubble, value: isThinking)
                 // TA 引用了你说过的话
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 translationView

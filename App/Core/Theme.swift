@@ -133,10 +133,11 @@ enum Motion {
     static let shuttleIn = Animation.spring(duration: 0.5, bounce: 0)
     /// 返回：聊天页像雾一样散开，列表退回原位
     static let shuttleOut = Animation.timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46)
-    /// TA 的一句话冒出来：气泡从小点撑开成文字的大小，平滑不回弹
-    static let reveal = Animation.smooth(duration: 0.45)
-    /// 新消息出现：这一行慢慢撑开、上面的消息让开，气泡轻轻放大显现，最后一点点回弹
-    static let bubble = Animation.spring(duration: 0.5, bounce: 0.1)
+    /// 所有气泡都只用这一条：你发的、TA 回的、正在输入的小点、表情、图片、语音、文件，
+    /// 冒出来、小点撑开成文字、撤回、拿掉，节奏都一样（这一行撑开、上面让开、气泡放大显现，最后一点点回弹）
+    static let bubble = Animation.spring(duration: 0.5, bounce: 0.08)
+    /// 气泡里的字：等气泡差不多撑开了再浮现，不会比气泡先到
+    static let bubbleText = Animation.smooth(duration: 0.3).delay(0.22)
 }
 
 struct CardStyle: ViewModifier {
@@ -233,7 +234,11 @@ struct GrowIn: Layout {
 }
 
 extension View {
-    func riseIn(fresh: Bool, anchor: UnitPoint = .bottom) -> some View { modifier(RiseIn(fresh: fresh, anchor: anchor)) }
+    /// 出现只由 RiseIn 自己来演，不再叠一层列表默认的淡入（两层淡入节奏不同，看起来像闪了一下）；拿掉时照常淡出
+    func riseIn(fresh: Bool, anchor: UnitPoint = .bottom) -> some View {
+        modifier(RiseIn(fresh: fresh, anchor: anchor))
+            .transition(.asymmetric(insertion: .identity, removal: .opacity))
+    }
 }
 
 /// 根页面的大标题
