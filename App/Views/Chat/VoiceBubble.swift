@@ -57,8 +57,8 @@ struct TranscriptCard: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+            .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
             .textSelection(.enabled)
     }
 }

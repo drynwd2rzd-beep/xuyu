@@ -34,9 +34,9 @@ struct QuoteChip: View {
         .padding(.leading, 9)
         .padding(.trailing, onClose == nil ? 11 : 6)
         .padding(.vertical, 7)
-        .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
-        .contentShape(RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
     }
 }
 

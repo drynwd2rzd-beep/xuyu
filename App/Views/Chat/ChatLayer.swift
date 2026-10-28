@@ -1,14 +1,13 @@
 import SwiftUI
+import UIKit
 
 /// 聊天这一层：盖在所有页面上面。
-/// 打开：底下的页面往后退（微微缩小、圆角、变暗），聊天页从稍低的地方浮上来、渐渐清晰；返回正好反过来。
-/// 从左边缘往右滑可以跟着手指返回，底下的页面也跟着一点点回到前面
+/// 打开：底下的页面轻轻变暗，聊天页从稍低的地方浮上来；返回正好反过来。
+/// 从左边缘往右滑可以跟着手指返回，底下的页面也跟着一点点亮回来
 struct ChatLayer: View {
     let id: UUID
     @Environment(Router.self) private var router
     @Environment(\.modelContext) private var context
-    /// 这次拖动是不是从左边缘开始的（只有这样才算侧滑返回）
-    @State private var fromEdge = false
 
     var body: some View {
         @Bindable var router = router
@@ -19,37 +18,72 @@ struct ChatLayer: View {
                 }
                 .navigationDestination(for: Route.self) { RouteView(route: $0) }
             }
-            // 侧滑时左边投一道阴影（投在底板上，不是给页面里每样东西各投一层）
-            .background(Rectangle().fill(Palette.paper)
+            // 侧滑时整页在动，四角露在屏幕中间：跟屏幕一样圆；停下来恢复成方的（贴着屏幕边，看不出来）
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            // 侧滑时左边投一道阴影：投在同样圆角的底板上，不是给页面里每样东西各投一层
+            .background(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(Palette.paper)
                 .shadow(color: .black.opacity(router.chatSwipe > 0 ? 0.18 : 0), radius: 18, x: -4)
                 .ignoresSafeArea())
             .offset(x: router.chatSwipe * geo.size.width)
-            // 从左边缘开始往右滑：返回。和按钮、滚动同时识别，不会挡住左上角的返回键和输入框旁的按钮；
+            // 从左边缘开始往右滑：返回。用系统返回手势同一种「屏幕边缘滑动」识别：
+            // 认定是边缘滑动后，聊天列表不会再跟着上下滚，页面只左右走，不发颤。
             // 聊天里又点进别的页面时，交给系统自己的返回手势
-            .simultaneousGesture(edgeSwipe(width: geo.size.width), including: router.chatPath.isEmpty ? .all : .subviews)
-        }
-    }
-
-    private func edgeSwipe(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .global)
-            .onChanged { value in
-                if router.chatSwipe == 0 && !fromEdge {
-                    fromEdge = value.startLocation.x < 24 && value.translation.width > abs(value.translation.height)
-                }
-                guard fromEdge else { return }
-                router.chatSwipe = min(1, max(0, value.translation.width) / width)
-            }
-            .onEnded { value in
-                guard fromEdge else { return }
-                fromEdge = false
-                let flung = value.predictedEndTranslation.width > width * 0.5
-                if router.chatSwipe > 0.35 || flung {
+            .gesture(EdgeSwipe(enabled: router.chatPath.isEmpty, onChange: { dx in
+                router.chatSwipe = min(1, max(0, dx) / geo.size.width)
+            }, onEnd: { dx, velocity in
+                if router.chatSwipe > 0.35 || velocity > 800 {
                     withAnimation(Motion.depth) { router.chatSwipe = 1 }
                     router.closeChat()
                 } else {
                     withAnimation(Motion.settle) { router.chatSwipe = 0 }
                 }
-            }
+            }))
+        }
+    }
+
+    /// 整页在动时用屏幕的圆角，停着时是方的
+    private var corner: CGFloat { router.chatSwipe > 0 ? Radius.screen : 0 }
+}
+
+/// 从屏幕左边缘往右滑（和系统返回手势同一种识别方式）：横着滑动时不会被上下滚动抢走
+struct EdgeSwipe: UIGestureRecognizerRepresentable {
+    /// 聊天里又点进了别的页面时关掉，交给那一页自己的系统返回手势
+    var enabled: Bool
+    var onChange: (CGFloat) -> Void
+    var onEnd: (CGFloat, CGFloat) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIScreenEdgePanGestureRecognizer {
+        let pan = UIScreenEdgePanGestureRecognizer()
+        pan.edges = .left
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ pan: UIScreenEdgePanGestureRecognizer, context: Context) {
+        context.coordinator.enabled = enabled
+    }
+
+    func handleUIGestureRecognizerAction(_ pan: UIScreenEdgePanGestureRecognizer, context: Context) {
+        let dx = pan.translation(in: pan.view).x
+        switch pan.state {
+        case .changed: onChange(dx)
+        case .ended, .cancelled, .failed: onEnd(dx, pan.velocity(in: pan.view).x)
+        default: break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var enabled = true
+
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { enabled }
+
+        /// 边缘滑动开始后，让页面里的滚动先让路
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            other is UIPanGestureRecognizer && other.view is UIScrollView
+        }
     }
 }
 

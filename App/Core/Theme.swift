@@ -55,6 +55,8 @@ enum Typo {
 
 /// 统一圆角：所有页面只从这里取值，全部使用 iPhone 屏幕同款的连续曲率圆角（.continuous）。
 enum Radius {
+    /// iPhone 屏幕本身的圆角：整页在动时（侧滑返回）四角跟屏幕一样圆
+    static let screen: CGFloat = 55
     /// 卡片、列表容器
     static let card: CGFloat = 26
     /// 小方块：表情、组件库图标、代码块
