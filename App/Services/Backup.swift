@@ -4,10 +4,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// 备份：把角色、聊天（含图片和文件）、待办、日记、表情、记忆和主要设置打包成一个文件；
-/// 可以导出到「文件」、从文件恢复，也可以每天自动备份到电脑
+/// 可以导出到「文件」、从文件恢复，也可以每天自动备份到电脑。
+/// 打包和拆包都在后台做（照片多了以后有几十 MB，放在主线程会让每天第一次打开 App 时卡一下），
+/// 恢复时往数据库里写仍在主线程
 @MainActor
 enum Backup {
-    static let version = 1
+    nonisolated static let version = 1
     static let lastBackupKey = Prefs.lastBackupAt
     static let autoKey = Prefs.autoBackupToPC
 
@@ -86,7 +88,7 @@ enum Backup {
     }
 
     /// 一起备份的设置
-    private static let prefKeys = [Prefs.nickname, Prefs.appearance, Prefs.wallpaper, Prefs.defaultClaudeModel, Prefs.defaultCodexModel,
+    nonisolated private static let prefKeys = [Prefs.nickname, Prefs.appearance, Prefs.wallpaper, Prefs.defaultClaudeModel, Prefs.defaultCodexModel,
                                    Prefs.defaultClaudeEffort, Prefs.defaultCodexEffort, Prefs.inAppBanner, Prefs.todoReminders,
                                    Prefs.diaryReminder, Prefs.quietStart, Prefs.quietEnd, Prefs.homeWidgets, Prefs.showEngineLogo,
                                    Prefs.diaryWriter, Prefs.showMyDiary, Prefs.stickerPackOrder, Prefs.appointments, Prefs.minimaxRegion,
@@ -94,7 +96,18 @@ enum Backup {
 
     // MARK: 导出
 
-    static func export(context: ModelContext) throws -> Data {
+    /// 打包成一个文件：先把还没存的改动存下来，再在后台的数据库连接里取数据、编码
+    static func exportData(context: ModelContext) async throws -> Data {
+        context.persist()
+        let container = context.container
+        // 在后台线程上建这个 actor：在主线程上建的话，它的活也会排到主线程上做
+        return try await Task.detached(priority: .utility) {
+            try await BackupWorker(modelContainer: container).export()
+        }.value
+    }
+
+    /// 在哪个线程都能跑：后台的 BackupWorker 用它自己的数据库连接调用
+    nonisolated static func export(context: ModelContext) throws -> Data {
         let personas = (try? context.fetch(FetchDescriptor<Persona>())) ?? []
         let convos = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
@@ -152,7 +165,7 @@ enum Backup {
             },
             album: album.map { AlbumDTO(id: $0.id, personaID: $0.personaID, data: $0.data, caption: $0.caption, createdAt: $0.createdAt) },
             prefs: prefs,
-            myAvatar: MyAvatarStore.image?.jpegData(compressionQuality: 0.9))
+            myAvatar: MyAvatarStore.fileData)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         return try encoder.encode(archive)
@@ -166,10 +179,9 @@ enum Backup {
 
     // MARK: 恢复（会替换现在 App 里的全部内容）
 
-    static func restore(_ data: Data, context: ModelContext) throws {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .millisecondsSince1970
-        let archive = try decoder.decode(Archive.self, from: data)
+    static func restore(_ data: Data, context: ModelContext) async throws {
+        // 拆包在后台做；往数据库里写回到主线程
+        let archive = try await Task.detached(priority: .userInitiated) { try Backup.decode(data) }.value
         // 先删光再一条条写回：中途出错就整个撤销，现在的内容原样留着（不会被自动保存成「只删了一半」）
         do {
             try replaceAll(with: archive, context: context)
@@ -187,6 +199,12 @@ enum Backup {
         if let avatar = archive.myAvatar { MyAvatarStore.save(avatar) }
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         todos.forEach(Reminders.sync)
+    }
+
+    nonisolated private static func decode(_ data: Data) throws -> Archive {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        return try decoder.decode(Archive.self, from: data)
     }
 
     private static func replaceAll(with archive: Archive, context: ModelContext) throws {
@@ -276,17 +294,41 @@ enum Backup {
     static func autoBackupIfNeeded(context: ModelContext, relay: RelayClient) async {
         let defaults = UserDefaults.standard
         guard !DemoMode.isOn, defaults.object(forKey: autoKey) as? Bool ?? true, relay.isConnected else { return }
-        let last = defaults.double(forKey: lastBackupKey)
-        guard Date.now.timeIntervalSince1970 - last > 20 * 3600 else { return }
+        let now = Date.now.timeIntervalSince1970
+        guard now - defaults.double(forKey: lastBackupKey) > 20 * 3600 else { return }
+        // 刚失败过：隔两个小时再试，不要每次回到 App 都把几十 MB 重新打包、重新传一遍
+        guard now - defaults.double(forKey: Prefs.backupFailedAt) > 2 * 3600 else { return }
         await backupToPC(context: context, relay: relay)
     }
 
     @discardableResult
     static func backupToPC(context: ModelContext, relay: RelayClient) async -> Bool {
-        guard let data = try? export(context: context) else { return false }
-        let ok = await relay.saveBackup(name: fileName, data: data)
-        if ok { UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: lastBackupKey) }
-        return ok
+        let defaults = UserDefaults.standard
+        let failure: String?
+        do {
+            let data = try await exportData(context: context)
+            failure = await relay.saveBackup(name: fileName, data: data) ? nil : "电脑没有回应"
+        } catch {
+            failure = "打包备份时出错"
+        }
+        // 成功：记下时间，清掉上次的失败；没成功：记下时间和原因，设置页「备份与恢复」里能看到
+        if let failure {
+            defaults.set(Date.now.timeIntervalSince1970, forKey: Prefs.backupFailedAt)
+            defaults.set(failure, forKey: Prefs.backupFailReason)
+        } else {
+            defaults.set(Date.now.timeIntervalSince1970, forKey: lastBackupKey)
+            defaults.removeObject(forKey: Prefs.backupFailedAt)
+            defaults.removeObject(forKey: Prefs.backupFailReason)
+        }
+        return failure == nil
+    }
+}
+
+/// 在后台打包备份：用自己的数据库连接，不占主线程
+@ModelActor
+actor BackupWorker {
+    func export() throws -> Data {
+        try Backup.export(context: modelContext)
     }
 }
 

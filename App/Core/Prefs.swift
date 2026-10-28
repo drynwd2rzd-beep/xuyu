@@ -68,6 +68,9 @@ enum Prefs {
     static let relayAddressAway = "relayAddressAway"
     static let lastBackupAt = "lastBackupAt"
     static let autoBackupToPC = "autoBackupToPC"
+    /// 最近一次备份到电脑没成功的时间（成功一次就清掉），和没成功的原因
+    static let backupFailedAt = "backupFailedAt"
+    static let backupFailReason = "backupFailReason"
     /// 数据库升级失败时，旧数据库挪到了哪里
     static let lastStoreRescue = "lastStoreRescue"
 

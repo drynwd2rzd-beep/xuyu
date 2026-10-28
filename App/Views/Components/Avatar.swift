@@ -79,6 +79,9 @@ enum MyAvatarStore {
         return cache
     }
 
+    /// 头像文件本身（已经是缩小过的 jpg）：备份在后台读它，不碰界面用的缓存
+    static var fileData: Data? { try? Data(contentsOf: url) }
+
     static func save(_ data: Data) {
         guard let jpeg = ImageUtil.downscale(data, maxSide: 400) else { return }
         try? jpeg.write(to: url, options: .atomic)

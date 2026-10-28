@@ -159,6 +159,8 @@ struct BackupView: View {
     @Environment(RelayClient.self) private var relay
     @AppStorage(Backup.autoKey) private var auto = true
     @AppStorage(Backup.lastBackupKey) private var lastBackup = 0.0
+    /// 最近一次备份到电脑没成功（成功一次就清掉）
+    @AppStorage(Prefs.backupFailedAt) private var backupFailed = 0.0
     @State private var working: String?
     @State private var toast: String?
     @State private var pcBackups: [RelayClient.BackupInfo] = []
@@ -184,7 +186,11 @@ struct BackupView: View {
                     InkToggle(isOn: $auto, label: "每天自动备份")
                 }
                 Hairline()
-                actionRow("立即备份到电脑", detail: lastBackup > 0 ? "上次 " + Date(timeIntervalSince1970: lastBackup).listStamp : "",
+                // 上次没备份成功（多半是自动备份）：这一行右边就换成这句，红色
+                actionRow("立即备份到电脑",
+                          detail: backupFailed > 0 ? "上次没备份成功"
+                              : lastBackup > 0 ? "上次 " + Date(timeIntervalSince1970: lastBackup).listStamp : "",
+                          alert: backupFailed > 0,
                           disabled: !relay.isConnected) {
                     run("正在备份…") {
                         let ok = await Backup.backupToPC(context: context, relay: relay)
@@ -219,7 +225,7 @@ struct BackupView: View {
             SettingsGroup(title: "文件") {
                 actionRow("导出到「文件」", detail: "", disabled: false) {
                     run("正在打包…") {
-                        guard let data = try? Backup.export(context: context) else { return "导出失败" }
+                        guard let data = try? await Backup.exportData(context: context) else { return "导出失败" }
                         exportDoc = BackupDocument(data: data)
                         return nil
                     }
@@ -263,10 +269,13 @@ struct BackupView: View {
         }
     }
 
-    private func actionRow(_ title: String, detail: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+    private func actionRow(_ title: String, detail: String, alert: Bool = false, disabled: Bool,
+                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             SettingRow(title: title) {
-                if !detail.isEmpty { Text(detail).font(.system(size: 13)).foregroundStyle(Palette.inkSoft) }
+                if !detail.isEmpty {
+                    Text(LocalizedStringKey(detail)).font(.system(size: 13)).foregroundStyle(alert ? Palette.danger : Palette.inkSoft)
+                }
                 Chevron()
             }
             .opacity(disabled ? 0.4 : 1)
@@ -293,7 +302,7 @@ struct BackupView: View {
             }
             guard let data else { return "取回备份失败" }
             do {
-                try Backup.restore(data, context: context)
+                try await Backup.restore(data, context: context)
                 return "已恢复"
             } catch {
                 return "这个文件不是有效的絮语备份"

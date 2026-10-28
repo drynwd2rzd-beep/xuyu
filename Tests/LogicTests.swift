@@ -315,7 +315,7 @@ final class LogicTests: XCTestCase {
 
     // MARK: - 备份再恢复，内容一样
 
-    func testBackupRoundTrip() throws {
+    func testBackupRoundTrip() async throws {
         let source = try makeContext()
         let persona = Persona(name: "TA", systemPrompt: "温柔")
         persona.followUp = 2
@@ -336,7 +336,7 @@ final class LogicTests: XCTestCase {
 
         let data = try Backup.export(context: source)
         let target = try makeContext()
-        try Backup.restore(data, context: target)
+        try await Backup.restore(data, context: target)
 
         let personas = try target.fetch(FetchDescriptor<Persona>())
         XCTAssertEqual(personas.map(\.name), ["TA"])

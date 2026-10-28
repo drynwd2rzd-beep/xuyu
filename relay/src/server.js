@@ -401,12 +401,75 @@ function saveBackup(name, data) {
   if (!safe || !data) return false;
   try {
     fs.writeFileSync(path.join(config.backupDir, safe), Buffer.from(String(data), 'base64'));
-    const all = listBackups();
-    for (const old of all.slice(30)) fs.rmSync(path.join(config.backupDir, old.name), { force: true });
-    console.log(`已保存手机备份：${safe}`);
+    backupSaved(safe);
     return true;
   } catch {
     return false;
+  }
+}
+
+/** 存好一份：只留最近 30 份，顺手清掉一天前没传完的半截 */
+function backupSaved(safe) {
+  for (const old of listBackups().slice(30)) fs.rmSync(path.join(config.backupDir, old.name), { force: true });
+  try {
+    for (const name of fs.readdirSync(config.backupDir).filter((n) => n.endsWith('.part'))) {
+      const file = path.join(config.backupDir, name);
+      if (Date.now() - fs.statSync(file).mtimeMs > KEEP) fs.rmSync(file, { force: true });
+    }
+  } catch {
+    // 清不掉也不影响这次备份
+  }
+  console.log(`已保存手机备份：${safe}`);
+}
+
+// 大的备份分块传（照片多了以后，整份塞进一条消息会超过 64MB 上限）：
+// 先写进「名字.part」，第 0 块从头写，之后按顺序接在后面，最后一块到了再改成正式的名字
+const chunkProgress = new Map();
+
+function saveBackupChunk(name, index, total, data) {
+  const safe = backupName(name);
+  const i = Number(index);
+  const n = Number(total);
+  if (!safe || !data || !Number.isInteger(i) || !Number.isInteger(n) || i < 0 || n < 1 || i >= n) return false;
+  const part = path.join(config.backupDir, `${safe}.part`);
+  try {
+    const buf = Buffer.from(String(data), 'base64');
+    if (i === 0) {
+      fs.writeFileSync(part, buf);
+    } else {
+      // 顺序不对（中间丢了一块、或者重复发）：不接，让手机这次算失败
+      if (chunkProgress.get(safe) !== i) return false;
+      fs.appendFileSync(part, buf);
+    }
+    chunkProgress.set(safe, i + 1);
+    if (i === n - 1) {
+      chunkProgress.delete(safe);
+      fs.renameSync(part, path.join(config.backupDir, safe));
+      backupSaved(safe);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 取回大的备份：一次读一段（最多 8MB），连同文件总大小一起回给手机 */
+function readBackupChunk(name, offset, length) {
+  const safe = backupName(name);
+  if (!safe) return { data: '', size: 0 };
+  let fd;
+  try {
+    fd = fs.openSync(path.join(config.backupDir, safe), 'r');
+    const size = fs.fstatSync(fd).size;
+    const start = Math.max(0, Math.floor(Number(offset) || 0));
+    const want = Math.min(Math.max(0, Math.floor(Number(length) || 0)), 8 * 1024 * 1024, Math.max(0, size - start));
+    const buf = Buffer.alloc(want);
+    const got = want > 0 ? fs.readSync(fd, buf, 0, want, start) : 0;
+    return { data: buf.subarray(0, got).toString('base64'), size };
+  } catch {
+    return { data: '', size: 0 };
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 
@@ -503,6 +566,12 @@ wss.on('connection', (ws, req) => {
         break;
       case 'fetchBackup':
         send(ws, { type: 'backupData', id: msg.id, data: readBackup(msg.name) });
+        break;
+      case 'backupChunk':
+        send(ws, { type: 'backupChunkSaved', id: msg.id, ok: saveBackupChunk(msg.name, msg.index, msg.total, msg.data) });
+        break;
+      case 'fetchBackupChunk':
+        send(ws, { type: 'backupChunkData', id: msg.id, ...readBackupChunk(msg.name, msg.offset, msg.length) });
         break;
       case 'ping':
         send(ws, { type: 'pong', id: msg.id });
