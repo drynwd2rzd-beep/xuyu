@@ -53,16 +53,15 @@ struct ChatLayer: View {
     }
 }
 
-/// 聊天页出现、离开的样子：从稍低处浮上来、由虚变实；离开时沉下去、变虚、淡出
+/// 聊天页出现、离开的样子：从稍低处淡淡地浮上来；离开时沉下去、淡出。
+/// 只用透明度和位移（不模糊、不缩放整屏），每一帧都很省，不会掉帧
 struct DepthTransition: ViewModifier {
     let shown: Bool
 
     func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .scaleEffect(shown ? 1 : 0.97, anchor: .bottom)
-            .offset(y: shown ? 0 : 36)
-            .blur(radius: shown ? 0 : 6)
+            .offset(y: shown ? 0 : 28)
     }
 }
 
@@ -73,12 +72,8 @@ extension AnyTransition {
 }
 
 extension View {
-    /// 聊天打开时，底下的页面往后退：微微缩小、四角变圆、蒙一层暗；侧滑返回时跟着手指一点点回来
+    /// 聊天打开时，底下的页面轻轻变暗（不缩小，所以不会露出黑边）；侧滑返回时跟着手指一点点亮回来
     func recede(_ amount: CGFloat) -> some View {
-        self
-            .overlay(Color.black.opacity(0.14 * amount).ignoresSafeArea().allowsHitTesting(false))
-            // 遮罩铺满整个屏幕（包括状态栏那一条），不会把背景裁掉；只是四角跟着变圆
-            .mask(RoundedRectangle(cornerRadius: 44 * amount, style: .continuous).ignoresSafeArea())
-            .scaleEffect(1 - 0.06 * amount)
+        overlay(Color.black.opacity(0.12 * amount).ignoresSafeArea().allowsHitTesting(false))
     }
 }

@@ -93,11 +93,13 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Waveform.heights(seed: "a", count: 9), Waveform.heights(seed: "a", count: 9))
     }
 
-    func testKoreanPersonaSpeaksKorean() {
+    func testVoiceLanguageOnlyChangesVoice() {
+        // 角色的语言只管语音：中文界面下，打字不会被要求说韩语
         let karina = Persona(name: "Karina")
-        XCTAssertFalse(PromptBuilder.system(for: karina, convo: nil, members: [karina]).contains("说韩语"))
         karina.language = "ko"
-        XCTAssertTrue(PromptBuilder.system(for: karina, convo: nil, members: [karina]).contains("说韩语"))
+        if !Fmt.ui.identifier.hasPrefix("ko") {
+            XCTAssertFalse(PromptBuilder.system(for: karina, convo: nil, members: [karina]).contains("打字说韩语"))
+        }
         XCTAssertTrue(Companion.endedNaturally(["오늘 고마웠어, 잘 자"]))
     }
 

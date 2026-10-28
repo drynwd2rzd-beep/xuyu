@@ -206,14 +206,9 @@ struct PersonaEditor: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                // 怎么说话
-                SettingsGroup(title: "语言与语音") {
-                    SettingRow(title: "语言") {
-                        Segmented(items: [("zh", "中文"), ("ko", "한국어")], selection: $persona.language)
-                            .fixedSize()
-                    }
-                    if Voice.isConfigured && !persona.canWork {
-                        Hairline()
+                // 语音：TA 打字的语言跟着 App 界面走，这里只管 TA 发语音时说哪种话
+                if Voice.isConfigured && !persona.canWork {
+                    SettingsGroup(title: "语音") {
                         Button { pickingVoice = true } label: {
                             SettingRow(title: "声音") {
                                 Text(persona.voiceName.isEmpty ? "未选择" : persona.voiceName)
@@ -232,14 +227,20 @@ struct PersonaEditor: View {
                             }
                             .transition(.opacity)
                             Hairline()
+                            SettingRow(title: "语音语言") {
+                                Segmented(items: [("zh", "中文"), ("ko", "한국어")], selection: $persona.language)
+                                    .fixedSize()
+                            }
+                            .transition(.opacity)
+                            Hairline()
                             SettingRow(title: "自动翻译语音") {
                                 InkToggle(isOn: $persona.autoTranslate, label: "自动翻译语音")
                             }
                             .transition(.opacity)
                         }
                     }
+                    .animation(Motion.spring, value: persona.voiceID)
                 }
-                .animation(Motion.spring, value: persona.voiceID)
 
                 // 怎么互动
                 SettingsGroup(title: "互动") {

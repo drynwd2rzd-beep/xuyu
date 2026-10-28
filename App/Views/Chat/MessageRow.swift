@@ -259,8 +259,6 @@ struct MessageRow: View {
             .padding(.bottom, 7)
             .background(isUser ? Palette.userBubble.opacity(0.94) : Palette.botBubble.opacity(0.9),
                         in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-            // 气泡从小点撑开成文字时，文字不会探出还在变大的气泡
-            .clipShape(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
             .overlay {
                 if !isUser {
                     RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.9), lineWidth: 0.5)

@@ -23,7 +23,6 @@ struct RootView: View {
                     .zIndex(1)
             }
         }
-        .background(Color.black.ignoresSafeArea())
         // App 内的消息提示：盖在聊天上面，在别的聊天里也能看到
         .overlay(alignment: .top) {
             if let banner = banners.current {
@@ -86,7 +85,7 @@ struct RootView: View {
     }
 
     /// 三个页面常驻，切换时保留滚动位置
-    /// 切页：旧页朝反方向轻轻滑走、变虚、淡出；新页从点的方向带着一点模糊滑进来、慢慢变清晰
+    /// 切页：旧页朝反方向轻轻滑走、淡出；新页从点的方向滑进来、淡入（不做模糊，切页不掉帧）
     private func tabPage<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
         let active = shownTab == tab
         let visible = active && revealed
@@ -95,7 +94,6 @@ struct RootView: View {
             .opacity(visible ? 1 : 0)
             .offset(x: visible ? 0 : shift)
             .scaleEffect(visible ? 1 : 0.975)
-            .blur(radius: visible ? 0 : 8)
             .allowsHitTesting(active)
             .accessibilityHidden(!active)
     }

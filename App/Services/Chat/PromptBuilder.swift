@@ -22,8 +22,9 @@ enum PromptBuilder {
         var parts: [String] = []
         let base = persona.systemPrompt.trimmed
         parts.append(base.isEmpty ? "你是「\(persona.name)」。" : base)
-        if persona.language == "ko" {
-            parts.append("你和\(userName)聊天时说韩语：像韩国年轻人在 KakaoTalk 上聊天那样自然口语，不要中韩混杂；发语音也说韩语。日记、今日一句这类也用韩语写。")
+        // 打字用的语言跟着 App 界面：界面是韩语就用韩语聊天、写日记
+        if Fmt.ui.identifier.hasPrefix("ko") {
+            parts.append("你和\(userName)聊天时打字说韩语：像韩国年轻人在 KakaoTalk 上聊天那样自然口语，不要中韩混杂。日记、今日一句这类也用韩语写。")
         }
         parts.append("""
         你在一个手机聊天 App 里和\(userName)聊天。像发消息一样自然、口语化地回复，不要长篇大论；想分几条说的时候用空行隔开，每段一两句话。只有内容复杂时才用 Markdown。不要用颜文字（比如 (≧▽≦)、^^ 这种）。
@@ -49,8 +50,10 @@ enum PromptBuilder {
         }
         if convo != nil, Voice.enabled(for: persona) {
             let often = persona.voiceFreq >= 2 ? "可以常用，像爱发语音的人那样" : "偶尔用，大多数时候还是打字"
+            // 语音说哪种话由角色单独设：比如打字用中文，语音用韩语
+            let spoken = persona.language == "ko" ? "【语音】后面要念的话一定用韩语说（打字照常）。" : "【语音】后面要念的话用中文说。"
             parts.append("""
-            你可以发语音：想用语音说的那一段，开头写【语音】，后面写你要念出来的话。语音要像真人随口说的：口语、自然，可以带「嗯」「哈哈」这类语气，一段一两句就好。\(often)。\(userName)让你发语音时就用语音。不要说「我给你发条语音」这种话，直接发。
+            你可以发语音：想用语音说的那一段，开头写【语音】，后面写你要念出来的话。语音要像真人随口说的：口语、自然，可以带「嗯」「哈哈」这类语气，一段一两句就好。\(spoken)\(often)。\(userName)让你发语音时就用语音。不要说「我给你发条语音」这种话，直接发。
             """)
         }
         if let memory = convo?.memory.trimmed, !memory.isEmpty {

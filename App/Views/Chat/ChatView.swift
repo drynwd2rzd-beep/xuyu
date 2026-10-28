@@ -25,7 +25,6 @@ struct ChatView: View {
     @State private var atBottom = true
     @State private var keyboardShown = false
     @State private var pinBottom = 0
-    @State private var entered = false
     @State private var panel: Composer.Panel?
     @State private var inputFocused = false
     /// 点引用跳到原文时，原文闪一下
@@ -76,10 +75,6 @@ struct ChatView: View {
             // 每分钟刷新一次，让提前排好的主动消息到点出现；判断用的始终是「现在」
             TimelineView(.everyMinute) { _ in
                 messageList(now: .now)
-                    // 进入聊天：消息从下方轻轻浮上来、慢慢变清晰
-                    .opacity(entered ? 1 : 0)
-                    .offset(y: entered ? 0 : 22)
-                    .blur(radius: entered ? 0 : 6)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
                 // 顶部：屏幕最上面最模糊，往下渐渐减弱，到头像一半左右已经基本清晰
@@ -143,7 +138,6 @@ struct ChatView: View {
             router.openConversation = convo.id
             convo.lastReadAt = .now
             draft = convo.draft
-            withAnimation(.spring(duration: 0.6, bounce: 0.08).delay(0.08)) { entered = true }
             // 截图：直接打开表情面板
             if DemoMode.isOn && DemoMode.screen == "stickers" { panel = .stickers }
         }
@@ -197,9 +191,6 @@ struct ChatView: View {
                         Text("已选 \(picked.count) 条").font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
                     }
                 }
-                // 进入聊天：头像轻轻放大到位
-                .scaleEffect(entered ? 1 : 0.86)
-                .opacity(entered ? 1 : 0)
             }
             .buttonStyle(.plain)
             Spacer()
@@ -327,14 +318,10 @@ struct ChatView: View {
                 atBottom = value
             }
             .onChange(of: messages.last?.id) {
-                // 自己发消息后总是回到底部；对方的新消息在跟随时滚到最新一条
-                if messages.last?.role == .user { follow = true }
-                guard follow else { return }
-                withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onChange(of: typing?.id) {
-                // TA 开始打字：跟随时露出最底下的小点
-                guard follow else { return }
+                // 自己发消息后回到底部；对方的新消息、打字的小点在跟随时由「内容变高也贴着底部」自己跟上，
+                // 不再额外滚一次（两个动画互相拉扯，看起来会卡一下）
+                guard messages.last?.role == .user else { return }
+                follow = true
                 withAnimation(Motion.glide) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) { _, shown in

@@ -104,14 +104,13 @@ struct RecalledLine: View {
     }
 }
 
-/// 文字浮现：由虚变实，从下面一点点升到位（小点变成文字时用）
+/// 文字浮现：淡入、从下面一点点升到位（小点变成文字时用）
 struct RevealModifier: ViewModifier {
     let shown: Bool
 
     func body(content: Content) -> some View {
         content
             .opacity(shown ? 1 : 0)
-            .blur(radius: shown ? 0 : 5)
             .offset(y: shown ? 0 : 4)
     }
 }
@@ -121,7 +120,7 @@ extension AnyTransition {
         .asymmetric(
             insertion: .modifier(active: RevealModifier(shown: false), identity: RevealModifier(shown: true))
                 // 等气泡差不多撑开了，文字再由虚变实浮现，不会比气泡先到
-                .animation(.smooth(duration: 0.36).delay(0.16)),
+                .animation(.smooth(duration: 0.3).delay(0.24)),
             removal: .opacity
         )
     }
