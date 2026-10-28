@@ -409,6 +409,11 @@ struct Composer: View {
             alert = "文件太大了（最多 20MB）。"
             return
         }
+        // 一次发的东西是一整条传给电脑的，加起来太大会被中继拒收（上限 64MB，编码后会变大三成多）
+        guard staged.reduce(data.count, { $0 + $1.data.count }) <= 40 * 1024 * 1024 else {
+            alert = "这次带的文件加起来太大了（最多 40MB），分几次发吧。"
+            return
+        }
         if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image) {
             stage([data])
             return

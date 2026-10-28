@@ -34,6 +34,7 @@ enum Companion {
         await proactive(context: context, relay: relay, personas: personas)
         await Appointments.refresh(context: context, relay: relay)
         await MomentsPlanner.refresh(context: context, relay: relay)
+        await MomentsEngine.shared.retryPending(context: context, relay: relay)
         Reminders.syncDiaryReminder()
         await Backup.autoBackupIfNeeded(context: context, relay: relay)
     }
@@ -81,6 +82,8 @@ enum Companion {
         defer { followingUp = false }
         let now = Date.now
         for persona in personas where persona.followUp > 0 {
+            // 后台时间到了（BackgroundWork 取消了这次）：剩下的下次再准备
+            guard !Task.isCancelled else { break }
             let convo = context.chat(for: persona)
             let visible = convo.visibleMessages(at: now)
             guard let last = visible.last, last.role == .assistant, last.status == .done, !last.isProactive,

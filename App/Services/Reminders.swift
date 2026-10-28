@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import UserNotifications
 
 /// 本地通知：待办提醒、每晚的日记、提前排好的主动消息。都不需要服务器推送。
@@ -34,6 +35,17 @@ enum Reminders {
 
     // MARK: - 待办
 
+    /// 待办只提前排这么久以内要响的：iOS 最多只留 64 条还没响的本地通知，排得太远会把近处的挤掉（被系统悄悄丢掉）。
+    /// 更远的等快到了再排（每次打开 App 都会补排一遍）
+    private static let horizon: TimeInterval = 14 * 24 * 3600
+
+    /// 打开 App 时：把所有没做完的待办重新排一遍，两周内要响的补上
+    @MainActor
+    static func syncTodos(_ context: ModelContext) {
+        let items = (try? context.fetch(FetchDescriptor<TodoItem>(predicate: #Predicate { !$0.isDone }))) ?? []
+        items.forEach(sync)
+    }
+
     static func sync(_ item: TodoItem) {
         let id = "todo-" + item.id.uuidString
         center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -42,7 +54,7 @@ enum Reminders {
         let fire = item.hasTime
             ? due.addingTimeInterval(-Double(item.remindLead) * 60)
             : Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: due) ?? due
-        guard fire > .now else { return }
+        guard fire > .now, fire.timeIntervalSinceNow < horizon else { return }
         let body: String
         if item.hasTime {
             body = item.remindLead == 0 ? "现在该做这件事了" : "\(Fmt.hm.string(from: due)) 开始，还有 \(item.remindLead) 分钟"

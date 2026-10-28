@@ -43,6 +43,8 @@ enum ElevenLabs {
     static func speak(_ text: String, persona: Persona, model: String) async throws -> Data {
         let style = persona.style
         var req = request("v1/text-to-speech/\(persona.voiceID)", method: "POST")
+        // 念一句话不该等太久：等不到就先发文字，不让「正在输入」一直挂着
+        req.timeoutInterval = 15
         req.url?.append(queryItems: [URLQueryItem(name: "output_format", value: "mp3_44100_128")])
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var json: [String: Any] = [

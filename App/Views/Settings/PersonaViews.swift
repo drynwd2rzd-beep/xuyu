@@ -171,6 +171,7 @@ struct PersonaEditor: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(RelayClient.self) private var relay
+    @Environment(ChatEngine.self) private var engine
     @State private var photoItem: PhotosPickerItem?
     @State private var confirmDelete = false
     @State private var confirmClear = false
@@ -523,18 +524,33 @@ struct PersonaEditor: View {
 
     private func deletePersona() {
         let id = persona.id
-        let convos = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
-        for c in convos where c.memberIDs.contains(id) {
+        // TA 和你的约定：撤掉到点要发的消息
+        for a in Appointments.all where a.personaID == id { Appointments.remove(a, context: context) }
+        let convos = ((try? context.fetch(FetchDescriptor<Conversation>())) ?? []).filter { $0.memberIDs.contains(id) }
+        var singles: [Conversation] = []
+        for c in convos {
+            // TA 正在回：先停下，不然还会往删掉的聊天里写
+            if !c.isGroup || engine.typing[c.id] == id { engine.stop(c) }
+            // TA 提前排好的主动消息、追问：撤掉通知，不然删了以后还会弹出来
+            for m in c.plannedMessages() where m.personaID == id {
+                Reminders.cancelProactive(messageID: m.id)
+                context.delete(m)
+            }
             if c.isGroup {
                 c.memberIDs.removeAll { $0 == id }
             } else {
-                context.delete(c)
+                singles.append(c)
             }
         }
         dismiss()
         let target = persona
         Task {
+            // 等页面退回去、停下的回复收好尾，再删 TA 和你们的单聊
             try? await Task.sleep(for: .milliseconds(350))
+            for c in singles {
+                WallpaperStore.remove(for: c.id)
+                context.delete(c)
+            }
             context.delete(target)
             context.persist()
         }

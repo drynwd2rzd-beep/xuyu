@@ -73,11 +73,10 @@ struct XuyuApp: App {
             guard !DemoMode.isOn else { return }
             if phase == .background {
                 lock.lockIfNeeded()
-                // 离开 App 时：把「没回消息会来追问」提前准备好，App 关掉了也能按时收到
-                let task = UIApplication.shared.beginBackgroundTask(withName: "followUps")
-                Task {
+                // 离开 App 时：把「没回消息会来追问」提前准备好，App 关掉了也能按时收到。
+                // 系统给的后台时间有限（约 30 秒）：到点还没准备完就停下，剩下的下次再说
+                BackgroundWork.run(named: "followUps") { [container, relay] in
                     await Companion.followUps(context: container.mainContext, relay: relay, personas: container.mainContext.allPersonas())
-                    UIApplication.shared.endBackgroundTask(task)
                 }
             }
             if phase == .active {
@@ -85,6 +84,8 @@ struct XuyuApp: App {
                 relay.wake()
                 Task { await engine.recover(context: container.mainContext) }
                 Task { await Companion.refresh(context: container.mainContext, relay: relay) }
+                // 待办提醒只提前排两周内的（通知数量有上限），每次回来补排快到的
+                Reminders.syncTodos(container.mainContext)
             }
         }
     }
@@ -123,6 +124,29 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                 router.path = NavigationPath()
                 router.tab = .todo
             }
+        }
+    }
+}
+
+/// 在后台多做一会儿事：向系统要一段后台时间，做完就交还。
+/// 系统给的时间到了还没做完：马上停下并交还（不交还的话，系统会直接把 App 杀掉）
+@MainActor
+enum BackgroundWork {
+    static func run(named name: String, _ work: @escaping @MainActor () async -> Void) {
+        var id = UIBackgroundTaskIdentifier.invalid
+        var job: Task<Void, Never>?
+        let finish = {
+            guard id != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(id)
+            id = .invalid
+        }
+        id = UIApplication.shared.beginBackgroundTask(withName: name) {
+            job?.cancel()
+            finish()
+        }
+        job = Task { @MainActor in
+            await work()
+            finish()
         }
     }
 }

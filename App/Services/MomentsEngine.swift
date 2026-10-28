@@ -31,8 +31,14 @@ final class MomentsEngine {
     private func reply(as persona: Persona, to comment: MomentComment, on moment: Moment, context: ModelContext, relay: RelayClient) async {
         withAnimation(Motion.spring) { _ = replying.insert(moment.id) }
         defer { withAnimation(Motion.spring) { _ = replying.remove(moment.id) } }
+        let key = "\(moment.id.uuidString)|\(comment.id.uuidString)|\(persona.id.uuidString)"
         let prompt = MomentPrompt.reply(as: persona, to: comment, on: moment, context: context)
-        guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)) else { return }
+        // 没能回（电脑没连上、出错了）：记下来，连上以后补回（以前就这么没下文了）
+        guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)) else {
+            pending.insert(key)
+            return
+        }
+        pending.remove(key)
         let text = MomentText.clean(raw)
         guard !text.isEmpty else { return }
         // 像真人一样打几个字的时间
@@ -41,6 +47,28 @@ final class MomentsEngine {
             moment.add(MomentComment(personaID: persona.id, text: text, replyToMe: true), context: context)
         }
         context.persist()
+    }
+
+    /// 还欠着你的回复（「动态|评论|谁来回」），存在本机，App 关了也不丢
+    private var pending: Set<String> {
+        get { Set((UserDefaults.standard.string(forKey: Prefs.momentPendingReplies) ?? "").split(separator: ",").map(String.init)) }
+        set { UserDefaults.standard.set(newValue.sorted().joined(separator: ","), forKey: Prefs.momentPendingReplies) }
+    }
+
+    /// 连上电脑后：把当时没能回你的评论补回（动态、评论或角色已经删了的就算了）
+    func retryPending(context: ModelContext, relay: RelayClient) async {
+        guard relay.isConnected else { return }
+        let moments = context.allMoments()
+        for key in pending {
+            let ids = key.split(separator: "|").compactMap { UUID(uuidString: String($0)) }
+            guard ids.count == 3, let moment = moments.first(where: { $0.id == ids[0] }),
+                  let comment = moment.comments?.first(where: { $0.id == ids[1] }),
+                  let persona = context.persona(ids[2]) else {
+                pending.remove(key)
+                continue
+            }
+            await reply(as: persona, to: comment, on: moment, context: context, relay: relay)
+        }
     }
 
     /// 你发一条动态：照片存进你自己的相册；TA 们过一会儿来看

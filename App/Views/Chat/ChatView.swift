@@ -140,6 +140,12 @@ struct ChatView: View {
             engine.redoFailed.remove(convo.id)
             flash("没能重新生成，原来的回复还在")
         }
+        // 引擎要提示的一句话（比如语音额度用完了）
+        .onChange(of: engine.notices[convo.id]) { _, text in
+            guard let text else { return }
+            engine.notices[convo.id] = nil
+            flash(text)
+        }
         .onAppear {
             router.openConversation = convo.id
             // 不在这个聊天时重新生成失败过：那条旧回复本来就在，不用再提示

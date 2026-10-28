@@ -12,8 +12,8 @@ enum MiniMax {
             : ["https://api.minimax.cn", "https://api.minimaxi.com"]
     }
 
-    static func post(_ path: String, json: [String: Any]) async throws -> [String: Any] {
-        try await send(path, contentType: "application/json", body: JSONSerialization.data(withJSONObject: json))
+    static func post(_ path: String, json: [String: Any], timeout: TimeInterval = 40) async throws -> [String: Any] {
+        try await send(path, contentType: "application/json", body: JSONSerialization.data(withJSONObject: json), timeout: timeout)
     }
 
     /// 发给 MiniMax：这个网址连不上就换下一个
@@ -94,7 +94,8 @@ enum MiniMax {
         // 读音纠正：「原文/读音」
         let tones = style.pronunciations.map(\.trimmed).filter { $0.contains("/") }
         if !tones.isEmpty { json["pronunciation_dict"] = ["tone": tones] }
-        let root = try await post("v1/t2a_v2", json: json)
+        // 念一句话不该等太久：等不到就先发文字，不让「正在输入」一直挂着
+        let root = try await post("v1/t2a_v2", json: json, timeout: 15)
         guard let hex = (root["data"] as? [String: Any])?["audio"] as? String, let audio = Data(hex: hex), !audio.isEmpty else {
             throw Voice.Failure.other("MiniMax 没有返回语音")
         }

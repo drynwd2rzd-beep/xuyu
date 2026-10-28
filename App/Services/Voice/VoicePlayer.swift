@@ -18,7 +18,7 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
 
     func toggle(_ id: String, data: Data) {
         if playing == id { return stop() }
-        stop()
+        halt()
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try? AVAudioSession.sharedInstance().setActive(true)
         guard let player = try? AVAudioPlayer(data: data) else { return }
@@ -36,7 +36,16 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
+    /// 停下，并把声音还给别的 App：你在听的音乐接着放（以前播完一直占着，音乐停了就不回来）
     func stop() {
+        let wasPlaying = player != nil
+        halt()
+        guard wasPlaying else { return }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// 只停下这一条；马上要放下一条时用，中间不把声音还回去，音乐不会突然响一下又停
+    private func halt() {
         ticker?.cancel()
         player?.stop()
         player = nil

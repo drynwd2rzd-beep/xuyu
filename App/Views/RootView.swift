@@ -10,6 +10,8 @@ struct RootView: View {
     @State private var revealed = true
     @State private var direction: CGFloat = 1
     @State private var entering = false
+    /// 上次打开时数据库升级失败、旧数据被挪进了「数据库备份」文件夹（见 XuyuApp.openStore）：告诉你一声
+    @AppStorage(Prefs.lastStoreRescue) private var storeRescue = ""
 
     var body: some View {
         ZStack {
@@ -46,6 +48,19 @@ struct RootView: View {
         }
         // 保存失败：盖在所有页面上面（包括聊天）
         .overlay(alignment: .top) { SaveAlertToast() }
+        // 以前这里什么也不说：聊天全不见了，你也不知道数据其实还在
+        .alert("原来的数据没能打开", isPresented: Binding(get: { !storeRescue.isEmpty }, set: { if !$0 { storeRescue = "" } })) {
+            Button("从电脑恢复") {
+                storeRescue = ""
+                router.tab = .todo
+                router.path = NavigationPath()
+                router.open(.settings)
+                router.open(.backup)
+            }
+            Button("知道了", role: .cancel) { storeRescue = "" }
+        } message: {
+            Text("升级数据时出了问题，原来的数据已经原样留在手机里，没有删掉。可以从电脑上的备份恢复。")
+        }
         .onChange(of: router.chat) { _, open in
             if open == nil { settleKeyboard() }
         }

@@ -73,6 +73,8 @@ enum Prefs {
     static let backupFailReason = "backupFailReason"
     /// 数据库升级失败时，旧数据库挪到了哪里
     static let lastStoreRescue = "lastStoreRescue"
+    /// 你评论了动态、TA 当时没能回（电脑没连上）：连上以后补回
+    static let momentPendingReplies = "momentPendingReplies"
 
     // MARK: 截图用的示例模式（启动参数 -demo YES -demoScreen chat）
     static let demo = "demo"

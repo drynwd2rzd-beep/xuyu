@@ -45,6 +45,10 @@ final class ChatEngine {
     @ObservationIgnored private var carried: [UUID: Message] = [:]
     /// 重新生成：要被换掉的那条旧回复（对话 ID -> 消息）。新的说出第一句才拿掉它；没换成就一直留着
     @ObservationIgnored private var replacing: [UUID: Message] = [:]
+    /// 要在聊天页轻轻提示一句的事（对话 ID -> 那句话）：聊天页看到后提示，然后清掉
+    var notices: [UUID: String] = [:]
+    /// 语音服务出了要你处理的问题（额度用完、密钥不对）：每次打开 App 只提醒一次，不每句都提醒
+    @ObservationIgnored private var voiceWarned = false
     /// 重新生成没成功的对话：聊天页看到后提示一句「原来的回复还在」，然后清掉
     var redoFailed: Set<UUID> = []
     /// 切到后台时向系统多要一点时间，让正在进行的回复写完
@@ -334,7 +338,22 @@ final class ChatEngine {
             guard voiceOn else { return nil }
             let marks = ReplyText.markers(in: text)
             guard marks.voice, !marks.body.isEmpty else { return nil }
-            return try? await Voice.speak(marks.spoken, for: persona)
+            do {
+                return try await Voice.speak(marks.spoken, for: persona)
+            } catch let failure as Voice.Failure {
+                // 额度用完、密钥不对：照常发文字，但告诉你一声（以前语音就这么悄悄不发了）
+                switch failure {
+                case .quota, .badKey, .noKey:
+                    if !voiceWarned {
+                        voiceWarned = true
+                        notices[convo.id] = String(localized: "语音没发出去：\(failure.localizedDescription)")
+                    }
+                case .other: break
+                }
+                return nil
+            } catch {
+                return nil
+            }
         }
 
         func attach(_ audio: Data, to m: Message) {
