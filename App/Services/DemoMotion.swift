@@ -25,6 +25,9 @@ enum DemoMotion {
             }
             await pause(1.2)
             await engine.demoReply("刚在刷手机，看到一个小狗偷吃被抓包的视频，嘴里还叼着证据。", as: persona, in: convo, context: context)
+            // 连着说第二句：和真回复一样，停一小会儿才再出现「正在输入」
+            await pause(0.45)
+            await engine.demoReply("笑死我了", as: persona, in: convo, context: context)
             await pause(2.5)
             // 侧滑一点点就松手：弹回来
             await drag(router, to: 0.22, seconds: 0.35)

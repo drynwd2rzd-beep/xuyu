@@ -366,6 +366,9 @@ final class ChatEngine {
                 if !cleaned.isEmpty { sent.append(audio == nil ? cleaned : "[语音]") }
                 speaking.insert(convo.id)
                 lastCommit = .now
+                // 像 iMessage：这一句冒出来以后停一小会儿，下一条的「正在输入」才出现，
+                // 不和这句变成文字的动画挤在同一瞬间（停顿算在下一句的打字时间里，总节奏不变）
+                if pending[convo.id] == nil { try? await Task.sleep(for: .milliseconds(450)) }
                 if pending[convo.id] != nil {
                     interrupted = true
                     context.persist()

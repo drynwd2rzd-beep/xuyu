@@ -266,9 +266,10 @@ struct ChatView: View {
                                     .padding(-4)
                             }
                             .padding(.top, first ? 14 : 4)
-                            // 刚发出、刚收到的：这一行慢慢撑开，气泡从自己那一边的下角冒出来
+                            // 刚发出、刚收到的：这一行慢慢撑开，气泡从自己那一边的下角冒出来；你发的从输入框那里升上来
                             .riseIn(fresh: now.timeIntervalSince(m.createdAt) < 3,
-                                    anchor: m.role == .user ? .bottomTrailing : .bottomLeading)
+                                    anchor: m.role == .user ? .bottomTrailing : .bottomLeading,
+                                    rise: m.role == .user ? 22 : 0)
                             .id(m.id)
                             if m.id == receipt { ReadReceipt() }
                         }
@@ -327,7 +328,7 @@ struct ChatView: View {
                 // 不再额外滚一次（两个动画互相拉扯，看起来会卡一下）
                 guard messages.last?.role == .user else { return }
                 follow = true
-                // 和气泡撑开用同一条曲线：滚动和上面让开是同一个动作，不会一快一慢
+                // 和气泡撑开用同一条曲线（同样不弹）：滚动和上面让开是同一个动作，不会一快一慢
                 withAnimation(Motion.bubble) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) { _, shown in

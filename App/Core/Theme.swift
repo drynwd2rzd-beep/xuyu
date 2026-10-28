@@ -147,11 +147,16 @@ enum Motion {
     static var shuttleOut: Animation { reduced ? .easeInOut(duration: 0.3) : .timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46) }
     /// 系统设置里打开了「减少动态效果」：放大、飞入、滑动都换成原地淡入淡出
     static var reduced: Bool { UIAccessibility.isReduceMotionEnabled }
-    /// 所有气泡都只用这一条：你发的、TA 回的、正在输入的小点、表情、图片、语音、文件，
-    /// 冒出来、小点撑开成文字、撤回、拿掉，节奏都一样（这一行撑开、上面让开、气泡放大显现，最后一点点回弹）
-    static let bubble = Animation.spring(duration: 0.5, bounce: 0.08)
+    // 气泡（以 iMessage 为准）：所有气泡——你发的、TA 回的、正在输入的小点、表情、图片、语音、文件——都只用下面这三条，
+    // 节奏完全一样。气泡本身轻轻一弹；被它带动的布局（这一行撑开、上面的消息让开、滚动）平稳不弹，
+    // 不然整列消息会跟着先多走一点再退回来，像在晃
+
+    /// 气泡带动的布局变化：冒出来时这一行撑开、上面让开，小点撑开成文字，撤回、拿掉时合上，跟着滚到底
+    static let bubble = Animation.spring(duration: 0.42, bounce: 0)
+    /// 气泡本身放大显现的那一下：同样的时长，带一点弹性
+    static let bubblePop = Animation.spring(duration: 0.42, bounce: 0.2)
     /// 气泡里的字：等气泡差不多撑开了再浮现，不会比气泡先到
-    static let bubbleText = Animation.smooth(duration: 0.3).delay(0.22)
+    static let bubbleText = Animation.smooth(duration: 0.28).delay(0.16)
 }
 
 struct CardStyle: ViewModifier {
@@ -201,25 +206,32 @@ struct ScaleButtonStyle: ButtonStyle {
     }
 }
 
-/// 新出现的消息：这一行的高度从 0 平滑长到原本的高度，上面的消息被柔和地推上去（而不是一下子跳上去），
-/// 气泡同时从它那一边的下角轻轻放大、显现。旧内容直接显示，不重播
+/// 新出现的消息（像 iMessage）：这一行的高度从 0 平稳长到原本的高度，上面的消息被柔和地推上去；
+/// 气泡同时从它那一边的下角放大、显现，轻轻一弹。你发的那条还会从下面（输入框那里）升上来一点。
+/// 布局和气泡分开走两条曲线（Motion.bubble / Motion.bubblePop），时长一样：气泡弹，整列消息不晃。旧内容直接显示，不重播
 struct RiseIn: ViewModifier {
     let fresh: Bool
     var anchor: UnitPoint = .bottom
-    @State private var shown = false
+    /// 从下面升上来多少（你发的消息：从输入框那里升上来）
+    var rise: CGFloat = 0
+    @State private var grown = false
+    @State private var popped = false
 
     func body(content: Content) -> some View {
-        let on = !fresh || shown
-        // 减少动态效果：不撑开、不放大，只在原地淡入
+        let grow = !fresh || grown
+        let pop = !fresh || popped
+        // 减少动态效果：不撑开、不放大、不升，只在原地淡入
         let still = Motion.reduced
-        GrowIn(progress: on || still ? 1 : 0) {
+        GrowIn(progress: grow || still ? 1 : 0) {
             content
-                .scaleEffect(on || still ? 1 : 0.86, anchor: anchor)
-                .opacity(on ? 1 : 0)
+                .scaleEffect(pop || still ? 1 : 0.8, anchor: anchor)
+                .offset(y: pop || still ? 0 : rise)
+                .opacity(pop ? 1 : 0)
         }
         .onAppear {
-            guard fresh, !shown else { return }
-            withAnimation(Motion.bubble) { shown = true }
+            guard fresh, !popped else { return }
+            withAnimation(Motion.bubble) { grown = true }
+            withAnimation(Motion.bubblePop) { popped = true }
         }
     }
 }
@@ -250,10 +262,12 @@ struct GrowIn: Layout {
 }
 
 extension View {
-    /// 出现只由 RiseIn 自己来演，不再叠一层列表默认的淡入（两层淡入节奏不同，看起来像闪了一下）；拿掉时照常淡出
-    func riseIn(fresh: Bool, anchor: UnitPoint = .bottom) -> some View {
-        modifier(RiseIn(fresh: fresh, anchor: anchor))
-            .transition(.asymmetric(insertion: .identity, removal: .opacity))
+    /// 出现只由 RiseIn 自己来演，不再叠一层列表默认的淡入（两层淡入节奏不同，看起来像闪了一下）；
+    /// 拿掉时（多出来的「正在输入」、删除）像 iMessage 一样朝自己那一边的下角缩回去、淡掉
+    func riseIn(fresh: Bool, anchor: UnitPoint = .bottom, rise: CGFloat = 0) -> some View {
+        modifier(RiseIn(fresh: fresh, anchor: anchor, rise: rise))
+            .transition(.asymmetric(insertion: .identity,
+                                    removal: Motion.reduced ? .opacity : .opacity.combined(with: .scale(scale: 0.8, anchor: anchor))))
     }
 }
 
