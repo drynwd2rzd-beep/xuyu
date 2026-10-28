@@ -27,6 +27,11 @@ final class Persona {
     var proactiveFreq: Int = 1
     /// 你没回 TA 的消息时，TA 多久后来追问：0 不追问 · 1 20 分钟～1 小时 · 2 1～3 小时 · 3 3～6 小时
     var followUp: Int = 1
+    /// 发语音用的 ElevenLabs 声音（空 = 不发语音）
+    var voiceID: String = ""
+    var voiceName: String = ""
+    /// 多常发语音：0 不发 · 1 偶尔 · 2 常常
+    var voiceFreq: Int = 0
     var sortIndex: Int = 0
     var createdAt: Date = Date()
 
@@ -99,7 +104,7 @@ final class Conversation {
 }
 
 enum MessageRole: String { case user, assistant }
-enum MessageKind: String { case text, images, file, note, sticker }
+enum MessageKind: String { case text, images, file, note, sticker, voice }
 enum MessageStatus: String { case done, streaming, error }
 
 @Model

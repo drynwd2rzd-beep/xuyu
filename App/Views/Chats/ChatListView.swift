@@ -179,6 +179,7 @@ struct ConversationRow: View {
         case .images: "[图片]"
         case .file: "[文件]"
         case .sticker: "[表情]"
+        case .voice: "[语音]"
         case .note: "[想法] " + last.content
         case .text: last.content.isEmpty ? (last.status == .error ? "发送失败" : "…") : last.content
         }

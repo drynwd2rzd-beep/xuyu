@@ -44,6 +44,12 @@ enum PromptBuilder {
             \(userName)让你到某个时间来找 TA、提醒 TA 做什么（比如「晚上找我」「半小时后提醒我」「八点催我睡觉」「每天 22:30 叫我睡觉」），答应的同时在回复末尾单独写一个【约定:时间|事情】，到点 App 会让你真的发消息过去。时间只能写成：21:30（今天，已经过了就是明天）、明天 08:00、+30分钟、+2小时，每天都要就在前面加「每天」，比如【约定:每天 22:30|催睡觉】。「晚上」「待会儿」这种没说具体时间的，你挑一个合适的钟点。TA 说不用了、取消了，就写【取消约定:事情】。这些标记 TA 看不到，不要在话里提到它们。
             """)
         }
+        if convo != nil, Voice.enabled(for: persona) {
+            let often = persona.voiceFreq >= 2 ? "可以常用，像爱发语音的人那样" : "偶尔用，大多数时候还是打字"
+            parts.append("""
+            你可以发语音：想用语音说的那一段，开头写【语音】，后面写你要念出来的话。语音要像真人随口说的：口语、自然，可以带「嗯」「哈哈」这类语气，一段一两句就好。\(often)。\(userName)让你发语音时就用语音。不要说「我给你发条语音」这种话，直接发。
+            """)
+        }
         if let memory = convo?.memory.trimmed, !memory.isEmpty {
             parts.append("你记得的关于\(userName)、以及你们之间的事（来自更早的聊天）：\n\(memory)")
         }
@@ -76,6 +82,7 @@ enum PromptBuilder {
         case .file: body = "[发了文件：\(m.sortedAttachments.map(\.fileName).joined(separator: "、"))]" + (m.content.isEmpty ? "" : " \(m.content)")
         case .note: body = "【写下的想法】\(m.content)"
         case .sticker: body = "[发了一个表情]"
+        case .voice: body = "[发了一条语音] \(m.content)"
         }
         if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
         if m.recalled { body = "（撤回了一条消息）" }

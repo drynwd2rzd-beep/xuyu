@@ -13,6 +13,7 @@ enum Route: Hashable {
     case appearance
     case backup
     case privacy
+    case voice
 }
 
 @Observable

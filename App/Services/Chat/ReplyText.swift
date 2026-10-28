@@ -33,6 +33,8 @@ enum ReplyText {
         var promises: [Promise] = []
         /// 【取消约定:事情】
         var cancels: [String] = []
+        /// 【语音】：这一段用语音说
+        var voice = false
     }
 
     // 中英文括号都认：【】 和 []
@@ -40,6 +42,7 @@ enum ReplyText {
     private static let stickerMarker = try! Regex("[【\\[]表情[:：]\\s*(.+?)[】\\]]")
     private static let promiseMarker = try! Regex("[【\\[]约定[:：]\\s*(.+?)\\s*[|｜]\\s*(.+?)[】\\]]")
     private static let cancelMarker = try! Regex("[【\\[]取消约定[:：]\\s*(.+?)[】\\]]")
+    private static let voiceMarker = try! Regex("[【\\[]语音[】\\]]")
     /// TA 偶尔会用文字假装发表情（比如「[表情]」「【捂脸表情】」）
     private static let fakeSticker = try! Regex("[【\\[][^】\\]]{0,8}表情[^】\\]]{0,8}[】\\]]")
 
@@ -68,8 +71,11 @@ enum ReplyText {
             promises.append(Promise(time: time, what: what))
             body.removeSubrange(match.range)
         }
+        let voice = body.firstMatch(of: voiceMarker) != nil
+        body = body.replacing(voiceMarker, with: "")
         body = body.replacing(fakeSticker, with: "")
-        return Markers(body: body.trimmed, quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels)
+        return Markers(body: body.trimmed, quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels,
+                       voice: voice)
     }
 
     /// TA 引用的是你哪句话：从最近的往前找，包含这几个字的那条（或这几个字包含那条的开头）

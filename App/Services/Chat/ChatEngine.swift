@@ -275,6 +275,23 @@ final class ChatEngine {
             buffer.hold = false
         }
 
+        /// 这一段 TA 想用语音说（开头写了【语音】）：先用 TA 的声音念好，念的时候还是「正在输入」；
+        /// 没设声音、念不出来（比如额度用完）就照常发文字
+        let voiceOn = Voice.enabled(for: persona)
+        func record(_ text: String) async -> Data? {
+            guard voiceOn else { return nil }
+            let marks = ReplyText.markers(in: text)
+            guard marks.voice, !marks.body.isEmpty else { return nil }
+            return try? await Voice.speak(marks.body, voiceID: persona.voiceID)
+        }
+
+        func attach(_ audio: Data, to m: Message) {
+            m.kindRaw = MessageKind.voice.rawValue
+            let a = Attachment(kind: "audio", fileName: "voice.mp3", data: audio, order: 0)
+            a.message = m
+            context.insert(a)
+        }
+
         /// 你在 TA 说话途中又发了消息：TA 把正在打的这句发完就停下，剩下没说的不再接着念，回头看了你的新消息再回
         var interrupted = false
 
@@ -286,6 +303,7 @@ final class ChatEngine {
                 // 带格式或特别长的一段：是认真的回答，整段放一条，不拆
                 if ReplyText.looksRich(head) || head.count > 140 { becomeRich(); return }
                 await pace(for: head)
+                let audio = await record(head)
                 // 藏着打字的这条，以真正冒出来的时刻为准
                 message.createdAt = max(.now, message.createdAt)
                 let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
@@ -296,7 +314,8 @@ final class ChatEngine {
                 } else {
                     message.content = cleaned
                     message.status = .done
-                    sent.append(cleaned)
+                    if let audio { attach(audio, to: message) }
+                    sent.append(audio == nil ? cleaned : "[语音]")
                 }
                 speaking.insert(convo.id)
                 lastCommit = .now
@@ -312,6 +331,8 @@ final class ChatEngine {
             }
         }
 
+        /// 最后一段如果是语音：念好的音频
+        var lastAudio: Data?
         do {
             guard let relay else { throw RelayError.notConfigured }
             var pendingText = ""
@@ -359,6 +380,7 @@ final class ChatEngine {
             if buffer.text.trimmed.isEmpty && sent.isEmpty && !Task.isCancelled { throw RelayError.server("没有收到回复。") }
             // 最后一条也按打字节奏出现
             if !rich && !buffer.text.trimmed.isEmpty { await pace(for: buffer.text) }
+            if !rich { lastAudio = await record(buffer.text) }
             if buffer.hold { message.createdAt = max(.now, message.createdAt) }
             buffer.hold = false
             message.status = .done
@@ -388,7 +410,8 @@ final class ChatEngine {
         if message.status == .done && message.content.isEmpty && message.steps.isEmpty {
             context.delete(message)
         } else if message.status == .done {
-            sent.append(message.content)
+            if let lastAudio { attach(lastAudio, to: message) }
+            sent.append(lastAudio == nil ? message.content : "[语音]")
         }
         if let last = sent.last {
             notify(convo: convo, persona: persona, text: last)

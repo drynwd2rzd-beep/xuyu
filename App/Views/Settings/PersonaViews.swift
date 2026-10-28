@@ -175,6 +175,7 @@ struct PersonaEditor: View {
     @State private var confirmDelete = false
     @State private var confirmClear = false
     @State private var chat: Conversation?
+    @State private var pickingVoice = false
     /// 约定存在本机设置里：读这个让列表跟着变
     @AppStorage(Prefs.appointments) private var appointmentsRaw = ""
 
@@ -269,6 +270,36 @@ struct PersonaEditor: View {
                 }
                 .card()
                 .animation(Motion.spring, value: persona.proactive)
+
+                if Voice.isConfigured && !persona.canWork {
+                    VStack(spacing: 0) {
+                        Button { pickingVoice = true } label: {
+                            SettingRow(title: "声音") {
+                                Text(persona.voiceName.isEmpty ? "未选择" : persona.voiceName)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Palette.inkSoft)
+                                Chevron()
+                            }
+                        }
+                        .buttonStyle(PressableRowStyle())
+                        if !persona.voiceID.isEmpty {
+                            Hairline()
+                            SettingRow(title: "发语音") {
+                                Segmented(items: [(0, "不发"), (1, "偶尔"), (2, "常常")], selection: $persona.voiceFreq)
+                                    .fixedSize()
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .card()
+                    .animation(Motion.spring, value: persona.voiceID)
+                    .sheet(isPresented: $pickingVoice) {
+                        VoicePicker(persona: persona)
+                            .presentationCornerRadius(Radius.sheet)
+                            .presentationBackground(Palette.paper)
+                    }
+                }
 
                 if !appointments.isEmpty {
                     SettingsGroup(title: "约定") {

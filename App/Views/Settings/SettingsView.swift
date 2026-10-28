@@ -49,6 +49,8 @@ struct SettingsView: View {
                     Hairline()
                     navRow("备份与恢复", route: .backup)
                     Hairline()
+                    navRow("语音", route: .voice)
+                    Hairline()
                     navRow("隐私与安全", route: .privacy)
                 }
             }

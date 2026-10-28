@@ -83,6 +83,16 @@ final class LogicTests: XCTestCase {
         XCTAssertNil(ReplyText.source(ofQuote: "我：完全没说过的话", id: UUID(), in: all))
     }
 
+    func testVoiceMarker() {
+        let m = ReplyText.markers(in: "【语音】嗯…今天辛苦啦，早点睡哈")
+        XCTAssertTrue(m.voice)
+        XCTAssertEqual(m.body, "嗯…今天辛苦啦，早点睡哈")
+        XCTAssertFalse(ReplyText.markers(in: "普通的一句话").voice)
+        XCTAssertEqual(VoiceBubble.bars(for: 1), 7)
+        XCTAssertEqual(VoiceBubble.bars(for: 60), 26)
+        XCTAssertEqual(Waveform.heights(seed: "a", count: 9), Waveform.heights(seed: "a", count: 9))
+    }
+
     // MARK: - 约定
 
     func testPromiseMarkers() {

@@ -237,6 +237,8 @@ struct RouteView: View {
             BackupView()
         case .privacy:
             PrivacySettingsView()
+        case .voice:
+            VoiceSettingsView()
         }
     }
 

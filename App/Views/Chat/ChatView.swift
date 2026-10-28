@@ -418,6 +418,7 @@ struct ChatView: View {
                 case .images: "[图片]" + (m.content.isEmpty ? "" : " " + m.content)
                 case .file: "[文件] " + m.sortedAttachments.map(\.fileName).joined(separator: "、")
                 case .sticker: "[表情]"
+                case .voice: "[语音] " + m.content
                 case .note, .text: m.content
                 }
                 withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }

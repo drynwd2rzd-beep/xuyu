@@ -32,6 +32,8 @@ struct MessageRow: View {
     @AppStorage(Prefs.showEngineLogo) private var showEngineLogo = true
     @State private var reasoningOpen = false
     @State private var detailHeight: CGFloat = 0
+    /// 语音消息：长按「转文字」后在下面显示说的话
+    @State private var transcript = false
 
     private var live: StreamBuffer? { engine.buffers[message.id] }
     private var text: String { live?.text ?? message.content }
@@ -209,6 +211,13 @@ struct MessageRow: View {
                     .frame(maxWidth: 120, maxHeight: 120)
                     .contextMenu { menu }
             }
+        case .voice:
+            if let audio = message.sortedAttachments.first {
+                bubble(isUser: isUser) {
+                    VoiceBubble(id: message.id.uuidString, data: audio.data, time: time,
+                                transcript: transcript ? message.content : nil)
+                }
+            }
         case .note:
             NoteCard(text: message.content, time: time).contextMenu { menu }
         case .file:
@@ -243,6 +252,11 @@ struct MessageRow: View {
 
     @ViewBuilder
     private var menu: some View {
+        if message.kind == .voice {
+            Button { withAnimation(Motion.spring) { transcript.toggle() } } label: {
+                Label(transcript ? "收起文字" : "转文字", systemImage: "text.bubble")
+            }
+        }
         Button { actions.quote(message) } label: { Label("引用", systemImage: "quote.bubble") }
         if !message.content.isEmpty {
             Button { actions.copy(message.content) } label: { Label("复制", systemImage: "doc.on.doc") }
