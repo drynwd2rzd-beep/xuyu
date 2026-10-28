@@ -86,8 +86,33 @@ enum WallpaperStore {
         guard radius > 0.5, let cg = image.cgImage else { return image }
         let key = Int(radius * 10)
         if let hit = blurCache[owner], hit.radius == key { return hit.image }
-        let width = CGFloat(cg.width), height = CGFloat(cg.height)
+        guard let result = render(cg, radius: radius, screen: UIScreen.main.bounds.size) else { return image }
+        blurCache[owner] = (key, result)
+        return result
+    }
+
+    /// App 一打开就在后台把模糊背景算好：第一次进聊天时不用当场算（当场算正好卡在进场动画里）
+    static func prewarm(_ owners: [UUID?]) {
         let screen = UIScreen.main.bounds.size
+        for owner in Set(owners) {
+            let radius = adjustments(for: owner).blur
+            let key = Int(radius * 10)
+            guard radius > 0.5, blurCache[owner]?.radius != key else { continue }
+            let file = url(owner)
+            Task.detached(priority: .userInitiated) {
+                guard let data = try? Data(contentsOf: file), let image = UIImage(data: data), let cg = image.cgImage,
+                      let result = render(cg, radius: radius, screen: screen) else { return }
+                await MainActor.run {
+                    if cache[owner] == nil { cache[owner] = image }
+                    blurCache[owner] = (key, result)
+                }
+            }
+        }
+    }
+
+    /// 模糊一张图。模糊后看不出细节，先缩小再算，快很多；半径换算成铺满屏幕时看到的大小
+    private static func render(_ cg: CGImage, radius: Double, screen: CGSize) -> UIImage? {
+        let width = CGFloat(cg.width), height = CGFloat(cg.height)
         // 铺满屏幕时，1 个像素占多少点
         let fill = max(screen.width / width, screen.height / height)
         let shrink = min(1, 1000 / max(width, height))
@@ -95,10 +120,7 @@ enum WallpaperStore {
         if shrink < 1 { input = input.transformed(by: CGAffineTransform(scaleX: shrink, y: shrink)) }
         let extent = input.extent
         let output = input.clampedToExtent().applyingGaussianBlur(sigma: radius / fill * shrink).cropped(to: extent)
-        guard let rendered = ciContext.createCGImage(output, from: extent) else { return image }
-        let result = UIImage(cgImage: rendered)
-        blurCache[owner] = (key, result)
-        return result
+        return ciContext.createCGImage(output, from: extent).map { UIImage(cgImage: $0) }
     }
 
     static func image(for owner: UUID? = nil) -> UIImage? {

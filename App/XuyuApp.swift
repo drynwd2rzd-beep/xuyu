@@ -51,6 +51,9 @@ struct XuyuApp: App {
                     engine.attach(relay: relay, banners: banners, router: router)
                     AppDelegate.router = router
                     DemoMode.apply(router: router, context: container.mainContext, engine: engine)
+                    // 聊天背景照片的模糊在后台先算好，第一次进聊天不卡
+                    let convos = (try? container.mainContext.fetch(FetchDescriptor<Conversation>())) ?? []
+                    WallpaperStore.prewarm([nil] + convos.map { Optional($0.id) })
                     if !DemoMode.isOn {
                         relay.connectIfConfigured()
                         Task { await engine.recover(context: container.mainContext) }
