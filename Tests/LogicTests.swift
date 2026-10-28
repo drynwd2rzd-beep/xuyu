@@ -93,6 +93,18 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(Waveform.heights(seed: "a", count: 9), Waveform.heights(seed: "a", count: 9))
     }
 
+    func testVoicePerPersona() {
+        // 每个角色自己选服务和模型；没选模型用这家的默认，每个模型都有说明
+        let karina = Persona(name: "Karina")
+        XCTAssertEqual(Voice.provider(of: karina), .elevenlabs)
+        karina.voiceProvider = "minimax"
+        XCTAssertEqual(Voice.provider(of: karina), .minimax)
+        XCTAssertEqual(VoiceProvider.minimax.defaultModel, "speech-2.8-hd")
+        for model in ["eleven_v4", "eleven_multilingual_v2", "speech-2.8-hd", "speech-02-turbo"] {
+            XCTAssertFalse(Voice.modelNote(model).isEmpty, model)
+        }
+    }
+
     func testVoiceLanguageOnlyChangesVoice() {
         // 角色的语言只管语音：中文界面下，打字不会被要求说韩语
         let karina = Persona(name: "Karina")

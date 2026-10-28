@@ -29,6 +29,7 @@ enum Backup {
         var proactive: Bool, proactiveFreq: Int, sortIndex: Int, createdAt: Date
         var followUp: Int?
         var voiceID: String?, voiceName: String?, voiceFreq: Int?, language: String?, autoTranslate: Bool?
+        var voiceProvider: String?, voiceModel: String?
     }
 
     struct ConversationDTO: Codable {
@@ -68,7 +69,7 @@ enum Backup {
     private static let prefKeys = [Prefs.nickname, Prefs.appearance, Prefs.wallpaper, Prefs.defaultClaudeModel, Prefs.defaultCodexModel,
                                    Prefs.defaultClaudeEffort, Prefs.defaultCodexEffort, Prefs.inAppBanner, Prefs.todoReminders,
                                    Prefs.diaryReminder, Prefs.quietStart, Prefs.quietEnd, Prefs.homeWidgets, Prefs.showEngineLogo,
-                                   Prefs.diaryWriter, Prefs.showMyDiary, Prefs.stickerPackOrder, Prefs.appointments, Prefs.voiceModel]
+                                   Prefs.diaryWriter, Prefs.showMyDiary, Prefs.stickerPackOrder, Prefs.appointments, Prefs.minimaxRegion]
 
     // MARK: 导出
 
@@ -89,7 +90,8 @@ enum Backup {
                 PersonaDTO(id: $0.id, name: $0.name, bio: $0.bio, systemPrompt: $0.systemPrompt, tint: $0.tint, avatarData: $0.avatarData,
                            engineRaw: $0.engineRaw, model: $0.model, effort: $0.effort, canWork: $0.canWork, proactive: $0.proactive,
                            proactiveFreq: $0.proactiveFreq, sortIndex: $0.sortIndex, createdAt: $0.createdAt, followUp: $0.followUp,
-                           voiceID: $0.voiceID, voiceName: $0.voiceName, voiceFreq: $0.voiceFreq, language: $0.language, autoTranslate: $0.autoTranslate)
+                           voiceID: $0.voiceID, voiceName: $0.voiceName, voiceFreq: $0.voiceFreq, language: $0.language, autoTranslate: $0.autoTranslate,
+                           voiceProvider: $0.voiceProvider, voiceModel: $0.voiceModel)
             },
             conversations: convos.map { c in
                 ConversationDTO(id: c.id, title: c.title, isGroup: c.isGroup, memberIDs: c.memberIDs, pinned: c.pinned, draft: c.draft,
@@ -149,6 +151,7 @@ enum Backup {
             p.createdAt = d.createdAt
             p.followUp = d.followUp ?? 1
             p.voiceID = d.voiceID ?? ""; p.voiceName = d.voiceName ?? ""; p.voiceFreq = d.voiceFreq ?? 0; p.language = d.language ?? "zh"; p.autoTranslate = d.autoTranslate ?? false
+            p.voiceProvider = d.voiceProvider ?? "elevenlabs"; p.voiceModel = d.voiceModel ?? ""
             context.insert(p)
         }
         for d in archive.conversations {

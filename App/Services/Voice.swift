@@ -2,38 +2,52 @@ import SwiftUI
 import AVFoundation
 import Observation
 
-/// ElevenLabs 语音：TA 发语音消息时，把那句话用 TA 的声音念出来。
-/// 密钥只存在这台手机的钥匙串里，App 直接和 ElevenLabs 通信（不经过电脑）
+/// 语音服务：ElevenLabs 和 MiniMax 两家。每个角色自己选用哪家、哪个模型、哪个声音。
+/// 密钥只存在这台手机的钥匙串里，App 直接和语音服务通信（不经过电脑）
+enum VoiceProvider: String, CaseIterable, Identifiable {
+    case elevenlabs, minimax
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .elevenlabs: "ElevenLabs"
+        case .minimax: "MiniMax"
+        }
+    }
+
+    /// 没选模型时用的
+    var defaultModel: String {
+        switch self {
+        case .elevenlabs: "eleven_v4"
+        case .minimax: "speech-2.8-hd"
+        }
+    }
+
+    /// 选的模型用不了时退回这个
+    var fallbackModel: String {
+        switch self {
+        case .elevenlabs: "eleven_multilingual_v2"
+        case .minimax: "speech-02-hd"
+        }
+    }
+
+    fileprivate var keyAccount: String { rawValue }
+}
+
 enum Voice {
-    private static let keyAccount = "elevenlabs"
-    private static let base = URL(string: "https://api.elevenlabs.io")!
-    /// 没选模型时用情感最丰富的 v4
-    static let defaultModel = "eleven_v4"
-    /// 选的模型用不了时退回这个：最稳定、支持中文和韩语
-    private static let fallbackModel = "eleven_multilingual_v2"
-
-    /// 设置里选的语音模型（空 = 默认）
-    static var model: String {
-        let chosen = UserDefaults.standard.string(forKey: Prefs.voiceModel) ?? ""
-        return chosen.isEmpty ? defaultModel : chosen
-    }
-
-    static var apiKey: String { Keychain.get(keyAccount) ?? "" }
-    static var isConfigured: Bool { !apiKey.isEmpty }
-
-    static func setKey(_ key: String) { Keychain.set(key.trimmed, for: keyAccount) }
-
-    /// 这个角色现在能不能发语音
-    static func enabled(for persona: Persona) -> Bool {
-        isConfigured && !persona.voiceID.isEmpty && persona.voiceFreq > 0 && !persona.canWork
-    }
-
     struct Choice: Identifiable, Hashable {
         let id: String
         let name: String
         /// 性别、口音、风格之类的小标签
         let detail: String
+        /// ElevenLabs 自带试听；MiniMax 没有，试听时现念一句
         let preview: URL?
+    }
+
+    struct ModelChoice: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let detail: String
     }
 
     enum Failure: LocalizedError {
@@ -41,106 +55,248 @@ enum Voice {
 
         var errorDescription: String? {
             switch self {
-            case .noKey: "还没有填 ElevenLabs 密钥"
+            case .noKey: "还没有填语音服务的密钥"
             case .badKey: "密钥不对，或者已经失效"
-            case .quota: "ElevenLabs 的额度用完了"
+            case .quota: "语音服务的额度用完了"
             case .other(let text): text
             }
         }
     }
 
-    /// 你的声音库：自带的、克隆的、从社区收藏的
-    static func voices() async throws -> [Choice] {
-        var url = base.appending(path: "v2/voices")
-        url.append(queryItems: [URLQueryItem(name: "page_size", value: "100")])
-        let (data, response) = try await URLSession.shared.data(for: request(url))
-        try check(response, data)
-        let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let list = root?["voices"] as? [[String: Any]] ?? []
-        return list.compactMap { v in
-            guard let id = v["voice_id"] as? String else { return nil }
-            let labels = (v["labels"] as? [String: Any] ?? [:]).values.compactMap { $0 as? String }
-            return Choice(id: id, name: v["name"] as? String ?? id,
-                          detail: labels.prefix(3).joined(separator: " · "),
-                          preview: (v["preview_url"] as? String).flatMap(URL.init(string:)))
-        }
+    // MARK: - 密钥
+
+    static func key(_ provider: VoiceProvider) -> String { Keychain.get(provider.keyAccount) ?? "" }
+    static func setKey(_ key: String, for provider: VoiceProvider) { Keychain.set(key.trimmed, for: provider.keyAccount) }
+    static func isConfigured(_ provider: VoiceProvider) -> Bool { !key(provider).isEmpty }
+    /// 至少填了一家
+    static var isConfigured: Bool { VoiceProvider.allCases.contains { isConfigured($0) } }
+
+    static func provider(of persona: Persona) -> VoiceProvider { VoiceProvider(rawValue: persona.voiceProvider) ?? .elevenlabs }
+
+    /// 这个角色现在能不能发语音
+    static func enabled(for persona: Persona) -> Bool {
+        isConfigured(provider(of: persona)) && !persona.voiceID.isEmpty && persona.voiceFreq > 0 && !persona.canWork
     }
 
-    /// 你的账号能用的语音模型（只要能把文字念出来的）
-    struct ModelChoice: Identifiable, Hashable {
-        let id: String
-        let name: String
-        let detail: String
-    }
+    // MARK: - 模型
 
-    static func models() async throws -> [ModelChoice] {
-        let (data, response) = try await URLSession.shared.data(for: request(base.appending(path: "v1/models")))
-        try check(response, data)
-        let list = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
-        return list.compactMap { m in
-            guard let id = m["model_id"] as? String, m["can_do_text_to_speech"] as? Bool == true else { return nil }
-            return ModelChoice(id: id, name: m["name"] as? String ?? id, detail: modelNote(id))
+    /// 能用的模型，每个附一句说明。ElevenLabs 从账号里读；MiniMax 是固定的几种
+    static func models(_ provider: VoiceProvider) async throws -> [ModelChoice] {
+        switch provider {
+        case .elevenlabs:
+            let (data, response) = try await URLSession.shared.data(for: ElevenLabs.request("v1/models"))
+            try ElevenLabs.check(response, data)
+            let list = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
+            return list.compactMap { m in
+                guard let id = m["model_id"] as? String, m["can_do_text_to_speech"] as? Bool == true else { return nil }
+                return ModelChoice(id: id, name: m["name"] as? String ?? id, detail: modelNote(id))
+            }
+        case .minimax:
+            return MiniMax.models.map { ModelChoice(id: $0, name: $0, detail: modelNote($0)) }
         }
     }
 
     /// 每个模型一句话说明，方便挑
     static func modelNote(_ id: String) -> String {
         switch id {
+        // ElevenLabs
         case "eleven_v4": "情感最丰富，最像真人"
         case "eleven_v4_turbo": "很有感情，生成更快"
         case "eleven_v3": "表现力强，语气起伏大"
         case "eleven_v3_conversational": "适合对话，生成快"
-        case "eleven_multilingual_v2": "最稳定，支持中文和韩语"
+        case "eleven_multilingual_v2": "最稳定，长句也不走样"
         case "eleven_flash_v2_5": "最快、最省额度"
         case "eleven_turbo_v2_5": "快，适合短句"
+        // MiniMax
+        case "speech-2.8-hd": "最新，最自然，能念出笑声、叹气这类语气"
+        case "speech-2.8-turbo": "最新，更快更省，也能念语气"
+        case "speech-2.6-hd": "细腻，支持耳语、平稳两种说法"
+        case "speech-2.6-turbo": "更快更省，支持耳语"
+        case "speech-02-hd": "音质好、很稳定"
+        case "speech-02-turbo": "快、省额度"
+        case "speech-01-hd": "老版本，音质好"
+        case "speech-01-turbo": "老版本，快"
         default: ""
         }
     }
 
-    /// 把一句话念成语音（mp3）：用设置里选的模型，用不了就退回最稳定的多语言模型
-    static func speak(_ text: String, voiceID: String) async throws -> Data {
-        guard isConfigured else { throw Failure.noKey }
-        var url = base.appending(path: "v1/text-to-speech/\(voiceID)")
-        url.append(queryItems: [URLQueryItem(name: "output_format", value: "mp3_44100_128")])
+    // MARK: - 声音
+
+    static func voices(_ provider: VoiceProvider) async throws -> [Choice] {
+        switch provider {
+        case .elevenlabs: try await ElevenLabs.voices()
+        case .minimax: try await MiniMax.voices()
+        }
+    }
+
+    // MARK: - 念
+
+    /// 用这个角色的声音和模型把一句话念成语音（mp3）；选的模型用不了就退回最稳定的
+    static func speak(_ text: String, for persona: Persona) async throws -> Data {
+        let provider = provider(of: persona)
+        guard isConfigured(provider) else { throw Failure.noKey }
+        let chosen = persona.voiceModel.isEmpty ? provider.defaultModel : persona.voiceModel
+        let tries = chosen == provider.fallbackModel ? [chosen] : [chosen, provider.fallbackModel]
         var lastError: Error = Failure.other("没有生成语音")
-        let tries = model == fallbackModel ? [model] : [model, fallbackModel]
         for model in tries {
-            var req = request(url)
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try JSONSerialization.data(withJSONObject: [
-                "text": text,
-                "model_id": model,
-                // 稍微放开稳定度、带一点风格：更像随口说话，而不是播音
-                "voice_settings": ["stability": 0.45, "similarity_boost": 0.8, "style": 0.3, "use_speaker_boost": true],
-            ])
-            let (data, response) = try await URLSession.shared.data(for: req)
             do {
-                try check(response, data)
-                return data
-            } catch Failure.other(let text) {
+                switch provider {
+                case .elevenlabs:
+                    return try await ElevenLabs.speak(text, voiceID: persona.voiceID, model: model)
+                case .minimax:
+                    return try await MiniMax.speak(text, voiceID: persona.voiceID, model: model, korean: persona.language == "ko")
+                }
+            } catch Failure.other(let message) {
                 // 这个模型用不了：换下一个
-                lastError = Failure.other(text)
-                continue
+                lastError = Failure.other(message)
             }
         }
         throw lastError
     }
+}
 
-    private static func request(_ url: URL) -> URLRequest {
-        var req = URLRequest(url: url)
+// MARK: - ElevenLabs
+
+private enum ElevenLabs {
+    static let base = URL(string: "https://api.elevenlabs.io")!
+
+    static func request(_ path: String) -> URLRequest {
+        var req = URLRequest(url: base.appending(path: path))
         req.timeoutInterval = 40
-        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        req.setValue(Voice.key(.elevenlabs), forHTTPHeaderField: "xi-api-key")
         return req
     }
 
-    private static func check(_ response: URLResponse, _ data: Data) throws {
-        guard let http = response as? HTTPURLResponse else { throw Failure.other("没有收到回应") }
+    static func voices() async throws -> [Voice.Choice] {
+        var req = request("v2/voices")
+        req.url?.append(queryItems: [URLQueryItem(name: "page_size", value: "100")])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try check(response, data)
+        let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let list = root?["voices"] as? [[String: Any]] ?? []
+        return list.compactMap { v in
+            guard let id = v["voice_id"] as? String else { return nil }
+            let labels = (v["labels"] as? [String: Any] ?? [:]).values.compactMap { $0 as? String }
+            return Voice.Choice(id: id, name: v["name"] as? String ?? id,
+                                detail: labels.prefix(3).joined(separator: " · "),
+                                preview: (v["preview_url"] as? String).flatMap(URL.init(string:)))
+        }
+    }
+
+    static func speak(_ text: String, voiceID: String, model: String) async throws -> Data {
+        var req = request("v1/text-to-speech/\(voiceID)")
+        req.url?.append(queryItems: [URLQueryItem(name: "output_format", value: "mp3_44100_128")])
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "text": text,
+            "model_id": model,
+            // 稍微放开稳定度、带一点风格：更像随口说话，而不是播音
+            "voice_settings": ["stability": 0.45, "similarity_boost": 0.8, "style": 0.3, "use_speaker_boost": true],
+        ])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try check(response, data)
+        return data
+    }
+
+    static func check(_ response: URLResponse, _ data: Data) throws {
+        guard let http = response as? HTTPURLResponse else { throw Voice.Failure.other("没有收到回应") }
         guard !(200..<300).contains(http.statusCode) else { return }
         let message = String(data: data, encoding: .utf8) ?? ""
-        if message.contains("quota") { throw Failure.quota }
-        if http.statusCode == 401 { throw Failure.badKey }
-        throw Failure.other("ElevenLabs 出错了（\(http.statusCode)）")
+        if message.contains("quota") { throw Voice.Failure.quota }
+        if http.statusCode == 401 { throw Voice.Failure.badKey }
+        throw Voice.Failure.other("ElevenLabs 出错了（\(http.statusCode)）")
+    }
+}
+
+// MARK: - MiniMax
+
+private enum MiniMax {
+    static let models = ["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo",
+                         "speech-02-hd", "speech-02-turbo", "speech-01-hd", "speech-01-turbo"]
+
+    /// 国内版和国际版是两个平台，密钥不通用
+    static var base: URL {
+        let global = UserDefaults.standard.string(forKey: Prefs.minimaxRegion) == "global"
+        return URL(string: global ? "https://api.minimax.io" : "https://api.minimaxi.com")!
+    }
+
+    static func request(_ path: String, body: [String: Any]) throws -> URLRequest {
+        var req = URLRequest(url: base.appending(path: path))
+        req.timeoutInterval = 40
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(Voice.key(.minimax))", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return req
+    }
+
+    /// 系统自带的、你克隆的、你用文字生成的声音
+    static func voices() async throws -> [Voice.Choice] {
+        let (data, response) = try await URLSession.shared.data(for: request("v1/get_voice", body: ["voice_type": "all"]))
+        let root = try check(response, data)
+        var list: [Voice.Choice] = []
+        for (group, label) in [("voice_cloning", "克隆"), ("voice_generation", "生成"), ("system_voice", "")] {
+            for v in root[group] as? [[String: Any]] ?? [] {
+                guard let id = v["voice_id"] as? String else { continue }
+                let notes = (v["description"] as? [String] ?? []).prefix(2).joined(separator: " · ")
+                let detail = [label, notes].filter { !$0.isEmpty }.joined(separator: " · ")
+                list.append(Voice.Choice(id: id, name: v["voice_name"] as? String ?? id, detail: detail, preview: nil))
+            }
+        }
+        return list
+    }
+
+    static func speak(_ text: String, voiceID: String, model: String, korean: Bool) async throws -> Data {
+        let req = try request("v1/t2a_v2", body: [
+            "model": model,
+            "text": text,
+            "stream": false,
+            "voice_setting": ["voice_id": voiceID, "speed": 1, "vol": 1, "pitch": 0],
+            "audio_setting": ["sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1],
+            "language_boost": korean ? "Korean" : "Chinese",
+        ])
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let root = try check(response, data)
+        guard let hex = (root["data"] as? [String: Any])?["audio"] as? String, let audio = Data(hex: hex), !audio.isEmpty else {
+            throw Voice.Failure.other("MiniMax 没有返回语音")
+        }
+        return audio
+    }
+
+    /// MiniMax 出错时 HTTP 也是 200，要看 base_resp.status_code
+    static func check(_ response: URLResponse, _ data: Data) throws -> [String: Any] {
+        guard let http = response as? HTTPURLResponse else { throw Voice.Failure.other("没有收到回应") }
+        if http.statusCode == 401 { throw Voice.Failure.badKey }
+        let root = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        let base = root["base_resp"] as? [String: Any] ?? [:]
+        let code = base["status_code"] as? Int ?? (http.statusCode == 200 ? 0 : http.statusCode)
+        switch code {
+        case 0: return root
+        case 1004, 2049: throw Voice.Failure.badKey
+        case 1008: throw Voice.Failure.quota
+        default: throw Voice.Failure.other("MiniMax 出错了（\(code)）")
+        }
+    }
+}
+
+private extension Data {
+    /// MiniMax 把音频编码成十六进制字符串返回
+    init?(hex: String) {
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(hex.utf8.count / 2)
+        var high: UInt8?
+        for c in hex.utf8 {
+            let v: UInt8
+            switch c {
+            case 48...57: v = c - 48
+            case 97...102: v = c - 87
+            case 65...70: v = c - 55
+            default: return nil
+            }
+            if let h = high { bytes.append(h << 4 | v); high = nil } else { high = v }
+        }
+        self.init(bytes)
     }
 }
 

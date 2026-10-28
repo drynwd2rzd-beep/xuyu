@@ -31,8 +31,8 @@ enum Prefs {
     static let appointments = "appointments"
     /// 决定不追问的那几条消息（聊天自然结束了）
     static let followUpSettled = "followUpSettled"
-    /// ElevenLabs 语音模型（空 = 默认 eleven_v4）
-    static let voiceModel = "voiceModel"
+    /// MiniMax 用国内版（minimaxi.com）还是国际版（minimax.io）：两边的密钥不通用
+    static let minimaxRegion = "minimaxRegion"
 
     // MARK: 日记与今日一句
     /// 谁来写 AI 日记（角色 ID）

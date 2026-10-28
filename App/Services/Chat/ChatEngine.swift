@@ -71,8 +71,11 @@ final class ChatEngine {
                 message.quote = quote
                 message.quoteID = quoteID
             }
-            message.conversation = convo
-            context.insert(message)
+            // 你发出的消息：上面的消息平滑地往上让开
+            withAnimation(Motion.reveal) {
+                message.conversation = convo
+                context.insert(message)
+            }
             for (order, item) in part.items.enumerated() {
                 let a = Attachment(kind: item.kind, fileName: item.name, data: item.data, order: order)
                 a.message = message
@@ -235,10 +238,14 @@ final class ChatEngine {
         message.status = .streaming
         message.modelLabel = label
         message.relayID = relayID
-        message.conversation = convo
-        context.insert(message)
         let buffer = StreamBuffer()
+        buffer.hold = true
         buffers[message.id] = buffer
+        // 「正在输入」的气泡出现时，上面的消息平滑地往上让开，不会突然冒出来
+        withAnimation(Motion.reveal) {
+            message.conversation = convo
+            context.insert(message)
+        }
         return (message, buffer)
     }
 
@@ -284,7 +291,7 @@ final class ChatEngine {
             guard voiceOn else { return nil }
             let marks = ReplyText.markers(in: text)
             guard marks.voice, !marks.body.isEmpty else { return nil }
-            return try? await Voice.speak(marks.body, voiceID: persona.voiceID)
+            return try? await Voice.speak(marks.body, for: persona)
         }
 
         func attach(_ audio: Data, to m: Message) {

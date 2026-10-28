@@ -1,123 +1,124 @@
 import SwiftUI
 
-/// 设置 › 语音：填 ElevenLabs 密钥（只存在这台手机的钥匙串里），选语音模型
+/// 设置 › 语音：填 ElevenLabs、MiniMax 的密钥（只存在这台手机的钥匙串里）。
+/// 用哪家、哪个模型、哪个声音，在每个角色页里单独选
 struct VoiceSettingsView: View {
-    @State private var key = ""
-    @State private var configured = Voice.isConfigured
-    @State private var status: String?
-    @State private var models: [Voice.ModelChoice] = []
-    @AppStorage(Prefs.voiceModel) private var model = ""
-
     var body: some View {
         SettingsPage(title: "语音") {
-            SettingsGroup(title: "ElevenLabs") {
-                if configured {
-                    SettingRow(title: "密钥", subtitle: status) {
-                        Button("移除") {
-                            Voice.setKey("")
-                            withAnimation(Motion.spring) { configured = false }
-                            status = nil
-                        }
-                        .font(.system(size: 14))
-                        .foregroundStyle(Palette.danger)
-                    }
-                    Hairline()
-                    SettingRow(title: "模型", subtitle: modelNote) {
-                        Menu {
-                            ForEach(models) { m in
-                                Button {
-                                    model = m.id == Voice.defaultModel ? "" : m.id
-                                } label: {
-                                    let on = (model.isEmpty ? Voice.defaultModel : model) == m.id
-                                    if on { Label(m.name, systemImage: "checkmark") } else { Text(m.name) }
-                                }
-                            }
-                        } label: {
-                            MenuValue(text: currentModelName)
-                        }
-                        .disabled(models.isEmpty)
-                        .sensoryFeedback(.selection, trigger: model)
-                    }
-                } else {
-                    HStack(spacing: Space.tight) {
-                        SecureField("粘贴 API 密钥", text: $key)
-                            .font(.system(size: 15))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.done)
-                            .onSubmit(save)
-                        Button("保存", action: save)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(key.trimmed.isEmpty ? Palette.faint : Palette.ink)
-                            .disabled(key.trimmed.isEmpty)
-                    }
-                    .padding(.horizontal, Space.card)
-                    .frame(minHeight: Space.row)
+            VoiceKeyGroup(provider: .elevenlabs)
+            VoiceKeyGroup(provider: .minimax)
+        }
+    }
+}
+
+/// 一家语音服务的密钥：没填时粘贴，填了显示连接状态
+private struct VoiceKeyGroup: View {
+    let provider: VoiceProvider
+    @State private var key = ""
+    @State private var configured = false
+    @State private var status: String?
+    @AppStorage(Prefs.minimaxRegion) private var region = "cn"
+
+    var body: some View {
+        SettingsGroup(title: provider.label) {
+            if provider == .minimax {
+                SettingRow(title: "平台") {
+                    Segmented(items: [("cn", "国内版"), ("global", "国际版")], selection: $region)
+                        .fixedSize()
                 }
+                Hairline()
+            }
+            if configured {
+                SettingRow(title: "密钥", subtitle: status) {
+                    Button("移除") {
+                        Voice.setKey("", for: provider)
+                        withAnimation(Motion.spring) { configured = false }
+                        status = nil
+                    }
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.danger)
+                }
+            } else {
+                HStack(spacing: Space.tight) {
+                    SecureField("粘贴 API 密钥", text: $key)
+                        .font(.system(size: 15))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit(save)
+                    Button("保存", action: save)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(key.trimmed.isEmpty ? Palette.faint : Palette.ink)
+                        .disabled(key.trimmed.isEmpty)
+                }
+                .padding(.horizontal, Space.card)
+                .frame(minHeight: Space.row)
             }
         }
-        .task(id: configured) { await check() }
+        .onAppear { configured = Voice.isConfigured(provider) }
+        .task(id: "\(configured)-\(region)") { await check() }
     }
 
     private func save() {
         guard !key.trimmed.isEmpty else { return }
-        Voice.setKey(key)
+        Voice.setKey(key, for: provider)
         key = ""
         withAnimation(Motion.spring) { configured = true }
-    }
-
-    /// 模型下面那句小字说明（没有说明的模型就不显示）
-    private var modelNote: String? {
-        let note = Voice.modelNote(model.isEmpty ? Voice.defaultModel : model)
-        return note.isEmpty ? nil : note
-    }
-
-    /// 现在用的模型叫什么（列表还没读到时先显示 id）
-    private var currentModelName: String {
-        let id = model.isEmpty ? Voice.defaultModel : model
-        return models.first { $0.id == id }?.name ?? id
     }
 
     private func check() async {
         guard configured else { return }
         status = "正在连接…"
         do {
-            let voices = try await Voice.voices()
+            let voices = try await Voice.voices(provider)
             status = "已连接 · \(voices.count) 个声音"
-            models = (try? await Voice.models()) ?? []
         } catch {
             status = error.localizedDescription
         }
     }
 }
 
-/// 给角色挑一个声音：列出你 ElevenLabs 声音库里的声音，右边可以先试听
+/// 给角色挑一个声音：列出这家服务里能用的声音，右边可以先试听
 struct VoicePicker: View {
     @Bindable var persona: Persona
     @Environment(\.dismiss) private var dismiss
     @State private var voices: [Voice.Choice] = []
     @State private var failure: String?
+    @State private var query = ""
     @State private var loadingPreview: String?
     @State private var previews: [String: Data] = [:]
 
     private var player: VoicePlayer { VoicePlayer.shared }
+    private var provider: VoiceProvider { Voice.provider(of: persona) }
+
+    /// MiniMax 自带的声音很多：可以搜名字和描述
+    private var shown: [Voice.Choice] {
+        let q = query.trimmed
+        guard !q.isEmpty else { return voices }
+        return voices.filter { $0.name.localizedCaseInsensitiveContains(q) || $0.detail.localizedCaseInsensitiveContains(q) }
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
-                    if let failure {
-                        Text(failure).font(.system(size: 14)).foregroundStyle(Palette.inkSoft).padding(Space.card)
-                    } else if voices.isEmpty {
-                        ProgressView().padding(Space.section)
+                VStack(spacing: Space.section) {
+                    if voices.count > 12 {
+                        SearchField(text: $query, placeholder: "搜索")
                     }
-                    ForEach(voices) { v in
-                        row(v)
-                        if v.id != voices.last?.id { Hairline() }
+                    VStack(spacing: 0) {
+                        if let failure {
+                            Text(failure).font(.system(size: 14)).foregroundStyle(Palette.inkSoft).padding(Space.card)
+                        } else if voices.isEmpty {
+                            ProgressView().padding(Space.section)
+                        }
+                        ForEach(shown) { v in
+                            row(v)
+                            if v.id != shown.last?.id { Hairline() }
+                        }
                     }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                    .card()
                 }
-                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                .card()
                 .padding(Space.page)
             }
             .background(Palette.paper.ignoresSafeArea())
@@ -128,7 +129,7 @@ struct VoicePicker: View {
             }
         }
         .task {
-            do { voices = try await Voice.voices() } catch { failure = error.localizedDescription }
+            do { voices = try await Voice.voices(provider) } catch { failure = error.localizedDescription }
         }
         .onDisappear { player.stop() }
     }
@@ -142,7 +143,7 @@ struct VoicePicker: View {
         } label: {
             HStack(spacing: Space.item) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(v.name).font(.system(size: 15)).foregroundStyle(Palette.ink)
+                    Text(v.name).font(.system(size: 15)).foregroundStyle(Palette.ink).lineLimit(1)
                     if !v.detail.isEmpty {
                         Text(v.detail).font(.system(size: 12)).foregroundStyle(Palette.inkSoft).lineLimit(1)
                     }
@@ -151,7 +152,7 @@ struct VoicePicker: View {
                 if persona.voiceID == v.id {
                     Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
                 }
-                if v.preview != nil { previewButton(v) }
+                previewButton(v)
             }
             .padding(.horizontal, Space.card)
             .frame(minHeight: Space.row + 4)
@@ -160,14 +161,24 @@ struct VoicePicker: View {
         .buttonStyle(PressableRowStyle())
     }
 
-    /// 试听：第一次点先下载样音，之后直接放
+    /// 试听：ElevenLabs 下载自带的样音；MiniMax 用这个声音现念一句（会用一点点额度）
     private func previewButton(_ v: Voice.Choice) -> some View {
         Button {
             if let data = previews[v.id] { return player.toggle(v.id, data: data) }
-            guard let url = v.preview else { return }
             loadingPreview = v.id
             Task {
-                if let (data, _) = try? await URLSession.shared.data(from: url) {
+                let data: Data?
+                if let url = v.preview {
+                    data = try? await URLSession.shared.data(from: url).0
+                } else {
+                    let sample = Persona(name: "")
+                    sample.voiceProvider = persona.voiceProvider
+                    sample.voiceModel = persona.voiceModel
+                    sample.voiceID = v.id
+                    sample.language = persona.language
+                    data = try? await Voice.speak(persona.language == "ko" ? "안녕, 오늘 하루 어땠어?" : "你好呀，今天过得怎么样？", for: sample)
+                }
+                if let data {
                     previews[v.id] = data
                     player.toggle(v.id, data: data)
                 }
@@ -188,5 +199,56 @@ struct VoicePicker: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("试听")
+    }
+}
+
+/// 给角色挑语音模型：每个模型都写明侧重点（更像真人 / 更快 / 更省…）
+struct VoiceModelPicker: View {
+    @Bindable var persona: Persona
+    @Environment(\.dismiss) private var dismiss
+    @State private var models: [Voice.ModelChoice] = []
+    @State private var failure: String?
+
+    private var provider: VoiceProvider { Voice.provider(of: persona) }
+    private var current: String { persona.voiceModel.isEmpty ? provider.defaultModel : persona.voiceModel }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    if let failure {
+                        Text(failure).font(.system(size: 14)).foregroundStyle(Palette.inkSoft).padding(Space.card)
+                    } else if models.isEmpty {
+                        ProgressView().padding(Space.section)
+                    }
+                    ForEach(models) { m in
+                        Button {
+                            persona.voiceModel = m.id == provider.defaultModel ? "" : m.id
+                            dismiss()
+                        } label: {
+                            SettingRow(title: m.name, subtitle: m.detail.isEmpty ? nil : m.detail) {
+                                if current == m.id {
+                                    Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
+                                }
+                            }
+                        }
+                        .buttonStyle(PressableRowStyle())
+                        if m.id != models.last?.id { Hairline() }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+                .card()
+                .padding(Space.page)
+            }
+            .background(Palette.paper.ignoresSafeArea())
+            .navigationTitle("选择模型")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+            }
+        }
+        .task {
+            do { models = try await Voice.models(provider) } catch { failure = error.localizedDescription }
+        }
     }
 }

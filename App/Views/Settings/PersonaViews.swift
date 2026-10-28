@@ -176,6 +176,7 @@ struct PersonaEditor: View {
     @State private var confirmClear = false
     @State private var chat: Conversation?
     @State private var pickingVoice = false
+    @State private var pickingModel = false
     /// 约定存在本机设置里：读这个让列表跟着变
     @AppStorage(Prefs.appointments) private var appointmentsRaw = ""
 
@@ -209,6 +210,19 @@ struct PersonaEditor: View {
                 // 语音：TA 打字的语言跟着 App 界面走，这里只管 TA 发语音时说哪种话
                 if Voice.isConfigured && !persona.canWork {
                     SettingsGroup(title: "语音") {
+                        // 用哪家：每家的声音和模型不一样，换了就重新选声音
+                        SettingRow(title: "服务") {
+                            Segmented(items: VoiceProvider.allCases.map { ($0.rawValue, $0.label) },
+                                      selection: Binding(get: { persona.voiceProvider }, set: { new in
+                                          guard new != persona.voiceProvider else { return }
+                                          persona.voiceProvider = new
+                                          persona.voiceID = ""
+                                          persona.voiceName = ""
+                                          persona.voiceModel = ""
+                                      }))
+                                .fixedSize()
+                        }
+                        Hairline()
                         Button { pickingVoice = true } label: {
                             SettingRow(title: "声音") {
                                 Text(persona.voiceName.isEmpty ? "未选择" : persona.voiceName)
@@ -219,7 +233,20 @@ struct PersonaEditor: View {
                             }
                         }
                         .buttonStyle(PressableRowStyle())
+                        .disabled(!Voice.isConfigured(Voice.provider(of: persona)))
                         if !persona.voiceID.isEmpty {
+                            Hairline()
+                            Button { pickingModel = true } label: {
+                                SettingRow(title: "模型", subtitle: voiceModelNote) {
+                                    Text(voiceModelName)
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Palette.inkSoft)
+                                        .lineLimit(1)
+                                    Chevron()
+                                }
+                            }
+                            .buttonStyle(PressableRowStyle())
+                            .transition(.opacity)
                             Hairline()
                             SettingRow(title: "发语音") {
                                 Segmented(items: [(0, "不发"), (1, "偶尔"), (2, "常常")], selection: $persona.voiceFreq)
@@ -240,6 +267,7 @@ struct PersonaEditor: View {
                         }
                     }
                     .animation(Motion.spring, value: persona.voiceID)
+                    .animation(Motion.spring, value: persona.voiceProvider)
                 }
 
                 // 怎么互动
@@ -372,6 +400,12 @@ struct PersonaEditor: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
+        .sheet(isPresented: $pickingModel) {
+            VoiceModelPicker(persona: persona)
+                .presentationDetents([.medium, .large])
+                .presentationCornerRadius(Radius.sheet)
+                .presentationBackground(Palette.paper)
+        }
         .onAppear { chat = context.chat(for: persona) }
         .onDisappear {
             if persona.name.trimmed.isEmpty { persona.name = "未命名" }
@@ -390,6 +424,16 @@ struct PersonaEditor: View {
         } message: {
             Text("和 TA 的单聊记录会一起删除。")
         }
+    }
+
+    /// 角色页「模型」那一行：现在用的语音模型和它的侧重点
+    private var voiceModelName: String {
+        persona.voiceModel.isEmpty ? Voice.provider(of: persona).defaultModel : persona.voiceModel
+    }
+
+    private var voiceModelNote: String? {
+        let note = Voice.modelNote(voiceModelName)
+        return note.isEmpty ? nil : note
     }
 
     static func followUpLabel(_ setting: Int) -> String {

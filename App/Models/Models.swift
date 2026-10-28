@@ -27,7 +27,11 @@ final class Persona {
     var proactiveFreq: Int = 1
     /// 你没回 TA 的消息时，TA 多久后来追问：0 不追问 · 1 20 分钟～1 小时 · 2 1～3 小时 · 3 3～6 小时
     var followUp: Int = 1
-    /// 发语音用的 ElevenLabs 声音（空 = 不发语音）
+    /// 发语音用哪家：elevenlabs · minimax
+    var voiceProvider: String = "elevenlabs"
+    /// 这个角色用的语音模型（空 = 这家的默认模型）
+    var voiceModel: String = ""
+    /// 发语音用的声音（空 = 不发语音）
     var voiceID: String = ""
     var voiceName: String = ""
     /// 多常发语音：0 不发 · 1 偶尔 · 2 常常
