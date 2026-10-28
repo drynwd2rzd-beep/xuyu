@@ -80,6 +80,8 @@ enum RelayEvent {
     case step(String)
     /// 工作模式里发回手机的文件
     case file(String, Data)
+    /// 工作模式里 AI 想运行命令、打开网页：等你在手机上点「允许 / 不允许」（req 用来对上号）
+    case approval(req: String, text: String)
 }
 
 enum RelayError: LocalizedError {

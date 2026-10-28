@@ -12,6 +12,13 @@ final class StreamBuffer {
     var steps: [String] = []
     /// 先不显示文字（只显示「正在输入」），等这一段写完再整条出现
     var hold = false
+    /// 工作模式里正等你点「允许 / 不允许」的那一步
+    var approval: PendingApproval?
+}
+
+struct PendingApproval: Equatable {
+    let req: String
+    let text: String
 }
 
 struct OutgoingAttachment {
@@ -137,6 +144,13 @@ final class ChatEngine {
             replacing[convo.id] = message
         }
         run([persona], in: convo, members: members, context: context)
+    }
+
+    /// 你在工作模式的确认卡片上点了「允许 / 不允许」
+    func answer(_ message: Message, ok: Bool) {
+        guard let buffer = buffers[message.id], let pending = buffer.approval else { return }
+        relay?.answer(pending.req, ok: ok)
+        withAnimation(Motion.bubble) { buffer.approval = nil }
     }
 
     func stop(_ convo: Conversation) {
@@ -392,6 +406,14 @@ final class ChatEngine {
                 switch event {
                 case .text(let s): pendingText += s
                 case .reasoning(let s): pendingReasoning += s
+                case .approval(let req, let text):
+                    // 断线重连后中继会把同一个问题再问一次：已经在等的就不重复弹
+                    if buffer.approval?.req != req {
+                        speaking.insert(convo.id)
+                        withAnimation(Motion.bubble) { buffer.approval = PendingApproval(req: req, text: text) }
+                        // 不在这个聊天里（或者 App 在后台）：提醒你去点
+                        notify(convo: convo, persona: persona, text: String(localized: "想\(text)，等你确认"))
+                    }
                 case .step(let s):
                     // 已经开始操作电脑了：你再插话也不打断重来，免得同样的操作做两遍
                     speaking.insert(convo.id)

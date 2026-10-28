@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -11,6 +12,9 @@ import { runEngine } from './engines.js';
 
 const config = loadConfig();
 const PROTOCOL = 1;
+// 工作模式把关钩子（gate.js）找中继问「用户允不允许」时要带的钥匙：每次启动随机生成，只在本机用
+const GATE_KEY = crypto.randomBytes(16).toString('hex');
+let listeningPort = config.port;
 
 function command(engine) {
   return resolveCommand(config.commands[engine] || engine);
@@ -163,8 +167,8 @@ function workGuide() {
   const w = workPaths(config);
   return [
     `你现在可以在用户电脑上的工作文件夹「${w.root}」里读写文件、运行命令，帮用户把事情做完。`,
-    '只在这个文件夹里操作，不要读写或修改文件夹外面的东西，不要删除用户没让你删的文件，不要安装软件或改系统设置。',
-    '删除、覆盖、移动文件，或者运行会改动系统、联网下载、安装东西的命令之前，先停下来用一两句话告诉用户你要做什么，等用户回复「可以」后再做；读取文件和新建文件不用问。',
+    '只在这个文件夹里操作：读写外面的文件会被直接拒绝。不要删除用户没让你删的文件，不要安装软件或改系统设置。',
+    '运行命令、打开网页、上网搜索之前，系统会自动在用户手机上请求确认，你不用再另外问；用户没有允许时，不要换个办法做同一件事，告诉用户并问用户想怎么办。',
     `用户从手机发来的文件在「${w.inbox}」。`,
     `要把做好的文件发到用户手机上，就把文件保存（或复制）到「${w.outbox}」，系统会自动发过去。`,
     '做完后用一两句口语化的话告诉用户结果。',
@@ -239,6 +243,37 @@ function resumeJob(ws, id, from) {
   job.subscribers.add(ws);
   job.events.slice(from).forEach((e, i) => send(ws, { ...e, seq: from + i + 1 }));
   if (job.final) send(ws, job.final);
+  // 断线前还在等你点「允许 / 不允许」：重新连上后再问一次
+  if (job.approval) send(ws, approvalMessage(job));
+}
+
+// ---- 工作模式的确认：把关钩子问「允不允许」，转给手机，等你点 ----
+// 不放进 events（不按编号重放），一次只有一个；断线重连时由 resumeJob 再发一遍
+const APPROVAL_WAIT = 9 * 60 * 1000;
+
+function approvalMessage(job) {
+  return { type: 'approve', id: job.id, req: job.approval.req, text: job.approval.text };
+}
+
+function settleApproval(job, ok) {
+  const pending = job.approval;
+  if (!pending) return;
+  job.approval = null;
+  clearTimeout(pending.timer);
+  pending.resolve(ok);
+}
+
+function requestApproval(job, text) {
+  return new Promise((resolve) => {
+    // 上一个还没答就又来一个（不应该发生）：上一个按不允许
+    settleApproval(job, false);
+    const req = crypto.randomUUID();
+    // 太久没人点：当不允许，AI 收到后会告诉你
+    const timer = setTimeout(() => settleApproval(job, false), APPROVAL_WAIT);
+    job.approval = { req, text, resolve, timer };
+    for (const ws of job.subscribers) send(ws, approvalMessage(job));
+    console.log(`? ${job.id.slice(0, 8)} 等手机确认：${text.slice(0, 60)}`);
+  });
 }
 
 // 清理超过 24 小时的回复
@@ -268,20 +303,22 @@ async function handleRun(ws, msg) {
     send(ws, { type: 'error', id, message: '为了安全，「操作电脑」只能在家里的 Wi-Fi 或 Tailscale 下使用。' });
     return;
   }
-  const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController() };
+  const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController(), approval: null };
   jobs.set(id, job);
-  const saved = saveAttachments(id.replace(/[^\w-]/g, ''), msg.attachments, work);
-  let prompt = String(msg.prompt || '');
-  const files = saved.filter((s) => work || engine === 'claude' || s.kind !== 'image');
-  if (files.length) {
-    prompt += '\n\n用户附带的文件（可以直接读取）：\n' + files.map((f) => `- ${f.name}: ${f.file}`).join('\n');
-  }
-  const system = work ? `${msg.system || ''}\n\n${workGuide()}`.trim() : msg.system || '';
-
   const controller = job.controller;
+  // 你取消了这条回复：还在等的确认按不允许收尾
+  controller.signal.addEventListener('abort', () => settleApproval(job, false));
   const started = Date.now();
   console.log(`→ ${id.slice(0, 8)} ${engine}${msg.model ? ' ' + msg.model : ''}${msg.effort ? ' · ' + msg.effort : ''}${work ? ' · 工作模式' : ''}`);
+  // 整个过程（包括存附件）出的错都在这里接住，回给手机；不让一个错误把整个中继带倒（以前存附件时硬盘满了，中继会直接退出）
   try {
+    const saved = saveAttachments(id.replace(/[^\w-]/g, ''), msg.attachments, work);
+    let prompt = String(msg.prompt || '');
+    const files = saved.filter((s) => work || engine === 'claude' || s.kind !== 'image');
+    if (files.length) {
+      prompt += '\n\n用户附带的文件（可以直接读取）：\n' + files.map((f) => `- ${f.name}: ${f.file}`).join('\n');
+    }
+    const system = work ? `${msg.system || ''}\n\n${workGuide()}`.trim() : msg.system || '';
     await runEngine({
       engine,
       command: cmd,
@@ -294,6 +331,7 @@ async function handleRun(ws, msg) {
       cwd: work ? workPaths(config).root : paths.workspace,
       signal: controller.signal,
       work,
+      gate: { url: `http://127.0.0.1:${listeningPort}/gate`, key: GATE_KEY, job: id },
       onEvent: (e) => publish(job, { type: e.type, id, text: e.text }),
     });
     if (work) sendOutbox(job, started);
@@ -302,11 +340,45 @@ async function handleRun(ws, msg) {
   } catch (e) {
     finishJob(job, { type: 'error', id, message: controller.signal.aborted ? '已取消' : e.message });
     console.log(`✗ ${id.slice(0, 8)} ${e.message}`);
+  } finally {
+    settleApproval(job, false);
   }
+}
+
+/** 把关钩子来问：只认本机、带着钥匙的请求；一直等到你在手机上点了（或超时）才回答 */
+function handleGate(req, res) {
+  const from = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  if ((from !== '127.0.0.1' && from !== '::1') || req.headers['x-xuyu-gate'] !== GATE_KEY) {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
+  let body = '';
+  req.on('data', (d) => {
+    body += d;
+    if (body.length > 64 * 1024) req.destroy();
+  });
+  req.on('end', async () => {
+    let ok = false;
+    try {
+      const { job: id, text } = JSON.parse(body || '{}');
+      const job = jobs.get(String(id));
+      if (job && !job.final && !job.controller.signal.aborted) ok = await requestApproval(job, String(text || ''));
+    } catch {
+      ok = false;
+    }
+    console.log(ok ? '  手机上点了允许' : '  没有允许');
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok }));
+  });
 }
 
 // ---- 服务器 ----
 const server = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/gate') {
+    handleGate(req, res);
+    return;
+  }
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('xuyu-relay ok');
@@ -417,6 +489,12 @@ wss.on('connection', (ws, req) => {
       case 'cancel':
         jobs.get(String(msg.id))?.controller.abort();
         break;
+      case 'approval': {
+        // 你在手机上点了「允许 / 不允许」：只认对得上号的那一次
+        const job = [...jobs.values()].find((j) => j.approval?.req === String(msg.req || ''));
+        if (job) settleApproval(job, msg.ok === true);
+        break;
+      }
       case 'backup':
         send(ws, { type: 'backupSaved', id: msg.id, ok: saveBackup(msg.name, msg.data) });
         break;
@@ -467,6 +545,7 @@ function listen(index) {
   }
   const onListening = () => {
     server.off('error', onError);
+    listeningPort = port;
     if (port !== config.port) {
       config.port = port;
       saveConfig(config);

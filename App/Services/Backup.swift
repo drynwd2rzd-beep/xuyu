@@ -170,7 +170,26 @@ enum Backup {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
         let archive = try decoder.decode(Archive.self, from: data)
+        // 先删光再一条条写回：中途出错就整个撤销，现在的内容原样留着（不会被自动保存成「只删了一半」）
+        do {
+            try replaceAll(with: archive, context: context)
+        } catch {
+            context.rollback()
+            throw error
+        }
 
+        let defaults = UserDefaults.standard
+        for (key, value) in archive.prefs {
+            if let n = Int(value) { defaults.set(n, forKey: key) }
+            else if value == "1" || value == "0" { defaults.set(value == "1", forKey: key) }
+            else { defaults.set(value, forKey: key) }
+        }
+        if let avatar = archive.myAvatar { MyAvatarStore.save(avatar) }
+        let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
+        todos.forEach(Reminders.sync)
+    }
+
+    private static func replaceAll(with archive: Archive, context: ModelContext) throws {
         try context.delete(model: Attachment.self)
         try context.delete(model: Message.self)
         try context.delete(model: Conversation.self)
@@ -250,16 +269,6 @@ enum Backup {
             }
         }
         try context.save()
-
-        let defaults = UserDefaults.standard
-        for (key, value) in archive.prefs {
-            if let n = Int(value) { defaults.set(n, forKey: key) }
-            else if value == "1" || value == "0" { defaults.set(value == "1", forKey: key) }
-            else { defaults.set(value, forKey: key) }
-        }
-        if let avatar = archive.myAvatar { MyAvatarStore.save(avatar) }
-        let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
-        todos.forEach(Reminders.sync)
     }
 
     // MARK: 自动备份到电脑（每天一次）

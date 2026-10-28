@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import readline from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 
 /**
@@ -9,17 +10,21 @@ import readline from 'node:readline';
  * work = true 时是「工作模式」：可以在 cwd（工作文件夹）里读写文件、运行命令，每一步都会以 step 事件报告。
  * 返回 Promise，完成时 resolve，出错时 reject(Error)。
  */
-export function runEngine({ engine, command, model, effort = '', system, prompt, files, images, cwd, signal, onEvent, work = false }) {
+export function runEngine({ engine, command, model, effort = '', system, prompt, files, images, cwd, signal, onEvent, work = false, gate = null }) {
   const spec = engine === 'codex'
     ? codexArgs({ model, effort, images, work })
     : claudeArgs({ model, effort, system, allowRead: files.length > 0, work });
   const input = engine === 'codex' && system ? `${system}\n\n---\n\n${prompt}` : prompt;
   const parse = engine === 'codex' ? codexParser(onEvent) : claudeParser(onEvent);
+  // Claude 的工作模式：每次用工具前先过把关钩子（gate.js）。它要知道这是哪一次回复、工作文件夹在哪、怎么找到中继
+  const gateEnv = engine === 'claude' && work && gate
+    ? { XUYU_GATE_URL: gate.url, XUYU_GATE_KEY: gate.key, XUYU_JOB: gate.job, XUYU_ROOT: cwd }
+    : {};
 
   return new Promise((resolve, reject) => {
     const child = spawn(command.file, [...command.pre, ...spec], {
       cwd,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: { ...process.env, NO_COLOR: '1', ...gateEnv },
       windowsHide: true,
     });
     let stderr = '';
@@ -85,6 +90,12 @@ const WORK_DENY = ['Bash(rm -rf:*)', 'Bash(rmdir:*)', 'Bash(del /s:*)', 'Bash(fo
   'Bash(Set-ExecutionPolicy:*)', 'Bash(net user:*)', 'Bash(schtasks:*)', 'Bash(sc :*)', 'Bash(bcdedit:*)', 'Bash(takeown:*)',
   'Bash(icacls:*)', 'Bash(cipher:*)', 'Bash(vssadmin:*)', 'Bash(wmic:*)'];
 
+// 把关钩子：等手机确认最多 10 分钟（钩子默认只等 60 秒）
+const GATE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'gate.js').replace(/\\/g, '/');
+const GATE_SETTINGS = JSON.stringify({
+  hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `node "${GATE_SCRIPT}"`, timeout: 600 }] }] },
+});
+
 function claudeArgs({ model, effort, system, allowRead, work }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--max-turns', work ? '60' : allowRead ? '6' : '1'];
@@ -92,9 +103,11 @@ function claudeArgs({ model, effort, system, allowRead, work }) {
   if (effort) args.push('--effort', effort);
   if (system) args.push('--system-prompt', system);
   if (work) {
-    // 工作模式：在工作文件夹里改文件不用再确认；只开放下面这些工具
+    // 工作模式：只开放下面这些工具；每次用之前都先过把关钩子（gate.js）：
+    // 工作文件夹外的读写直接拒绝，运行命令和上网先在手机上确认。危险命令的黑名单留着当第二道
     args.push('--strict-mcp-config', '--permission-mode', 'acceptEdits',
-      '--tools', WORK_TOOLS.join(','), '--allowedTools', ...WORK_TOOLS, '--disallowedTools', ...WORK_DENY);
+      '--tools', WORK_TOOLS.join(','), '--allowedTools', ...WORK_TOOLS, '--disallowedTools', ...WORK_DENY,
+      '--settings', GATE_SETTINGS);
   } else {
     // 聊天不带任何工具和 MCP：否则每条消息都会附上几万字的工具说明，又慢又耗额度。
     // 有附件时只开 Read，让它看图片/文件。提示词从 stdin 读取

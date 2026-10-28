@@ -23,7 +23,7 @@ final class RelayClient {
     /// 每条回复已经收到的片段数；断线重连后从这里接着收
     @ObservationIgnored private var received: [String: Int] = [:]
     @ObservationIgnored private var orphanTimeout: Task<Void, Never>?
-    @ObservationIgnored private var waiters: [CheckedContinuation<Void, Error>] = []
+    @ObservationIgnored private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     @ObservationIgnored private var retryDelay: Double = 2
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var pingTask: Task<Void, Never>?
@@ -232,8 +232,8 @@ final class RelayClient {
             guard !Task.isCancelled, let self, self.state != .connected else { return }
             self.failStreams(RelayError.unreachable)
         }
-        waiters.forEach { $0.resume(throwing: RelayError.unreachable) }
-        waiters = []
+        waiters.values.forEach { $0.resume(throwing: RelayError.unreachable) }
+        waiters = [:]
         // 配对码错误时不自动重连
         guard !reason.contains("配对码") else { return }
         // 还有别的地址（比如出门用的）就马上试下一个
@@ -283,8 +283,8 @@ final class RelayClient {
                 state = .connected
                 retryDelay = 2
                 orphanTimeout?.cancel()
-                waiters.forEach { $0.resume() }
-                waiters = []
+                waiters.values.forEach { $0.resume() }
+                waiters = [:]
                 startPing()
                 // 断线前没收完的回复，接着收
                 for streamID in streams.keys {
@@ -301,6 +301,11 @@ final class RelayClient {
             if accept(id, obj), let name = obj["name"] as? String,
                let data = Data(base64Encoded: obj["data"] as? String ?? "") {
                 streams[id]?.yield(.file(name, data))
+            }
+        case "approve":
+            // 不带编号：断线重连后中继会再问一次，同一个 req 由聊天引擎去重
+            if let req = obj["req"] as? String {
+                streams[id]?.yield(.approval(req: req, text: obj["text"] as? String ?? ""))
             }
         case "done":
             received.removeValue(forKey: id)
@@ -339,6 +344,11 @@ final class RelayClient {
         guard let task, let data = try? JSONSerialization.data(withJSONObject: object),
               let text = String(data: data, encoding: .utf8) else { return }
         task.send(.string(text)) { _ in }
+    }
+
+    /// 你对工作模式里那一步的回答
+    func answer(_ req: String, ok: Bool) {
+        sendJSON(["type": "approval", "req": req, "ok": ok])
     }
 
     func refreshStatus() {
@@ -411,18 +421,16 @@ final class RelayClient {
         connectIfConfigured()
         if state == .connected { return }
         if case .notConfigured = state { throw RelayError.notConfigured }
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in
-                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                    self.waiters.append(c)
-                }
+        // 最多等 8 秒：连上了、连接失败了、或者到点了，谁先到就按谁收尾（每个等待只会被收尾一次）。
+        // 以前用任务组做超时：组要等所有子任务结束，而等连接的那个不响应取消，8 秒到了也走不掉，
+        // 要一直等到下一次重连失败（最长 30 多秒），电脑没开时发出去的消息很久才报错
+        let token = UUID()
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            waiters[token] = c
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(8))
+                self?.waiters.removeValue(forKey: token)?.resume(throwing: RelayError.unreachable)
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(8))
-                throw RelayError.unreachable
-            }
-            try await group.next()
-            group.cancelAll()
         }
     }
 

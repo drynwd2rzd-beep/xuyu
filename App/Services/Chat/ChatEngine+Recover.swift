@@ -27,6 +27,8 @@ extension ChatEngine {
                     case .step(let s): steps.append(s)
                     case .file(let name, let data): files.append((name, data))
                     case .reasoning: break
+                    // App 被关掉期间 AI 想做的一步：没法当面问你，按不允许回答，AI 会在回复里说明，要做可以再让它做
+                    case .approval(let req, _): relay.answer(req, ok: false)
                     }
                 }
             } catch {
@@ -47,6 +49,9 @@ extension ChatEngine {
                 let m: Message
                 if i < siblings.count {
                     m = siblings[i]
+                    // 被关掉之前已经完整发出去的一段：原样留着。再处理一遍标记的话，里面的表情会再发一个、
+                    // 约定会按「现在」重新算时间
+                    if m.status == .done && !m.content.isEmpty { continue }
                 } else {
                     m = Message(role: .assistant, content: "", personaID: first.personaID)
                     m.modelLabel = first.modelLabel

@@ -71,6 +71,50 @@ struct TimedText: View {
     static let stampColor = Palette.inkSoft.opacity(0.8)
 }
 
+/// 工作模式里 AI 想运行命令、打开网页时，挂在 TA 这条消息下面的确认：说清楚要做什么，两个按钮。
+/// 和翻译、转文字那种浅色小卡片同一个样子；点了以后就收起
+struct ApprovalCard: View {
+    let text: String
+    let onAnswer: (Bool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(text)
+                .font(.system(size: 14))
+                .lineSpacing(3)
+                .foregroundStyle(Palette.ink2)
+                .lineLimit(6)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Space.tight) {
+                Spacer(minLength: 0)
+                choice("不允许", filled: false) { onAnswer(false) }
+                choice("允许", filled: true) { onAnswer(true) }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+        .sensoryFeedback(.warning, trigger: text)
+    }
+
+    private func choice(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(LocalizedStringKey(title))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(filled ? Palette.inkInverse : Palette.ink)
+                .padding(.horizontal, Space.card)
+                .frame(height: 34)
+                .background {
+                    if filled { Capsule().fill(Palette.ink) } else { Capsule().strokeBorder(Palette.hairline, lineWidth: 1) }
+                }
+                // 看起来 34 高，能点的范围够 44
+                .contentShape(Capsule().inset(by: -5))
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
 /// 已读：像 iMessage 一样，一行小字放在你最后一条消息下面；TA 开始回复后就不再显示
 struct ReadReceipt: View {
     var body: some View {

@@ -108,6 +108,11 @@ struct MessageRow: View {
                 // TA 引用了你说过的话
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 translationView
+                // 工作模式：AI 想运行命令、打开网页，等你点
+                if let pending = live?.approval {
+                    ApprovalCard(text: pending.text) { ok in engine.answer(message, ok: ok) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .topLeading)))
+                }
                 if message.status == .error { errorLine }
             }
             Spacer(minLength: 28)
