@@ -323,6 +323,15 @@ struct ChatView: View {
             } action: { _, value in
                 atBottom = value
             }
+            // 内容变高时贴住底部：TA 的气泡一帧一帧撑开、小点变成文字、图片加载完，聊天都跟着一帧一帧平稳上移。
+            // 上面那个「内容变高也贴着底部」管不到动画中的增高（录屏里 TA 的回复冒出来了，却被挡在输入框下面）。
+            // 只在你正看着最新消息时跟；你往上翻着时不动，那时发消息由下面带动画的滚动把你带回来
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
+                guard follow, atBottom, new > old else { return }
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .onChange(of: messages.last?.id) {
                 // 自己发消息后回到底部；对方的新消息、打字的小点在跟随时由「内容变高也贴着底部」自己跟上，
                 // 不再额外滚一次（两个动画互相拉扯，看起来会卡一下）
