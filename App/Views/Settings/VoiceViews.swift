@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 设置 › 语音：填 ElevenLabs、MiniMax 的密钥（只存在这台手机的钥匙串里）。
 /// 用哪家、哪个模型、哪个声音，在每个角色页里单独选
@@ -86,6 +87,11 @@ struct VoicePicker: View {
     @State private var failure: String?
     @State private var query = ""
     @State private var customID = ""
+    @State private var picking = false
+    @State private var recording: CloneSource?
+    /// 复刻那一行下面的小字（进度、结果、出错原因）
+    @State private var cloning: String?
+    @State private var isCloning = false
     @State private var loadingPreview: String?
     @State private var previews: [String: Data] = [:]
 
@@ -103,6 +109,7 @@ struct VoicePicker: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Space.section) {
+                    if provider == .minimax { cloneRow }
                     // 刚克隆好的声音，要合成过一次才会出现在下面的列表里：直接填它的 ID 也能马上用
                     HStack(spacing: Space.tight) {
                         TextField("填写声音 ID", text: $customID)
@@ -149,6 +156,57 @@ struct VoicePicker: View {
             do { voices = try await Voice.voices(provider) } catch { failure = error.localizedDescription }
         }
         .onDisappear { player.stop() }
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.mp3, .mpeg4Audio, .wav, .audio]) { result in
+            guard case .success(let url) = result else { return }
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { return cloning = "读不出这段录音" }
+            guard data.count <= 20 * 1024 * 1024 else { return cloning = "录音太大了（最多 20MB）" }
+            recording = CloneSource(data: data, name: url.lastPathComponent)
+        }
+        .confirmationDialog("用这段录音复刻一个声音？", isPresented: Binding(get: { recording != nil }, set: { if !$0 { recording = nil } }),
+                            titleVisibility: .visible, presenting: recording) { source in
+            Button("复刻并试听") { clone(source) }
+        } message: { _ in
+            Text("复刻好后会马上用新声音念一句给你听：第一次使用时 MiniMax 会扣一次复刻费。")
+        }
+    }
+
+    /// 复刻新声音：选一段 10 秒到 5 分钟的清晰录音（只有一个人说话、没有背景音乐）
+    private var cloneRow: some View {
+        Button { picking = true } label: {
+            SettingRow(title: "复刻新声音", subtitle: cloning) {
+                if isCloning {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Chevron()
+                }
+            }
+        }
+        .buttonStyle(PressableRowStyle())
+        .disabled(isCloning)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .card()
+    }
+
+    /// 上传、复刻，再用新声音念一句：这一句算第一次使用，声音就会一直保留
+    private func clone(_ source: CloneSource) {
+        cloning = "正在复刻…"
+        isCloning = true
+        Task {
+            defer { isCloning = false }
+            do {
+                let id = try await Voice.cloneVoice(audio: source.data, fileName: source.name)
+                persona.voiceID = id
+                persona.voiceName = String(localized: "我的复刻") + " · " + Fmt.md.string(from: .now)
+                if persona.voiceFreq == 0 { persona.voiceFreq = 1 }
+                let sample = try await Voice.speak(persona.language == "ko" ? "안녕, 이제 이 목소리로 말할게." : "你好呀，以后我就用这个声音跟你说话啦。", for: persona)
+                player.toggle(id, data: sample)
+                cloning = "复刻好了，已经换成这个声音"
+            } catch {
+                cloning = error.localizedDescription
+            }
+        }
     }
 
     /// 用填进来的声音 ID（名字就先显示 ID）
@@ -278,4 +336,11 @@ struct VoiceModelPicker: View {
             do { models = try await Voice.models(provider) } catch { failure = error.localizedDescription }
         }
     }
+}
+
+/// 选好的复刻用录音
+struct CloneSource: Identifiable {
+    let id = UUID()
+    let data: Data
+    let name: String
 }

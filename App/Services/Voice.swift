@@ -129,7 +129,15 @@ enum Voice {
         }
     }
 
-    // MARK: - 念
+    // MARK: - 复刻
+
+    /// 用一段录音在 MiniMax 复刻一个新声音，返回它的 ID
+    static func cloneVoice(audio: Data, fileName: String) async throws -> String {
+        guard isConfigured(.minimax) else { throw Failure.noKey }
+        return try await MiniMax.clone(audio: audio, fileName: fileName)
+    }
+
+// MARK: - 念
 
     /// 用这个角色的声音和模型把一句话念成语音（mp3）；选的模型用不了就退回最稳定的
     static func speak(_ text: String, for persona: Persona) async throws -> Data {
@@ -215,26 +223,41 @@ private enum MiniMax {
     static let models = ["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo",
                          "speech-02-hd", "speech-02-turbo", "speech-01-hd", "speech-01-turbo"]
 
-    /// 国内版和国际版是两个平台，密钥不通用
-    static var base: URL {
-        let global = UserDefaults.standard.string(forKey: Prefs.minimaxRegion) == "global"
-        return URL(string: global ? "https://api.minimax.io" : "https://api.minimaxi.com")!
+    /// 国内版和国际版是两个平台，密钥不通用。国内版换过网址：先用新的，连不上再试旧的
+    static var hosts: [String] {
+        UserDefaults.standard.string(forKey: Prefs.minimaxRegion) == "global"
+            ? ["https://api.minimax.io"]
+            : ["https://api.minimax.cn", "https://api.minimaxi.com"]
     }
 
-    static func request(_ path: String, body: [String: Any]) throws -> URLRequest {
-        var req = URLRequest(url: base.appending(path: path))
-        req.timeoutInterval = 40
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(Voice.key(.minimax))", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return req
+    static func post(_ path: String, json: [String: Any]) async throws -> [String: Any] {
+        try await send(path, contentType: "application/json", body: JSONSerialization.data(withJSONObject: json))
+    }
+
+    /// 发给 MiniMax：这个网址连不上就换下一个
+    static func send(_ path: String, contentType: String, body: Data, timeout: TimeInterval = 40) async throws -> [String: Any] {
+        var lastError: Error = Voice.Failure.other("没有收到回应")
+        for host in hosts {
+            guard let url = URL(string: host)?.appending(path: path) else { continue }
+            var req = URLRequest(url: url)
+            req.timeoutInterval = timeout
+            req.httpMethod = "POST"
+            req.setValue("Bearer \(Voice.key(.minimax))", forHTTPHeaderField: "Authorization")
+            req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+            do {
+                let (data, response) = try await URLSession.shared.data(for: req)
+                return try check(response, data)
+            } catch let error as URLError {
+                lastError = error
+            }
+        }
+        throw lastError
     }
 
     /// 系统自带的、你克隆的、你用文字生成的声音
     static func voices() async throws -> [Voice.Choice] {
-        let (data, response) = try await URLSession.shared.data(for: request("v1/get_voice", body: ["voice_type": "all"]))
-        let root = try check(response, data)
+        let root = try await post("v1/get_voice", json: ["voice_type": "all"])
         var list: [Voice.Choice] = []
         for (group, label) in [("voice_cloning", "克隆"), ("voice_generation", "生成"), ("system_voice", "")] {
             for v in root[group] as? [[String: Any]] ?? [] {
@@ -248,7 +271,7 @@ private enum MiniMax {
     }
 
     static func speak(_ text: String, voiceID: String, model: String, korean: Bool) async throws -> Data {
-        let req = try request("v1/t2a_v2", body: [
+        let root = try await post("v1/t2a_v2", json: [
             "model": model,
             "text": text,
             "stream": false,
@@ -256,12 +279,38 @@ private enum MiniMax {
             "audio_setting": ["sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1],
             "language_boost": korean ? "Korean" : "Chinese",
         ])
-        let (data, response) = try await URLSession.shared.data(for: req)
-        let root = try check(response, data)
         guard let hex = (root["data"] as? [String: Any])?["audio"] as? String, let audio = Data(hex: hex), !audio.isEmpty else {
             throw Voice.Failure.other("MiniMax 没有返回语音")
         }
         return audio
+    }
+
+    /// 快速复刻：先把录音传上去，再用它复刻出一个新声音，返回新声音的 ID。
+    /// 复刻这一步不收费；第一次用新声音念话时 MiniMax 扣一次复刻费，7 天内不用会被删掉
+    static func clone(audio: Data, fileName: String) async throws -> String {
+        let boundary = "xuyu-\(UUID().uuidString)"
+        var body = Data()
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"purpose\"\r\n\r\nvoice_clone\r\n".utf8))
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\nContent-Type: application/octet-stream\r\n\r\n".utf8))
+        body.append(audio)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        let uploaded = try await send("v1/files/upload", contentType: "multipart/form-data; boundary=\(boundary)", body: body, timeout: 120)
+        let file = uploaded["file"] as? [String: Any]
+        guard let fileID = (file?["file_id"] as? NSNumber)?.int64Value ?? (file?["file_id"] as? String).flatMap({ Int64($0) }) else {
+            throw Voice.Failure.other("录音没有传上去")
+        }
+        // 新声音的 ID：字母开头、只有字母和数字
+        let voiceID = "xuyu" + String((0..<12).map { _ in "abcdefghjkmnpqrstuvwxyz23456789".randomElement()! })
+        let result = try await post("v1/voice_clone", json: [
+            "file_id": fileID,
+            "voice_id": voiceID,
+            "need_noise_reduction": true,
+            "need_volume_normalization": true,
+        ])
+        if let sensitive = result["input_sensitive"] as? [String: Any], sensitive["type"] as? Int ?? 0 != 0 {
+            throw Voice.Failure.other("录音内容没有通过审核")
+        }
+        return voiceID
     }
 
     /// MiniMax 出错时 HTTP 也是 200，要看 base_resp.status_code
@@ -275,6 +324,8 @@ private enum MiniMax {
         case 0: return root
         case 1004, 2049: throw Voice.Failure.badKey
         case 1008: throw Voice.Failure.quota
+        case 2038: throw Voice.Failure.other("MiniMax 账号还没实名认证，不能复刻")
+        case 2013: throw Voice.Failure.other("录音不符合要求：mp3、m4a 或 wav，10 秒到 5 分钟，不超过 20MB")
         default: throw Voice.Failure.other("MiniMax 出错了（\(code)）")
         }
     }
