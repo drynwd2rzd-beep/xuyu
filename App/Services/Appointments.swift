@@ -155,8 +155,7 @@ enum Appointments {
         let message = Message(role: .assistant, content: text.trimmed, personaID: persona.id)
         message.isProactive = true
         message.createdAt = a.at
-        message.conversation = convo
-        context.insert(message)
+        convo.add(message, context: context)
         try? context.save()
         let title = convo.isGroup ? "\(convo.title.isEmpty ? "群聊" : convo.title) · \(persona.name)" : persona.name
         Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id, title: title, body: text.trimmed, at: a.at)

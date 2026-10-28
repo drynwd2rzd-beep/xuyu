@@ -21,8 +21,7 @@ enum DemoMotion {
             await pause(2)
             let mine = Message(role: .user, content: "在干嘛")
             withAnimation(Motion.reveal) {
-                mine.conversation = convo
-                context.insert(mine)
+                convo.add(mine, context: context)
             }
             await pause(1.2)
             await engine.demoReply("刚在刷手机，看到一个小狗偷吃被抓包的视频，嘴里还叼着证据。", as: persona, in: convo, context: context)

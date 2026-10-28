@@ -93,6 +93,13 @@ final class Conversation {
     }
 
     /// 已经「到达」的消息（主动消息会提前生成，到点才出现）
+    /// 加一条消息。从对话这一边加，聊天页马上就能看到（在调用处的动画里一起出现）；
+    /// 只设消息那一边的话，对话的消息列表要等保存以后才刷新，新气泡会在保存那一刻突然冒出来
+    func add(_ message: Message, context: ModelContext) {
+        context.insert(message)
+        if messages == nil { messages = [message] } else { messages?.append(message) }
+    }
+
     func visibleMessages(at now: Date = .now) -> [Message] {
         (messages ?? []).filter { $0.createdAt <= now }.sorted { $0.createdAt < $1.createdAt }
     }

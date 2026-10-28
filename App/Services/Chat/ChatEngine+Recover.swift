@@ -52,8 +52,7 @@ extension ChatEngine {
                     m.modelLabel = first.modelLabel
                     m.relayID = relayID
                     m.createdAt = start.addingTimeInterval(Double(i) * 0.001)
-                    m.conversation = convo
-                    context.insert(m)
+                    convo.add(m, context: context)
                 }
                 m.status = .done
                 m.errorText = nil

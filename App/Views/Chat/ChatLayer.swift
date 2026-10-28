@@ -20,16 +20,18 @@ struct ChatLayer: View {
                 }
                 .navigationDestination(for: Route.self) { RouteView(route: $0) }
             }
-            // 裁切范围是整块屏幕（连同状态栏和底部横条那一截），聊天背景不会被切掉、露出上下两条黑边。
+            // 导航本身铺满整块屏幕（里面的内容照样避开状态栏和底部横条，由系统按窗口算）。
+            // 圆角裁切会被系统做成遮罩、只罩住导航自己那块：它只占安全区的话，状态栏和底部那两截就被切掉，露出上下黑边
+            .ignoresSafeArea(.container)
             // 侧滑时四角跟屏幕一样圆
-            .clipShape(ScreenShape(radius: swipe > 0 ? Radius.screen : 0,
-                                   top: geo.safeAreaInsets.top, bottom: geo.safeAreaInsets.bottom))
+            .clipShape(ScreenShape(radius: swipe > 0 ? Radius.screen : 0, top: 0, bottom: 0))
             .background {
                 // 影子只在侧滑时出现，投在左边，像一张纸叠在列表上
                 if swipe > 0 {
-                    ScreenShape(radius: Radius.screen, top: geo.safeAreaInsets.top, bottom: geo.safeAreaInsets.bottom)
+                    ScreenShape(radius: Radius.screen, top: 0, bottom: 0)
                         .fill(Palette.paper)
                         .shadow(color: .black.opacity(0.22 * (1 - swipe)), radius: 20, x: -6)
+                        .ignoresSafeArea(.container)
                 }
             }
             .scaleEffect(1 - 0.06 * swipe)

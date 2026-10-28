@@ -73,8 +73,7 @@ final class ChatEngine {
             }
             // 你发出的消息：上面的消息平滑地往上让开
             withAnimation(Motion.reveal) {
-                message.conversation = convo
-                context.insert(message)
+                convo.add(message, context: context)
             }
             for (order, item) in part.items.enumerated() {
                 let a = Attachment(kind: item.kind, fileName: item.name, data: item.data, order: order)
@@ -243,8 +242,7 @@ final class ChatEngine {
         buffers[message.id] = buffer
         // 「正在输入」的气泡出现时，上面的消息平滑地往上让开，不会突然冒出来
         withAnimation(Motion.reveal) {
-            message.conversation = convo
-            context.insert(message)
+            convo.add(message, context: context)
         }
         return (message, buffer)
     }
@@ -475,8 +473,7 @@ final class ChatEngine {
             guard let pick = stickers.filter({ $0.pack == pack }).randomElement() else { continue }
             let sticker = Message(role: .assistant, kind: .sticker, content: "", personaID: persona.id)
             sticker.createdAt = max(.now, message.createdAt).addingTimeInterval(0.00001)
-            sticker.conversation = convo
-            context.insert(sticker)
+            convo.add(sticker, context: context)
             let a = Attachment(kind: "image", fileName: "sticker.png", data: pick.data, order: 0)
             a.message = sticker
             context.insert(a)
@@ -489,8 +486,7 @@ final class ChatEngine {
         let ext = (name as NSString).pathExtension.lowercased()
         let isImage = ["jpg", "jpeg", "png", "heic", "gif", "webp"].contains(ext)
         let m = Message(role: .assistant, kind: isImage ? .images : .file, content: "", personaID: persona.id)
-        m.conversation = convo
-        context.insert(m)
+        convo.add(m, context: context)
         let a = Attachment(kind: isImage ? "image" : "file", fileName: name, data: data, order: 0)
         a.message = m
         context.insert(a)

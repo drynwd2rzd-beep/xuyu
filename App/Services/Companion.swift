@@ -120,8 +120,7 @@ enum Companion {
             let message = Message(role: .assistant, content: text.trimmed, personaID: persona.id)
             message.isProactive = true
             message.createdAt = deliver
-            message.conversation = convo
-            context.insert(message)
+            convo.add(message, context: context)
             try? context.save()
             Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id,
                                         title: persona.name, body: text.trimmed, at: deliver)
@@ -298,8 +297,7 @@ enum Companion {
             let message = Message(role: .assistant, content: text, personaID: persona.id)
             message.isProactive = true
             message.createdAt = deliver
-            message.conversation = convo
-            context.insert(message)
+            convo.add(message, context: context)
             try? context.save()
             Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id,
                                         title: persona.name, body: text, at: deliver)
