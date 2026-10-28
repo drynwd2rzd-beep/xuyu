@@ -38,6 +38,8 @@ struct RootView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        // 保存失败：盖在所有页面上面（包括聊天）
+        .overlay(alignment: .top) { SaveAlertToast() }
         .onChange(of: router.chat) { _, open in
             if open == nil { settleKeyboard() }
         }

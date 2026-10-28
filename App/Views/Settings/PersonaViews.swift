@@ -99,7 +99,7 @@ struct PersonasView: View {
         p.sortIndex = (personas.map(\.sortIndex).max() ?? 0) + 1
         context.insert(p)
         _ = context.chat(for: p)
-        try? context.save()
+        context.persist()
         router.open(.persona(p.id))
     }
 }
@@ -123,7 +123,7 @@ struct NewGroupSheet: View {
                     Button("创建") {
                         let convo = Conversation(title: title.trimmed, isGroup: true, memberIDs: selected)
                         context.insert(convo)
-                        try? context.save()
+                        context.persist()
                         dismiss()
                         onCreate(convo)
                     }
@@ -421,14 +421,14 @@ struct PersonaEditor: View {
         .onAppear { chat = context.chat(for: persona) }
         .onDisappear {
             if persona.name.trimmed.isEmpty { persona.name = "未命名" }
-            try? context.save()
+            context.persist()
         }
         .confirmationDialog("清空和 \(persona.name) 的聊天记录？", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("清空", role: .destructive) {
                 let convo = context.chat(for: persona)
                 for m in convo.messages ?? [] { context.delete(m) }
                 Memory.reset(convo)
-                try? context.save()
+                context.persist()
             }
         }
         .confirmationDialog("删除「\(persona.name)」？", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -536,7 +536,7 @@ struct PersonaEditor: View {
         Task {
             try? await Task.sleep(for: .milliseconds(350))
             context.delete(target)
-            try? context.save()
+            context.persist()
         }
     }
 }

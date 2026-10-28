@@ -122,7 +122,7 @@ enum Companion {
             message.isProactive = true
             message.createdAt = deliver
             convo.add(message, context: context)
-            try? context.save()
+            context.persist()
             Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id,
                                         title: persona.name, body: text.trimmed, at: deliver)
         }
@@ -161,7 +161,7 @@ enum Companion {
             entry.replyPersonaID = persona.id
             entry.repliedText = text
         }
-        try? context.save()
+        context.persist()
     }
 
     /// 你最近几天写的日记，给聊天、主动消息和 TA 的日记当背景
@@ -245,7 +245,7 @@ enum Companion {
             let entry = DiaryEntry(day: day, author: .ai, text: text, mood: mood)
             entry.personaID = persona.id
             context.insert(entry)
-            try? context.save()
+            context.persist()
         }
     }
 
@@ -299,7 +299,7 @@ enum Companion {
             message.isProactive = true
             message.createdAt = deliver
             convo.add(message, context: context)
-            try? context.save()
+            context.persist()
             Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id,
                                         title: persona.name, body: text, at: deliver)
         }

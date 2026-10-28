@@ -214,7 +214,7 @@ struct AlbumGrid: View {
                     .overlay(alignment: .topTrailing) {
                         Button {
                             withAnimation(Motion.spring) { context.delete(p) }
-                            try? context.save()
+                            context.persist()
                         } label: {
                             Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
                                 .frame(width: 24, height: 24).background(.black.opacity(0.5), in: Circle())
@@ -242,7 +242,7 @@ struct AlbumGrid: View {
                         withAnimation(Motion.spring) { context.insert(AlbumPhoto(personaID: personaID, data: small)) }
                     }
                 }
-                try? context.save()
+                context.persist()
                 items = []
             }
         }

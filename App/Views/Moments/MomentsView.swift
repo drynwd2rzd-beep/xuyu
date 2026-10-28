@@ -333,7 +333,7 @@ struct MomentCard: View {
             if c.personaID == nil {
                 Button(role: .destructive) {
                     withAnimation(Motion.spring) { context.delete(c) }
-                    try? context.save()
+                    context.persist()
                 } label: { Label("删除", systemImage: "trash") }
             }
         }

@@ -143,7 +143,7 @@ enum DemoData {
         third.reacted = true
         context.insert(third)
         third.add(MomentComment(personaID: claude.id, text: "厉害，下次也帮我看看", createdAt: ago(60 * 25)), context: context)
-        try? context.save()
+        context.persist()
     }
 
     @MainActor

@@ -233,7 +233,7 @@ struct StickerPanel: View {
         if inRecent {
             Button {
                 withAnimation(Motion.spring) { s.lastUsedAt = nil }
-                try? context.save()
+                context.persist()
             } label: { Label("从最近使用中移除", systemImage: "clock.badge.xmark") }
         }
         let others = packs.filter { $0 != s.pack }
@@ -242,14 +242,14 @@ struct StickerPanel: View {
                 ForEach(others, id: \.self) { p in
                     Button(p) {
                         withAnimation(Motion.spring) { s.pack = p }
-                        try? context.save()
+                        context.persist()
                     }
                 }
             } label: { Label("移到表情包", systemImage: "folder") }
         }
         Button(role: .destructive) {
             withAnimation(Motion.spring) { context.delete(s) }
-            try? context.save()
+            context.persist()
         } label: { Label("删除表情", systemImage: "trash") }
     }
 
@@ -290,7 +290,7 @@ struct StickerPanel: View {
             for s in stickers where s.lastUsedAt != nil { s.lastUsedAt = nil }
             current = categories.first?.id
         }
-        try? context.save()
+        context.persist()
     }
 
     private func addStickers(_ items: [PhotosPickerItem]) {
@@ -302,7 +302,7 @@ struct StickerPanel: View {
                     context.insert(Sticker(pack: pack, data: png))
                 }
             }
-            try? context.save()
+            context.persist()
             pickerItems = []
             addingTo = nil
             withAnimation(Motion.spring) { current = "pack:\(pack)" }
@@ -327,7 +327,7 @@ struct StickerPanel: View {
         guard name != old else { return }
         for s in stickers where s.pack == old { s.pack = name }
         extraPacks = extraPacks.split(separator: "\n").map { $0 == old ? name : String($0) }.joined(separator: "\n")
-        try? context.save()
+        context.persist()
         withAnimation(Motion.spring) { current = "pack:\(name)" }
     }
 
@@ -335,7 +335,7 @@ struct StickerPanel: View {
         withAnimation(Motion.spring) {
             for s in stickers where s.pack == p { context.delete(s) }
             extraPacks = extraPacks.split(separator: "\n").filter { $0 != p }.joined(separator: "\n")
-            try? context.save()
+            context.persist()
             current = categories.first?.id
         }
     }

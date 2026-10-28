@@ -21,12 +21,12 @@ extension ChatEngine {
                                    """)
         guard let result = try? await relay.complete(request), !result.trimmed.isEmpty else { return }
         withAnimation(Motion.spring) { message.translation = result.trimmed }
-        try? context.save()
+        context.persist()
     }
 
     /// 收起翻译（下次再长按「翻译」会重新翻）
     func hideTranslation(_ message: Message, context: ModelContext) {
         withAnimation(Motion.spring) { message.translation = "" }
-        try? context.save()
+        context.persist()
     }
 }

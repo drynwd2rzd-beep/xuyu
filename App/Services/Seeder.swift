@@ -30,6 +30,6 @@ enum Seeder {
             _ = context.chat(for: claude)
             _ = context.chat(for: codex)
         }
-        try? context.save()
+        context.persist()
     }
 }

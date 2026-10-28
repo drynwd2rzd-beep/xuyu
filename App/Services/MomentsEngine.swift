@@ -13,7 +13,7 @@ final class MomentsEngine {
 
     func toggleLike(_ moment: Moment, context: ModelContext) {
         withAnimation(Motion.snappy) { moment.likedByMe.toggle() }
-        try? context.save()
+        context.persist()
     }
 
     /// 你评论一条动态，或者回复某条评论；被回的人过一会儿回你
@@ -22,7 +22,7 @@ final class MomentsEngine {
         guard !text.isEmpty else { return }
         let mine = MomentComment(personaID: nil, text: text, replyTo: target?.personaID)
         withAnimation(Motion.bubble) { moment.add(mine, context: context) }
-        try? context.save()
+        context.persist()
         // 谁来回：你回复的那个人；直接评论 TA 的动态就是 TA。你在自己的动态下直接留言，没有点名谁，就不回
         guard let who = (target?.personaID ?? moment.personaID).flatMap({ context.persona($0) }) else { return }
         Task { await reply(as: who, to: mine, on: moment, context: context, relay: relay) }
@@ -40,7 +40,7 @@ final class MomentsEngine {
         withAnimation(Motion.bubble) {
             moment.add(MomentComment(personaID: persona.id, text: text, replyToMe: true), context: context)
         }
-        try? context.save()
+        context.persist()
     }
 
     /// 你发一条动态：照片存进你自己的相册；TA 们过一会儿来看
@@ -53,13 +53,13 @@ final class MomentsEngine {
         }
         moment.reacted = true
         withAnimation(Motion.bubble) { context.insert(moment) }
-        try? context.save()
+        context.persist()
         Task { await MomentsPlanner.react(to: moment, context: context, relay: relay) }
     }
 
     func delete(_ moment: Moment, context: ModelContext) {
         withAnimation(Motion.spring) { context.delete(moment) }
-        try? context.save()
+        context.persist()
     }
 }
 
@@ -86,7 +86,7 @@ enum MomentsPlanner {
             moment.reacted = true
             await react(to: moment, context: context, relay: relay)
         }
-        try? context.save()
+        context.persist()
     }
 
     /// 下一条动态的时间：按频率和你的作息挑，离上一条不能太近
@@ -110,7 +110,7 @@ enum MomentsPlanner {
         if let n = post.photo, photos.indices.contains(n - 1) { moment.photoIDs = [photos[n - 1].id] }
         if voice, let spoken = post.spoken { moment.voice = try? await Voice.speak(spoken, for: persona) }
         context.insert(moment)
-        try? context.save()
+        context.persist()
     }
 
     /// 别的角色看到这条动态：点不点赞、评论什么；发动态的人有时回一句。
@@ -144,7 +144,7 @@ enum MomentsPlanner {
                 }
             }
         }
-        try? context.save()
+        context.persist()
     }
 
     /// 相册里新放的照片：看一眼，写一句是什么（TA 挑配图时用）。每次最多三张，省额度
@@ -157,7 +157,7 @@ enum MomentsPlanner {
             request.attachments = [RelayAttachment(kind: "image", name: "photo.jpg", data: small.base64EncodedString())]
             if let text = try? await relay.complete(request) { photo.caption = MomentText.clean(text) }
         }
-        try? context.save()
+        context.persist()
     }
 }
 

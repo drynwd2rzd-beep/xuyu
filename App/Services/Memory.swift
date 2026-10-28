@@ -49,7 +49,7 @@ enum Memory {
         guard let text = try? await relay.complete(request), !text.trimmed.isEmpty else { return }
         convo.memory = String(text.trimmed.prefix(1500))
         convo.memoryUntil = last.createdAt
-        try? context.save()
+        context.persist()
     }
 
     /// 清空聊天记录时，记忆也一起重来

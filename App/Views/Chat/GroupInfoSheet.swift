@@ -44,7 +44,7 @@ enum ConversationRemover {
             for m in convo.messages ?? [] { context.delete(m) }
             Memory.reset(convo)
         }
-        try? context.save()
+        context.persist()
     }
 }
 
@@ -145,7 +145,7 @@ struct GroupInfoSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") {
-                        try? context.save()
+                        context.persist()
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -155,7 +155,7 @@ struct GroupInfoSheet: View {
                 Button("清空", role: .destructive) {
                     for m in convo.messages ?? [] { context.delete(m) }
                     Memory.reset(convo)
-                    try? context.save()
+                    context.persist()
                 }
             } message: {
                 Text("成员会保留，聊天记录和记忆删除后无法恢复。")

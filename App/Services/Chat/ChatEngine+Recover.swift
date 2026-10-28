@@ -34,7 +34,7 @@ extension ChatEngine {
                     m.status = .error
                     m.errorText = (error as? LocalizedError)?.errorDescription ?? "回复被中断"
                 }
-                try? context.save()
+                context.persist()
                 continue
             }
             // 按和实时一样的规则重新分成几条
@@ -65,7 +65,7 @@ extension ChatEngine {
                 for (name, data) in files { deliver(file: name, data: data, from: persona, in: convo, context: context) }
             }
             convo.updatedAt = .now
-            try? context.save()
+            context.persist()
         }
     }
 }

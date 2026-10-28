@@ -102,7 +102,7 @@ struct ChatListView: View {
 
     private func togglePin(_ convo: Conversation) {
         withAnimation(Motion.spring) { convo.pinned.toggle() }
-        try? context.save()
+        context.persist()
     }
 }
 
@@ -138,7 +138,7 @@ struct ConversationRow: View {
     let typing: Bool
 
     var body: some View {
-        TimelineView(.everyMinute) { _ in
+        TimelineView(PlannedSchedule(convo)) { _ in
             let last = convo.lastVisible(at: .now)
             let unread = convo.hasUnread(at: .now)
             HStack(spacing: Space.item) {

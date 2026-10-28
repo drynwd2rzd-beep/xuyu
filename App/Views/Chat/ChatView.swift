@@ -72,8 +72,8 @@ struct ChatView: View {
             ChatWallpaper(index: paper.index, owner: paper.owner)
                 .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
                 .transition(.opacity)
-            // 每分钟刷新一次，让提前排好的主动消息到点出现；判断用的始终是「现在」
-            TimelineView(.everyMinute) { _ in
+            // 提前排好的主动消息到点就出现（见 PlannedSchedule）；判断用的始终是「现在」
+            TimelineView(PlannedSchedule(convo)) { _ in
                 messageList(now: .now)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -134,8 +134,16 @@ struct ChatView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in keyboardShown = false }
+        // 重新生成没成功：旧的那条还在，轻轻提示一句
+        .onChange(of: engine.redoFailed.contains(convo.id)) { _, failed in
+            guard failed else { return }
+            engine.redoFailed.remove(convo.id)
+            flash("没能重新生成，原来的回复还在")
+        }
         .onAppear {
             router.openConversation = convo.id
+            // 不在这个聊天时重新生成失败过：那条旧回复本来就在，不用再提示
+            engine.redoFailed.remove(convo.id)
             convo.lastReadAt = .now
             draft = convo.draft
             // 截图：直接打开表情面板
@@ -148,7 +156,7 @@ struct ChatView: View {
             if router.openConversation == convo.id { router.openConversation = nil }
             convo.draft = draft
             convo.lastReadAt = .now
-            try? context.save()
+            context.persist()
         }
         .sheet(isPresented: $showInfo) {
             GroupInfoSheet(convo: convo)
@@ -387,7 +395,7 @@ struct ChatView: View {
                 let line = text.components(separatedBy: "\n").first(where: { !$0.trimmed.isEmpty })?.trimmed ?? text
                 let item = TodoItem(title: String(line.prefix(60)), notes: text.count > 60 ? text : "")
                 context.insert(item)
-                try? context.save()
+                context.persist()
                 flash("已加入待办")
             },
             openImages: { attachments, index in
@@ -411,7 +419,7 @@ struct ChatView: View {
             recall: { m in
                 // 撤回：留一行「你撤回了一条消息」；TA 还没开口的话会重新看一遍再回
                 withAnimation(Motion.bubble) { m.recalled = true }
-                try? context.save()
+                context.persist()
                 engine.reconsider(convo, members: members, context: context)
             },
             openQuote: { m in
@@ -444,7 +452,7 @@ struct ChatView: View {
                     quoting = m.quote.isEmpty ? nil : m.quote
                     context.delete(m)
                 }
-                try? context.save()
+                context.persist()
                 engine.reconsider(convo, members: members, context: context)
                 inputFocused = true
                 pinBottom += 1
@@ -528,7 +536,7 @@ struct ChatView: View {
             for m in convo.messages ?? [] where ids.contains(m.id) && engine.buffers[m.id] == nil {
                 context.delete(m)
             }
-            try? context.save()
+            context.persist()
         }
     }
 
@@ -583,5 +591,34 @@ struct ChatRow: Identifiable {
             prev = m
         }
         return rows
+    }
+}
+
+/// 聊天页和聊天列表的刷新时间表：每分钟走一次，另外在提前排好的消息（主动消息、追问、约定）到点的那一刻也走一次。
+/// 这样通知弹出来时，点进聊天就已经能看到那句话，出现时也和别的气泡一样冒出来，不用等到下一个整分钟
+struct PlannedSchedule: TimelineSchedule {
+    let planned: [Date]
+
+    init(_ convo: Conversation) {
+        planned = convo.plannedMessages().map(\.createdAt)
+    }
+
+    func entries(from start: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        var minute = Calendar.current.dateInterval(of: .minute, for: start)?.start ?? start
+        var upcoming = planned.filter { $0 > start }.sorted()[...]
+        var first = true
+        return AnyIterator {
+            if first {
+                first = false
+                return start
+            }
+            let next = minute.addingTimeInterval(60)
+            if let due = upcoming.first, due < next {
+                upcoming.removeFirst()
+                return due
+            }
+            minute = next
+            return next
+        }
     }
 }

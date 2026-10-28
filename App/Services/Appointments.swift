@@ -156,7 +156,7 @@ enum Appointments {
         message.isProactive = true
         message.createdAt = a.at
         convo.add(message, context: context)
-        try? context.save()
+        context.persist()
         let title = convo.isGroup ? "\(convo.title.isEmpty ? "群聊" : convo.title) · \(persona.name)" : persona.name
         Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id, title: title, body: text.trimmed, at: a.at)
         a.messageID = message.id
@@ -175,6 +175,6 @@ enum Appointments {
         Reminders.cancelProactive(messageID: id)
         guard let m = try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.id == id })).first, m.createdAt > .now else { return }
         context.delete(m)
-        try? context.save()
+        context.persist()
     }
 }

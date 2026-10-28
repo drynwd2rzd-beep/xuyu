@@ -79,7 +79,7 @@ struct TodoView: View {
                 .contentShape(Rectangle().inset(by: -7))
             }
             .buttonStyle(.plain)
-            .accessibilityValue(monthOpen ? "月历已展开" : "月历已收起")
+            .accessibilityValue(monthOpen ? Text("月历已展开") : Text("月历已收起"))
             .accessibilityIdentifier("monthToggle")
             FoldingCalendar(selected: $selectedDay, marked: markedDays, open: monthOpen)
         }
@@ -173,7 +173,7 @@ struct TodoView: View {
         guard !title.isEmpty else { return }
         let item = TodoItem(title: title, dueDate: isToday ? nil : selectedDay)
         withAnimation(Motion.spring) { context.insert(item) }
-        try? context.save()
+        context.persist()
         newTitle = ""
     }
 
@@ -182,7 +182,7 @@ struct TodoView: View {
             item.isDone.toggle()
             item.completedAt = item.isDone ? .now : nil
         }
-        try? context.save()
+        context.persist()
         Reminders.sync(item)
     }
 
@@ -193,14 +193,14 @@ struct TodoView: View {
         } else {
             item.dueDate = max(base, Date.now.startOfDay.adding(days: 1))
         }
-        try? context.save()
+        context.persist()
         Reminders.sync(item)
     }
 
     private func delete(_ item: TodoItem) {
         Reminders.cancel(item)
         withAnimation(Motion.spring) { context.delete(item) }
-        try? context.save()
+        context.persist()
     }
 }
 

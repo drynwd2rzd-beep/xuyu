@@ -36,6 +36,10 @@ final class ChatEngine {
     @ObservationIgnored private var speaking: Set<UUID> = []
     /// TA 正在打字时被你插话：那个「正在输入」的气泡留着，TA 看完你的新消息接着在里面打（对话 ID -> 那条消息）
     @ObservationIgnored private var carried: [UUID: Message] = [:]
+    /// 重新生成：要被换掉的那条旧回复（对话 ID -> 消息）。新的说出第一句才拿掉它；没换成就一直留着
+    @ObservationIgnored private var replacing: [UUID: Message] = [:]
+    /// 重新生成没成功的对话：聊天页看到后提示一句「原来的回复还在」，然后清掉
+    var redoFailed: Set<UUID> = []
     /// 切到后台时向系统多要一点时间，让正在进行的回复写完
     @ObservationIgnored private var background: [UUID: UIBackgroundTaskIdentifier] = [:]
     /// 正在取回中断的回复（见 ChatEngine+Recover），避免同时取两遍
@@ -85,7 +89,7 @@ final class ChatEngine {
         convo.updatedAt = .now
         convo.lastReadAt = .now
         Companion.cancelPlannedMessages(in: convo, context: context)
-        try? context.save()
+        context.persist()
         let responders = Self.responders(for: text, convo: convo, members: members)
         if busy.contains(convo.id) {
             // 像真人聊天一样可以连着发。连着 @ 了不同的人，这些人都要回
@@ -117,16 +121,21 @@ final class ChatEngine {
             m.readAt = now
             changed = true
         }
-        if changed { try? context.save() }
+        if changed { context.persist() }
     }
 
     func regenerate(_ message: Message, in convo: Conversation, members: [Persona], context: ModelContext) {
         guard !isBusy(convo), message.role == .assistant else { return }
-        // 先确认还有人能回，再删旧的那条：角色已经删掉时不动，免得这条消息白白没了
+        // 角色已经删掉时不动
         guard let persona = members.first(where: { $0.id == message.personaID }) ?? (convo.isGroup ? nil : members.first)
         else { return }
-        context.delete(message)
-        try? context.save()
+        // 出错的那条直接换掉；好好的回复先留着，等新的说出第一句再拿掉（新的失败了，原来的还在）
+        if message.status == .error {
+            withAnimation(Motion.bubble) { context.delete(message) }
+            context.persist()
+        } else {
+            replacing[convo.id] = message
+        }
         run([persona], in: convo, members: members, context: context)
     }
 
@@ -215,7 +224,14 @@ final class ChatEngine {
             buffers[kept.id] = nil
             context.delete(kept)
         }
-        try? context.save()
+        context.persist()
+    }
+
+    /// 重新生成的新回复已经出现：把旧的那条拿掉（放在调用处的动画里一起完成）
+    private func retireReplaced(_ convoID: UUID, context: ModelContext) {
+        // 这期间你自己把旧的删掉了：不用再删
+        guard let old = replacing.removeValue(forKey: convoID), old.modelContext != nil, !old.isDeleted else { return }
+        context.delete(old)
     }
 
     /// 这一轮的第一个气泡：被插话时留下的那个「正在输入」接着用，否则新开一个
@@ -263,8 +279,9 @@ final class ChatEngine {
 
     private func reply(as persona: Persona, in convo: Conversation, members: [Persona], context: ModelContext,
                        discussing: Bool = false) async {
-        // 正在打字、还没出字的那条不算聊天记录
-        let history = convo.visibleMessages().filter { $0.status != .streaming }
+        // 正在打字、还没出字的那条不算聊天记录；正要被重新生成换掉的那条也不算（TA 不该看到自己上一版的回答）
+        let old = replacing[convo.id]?.id
+        let history = convo.visibleMessages().filter { $0.status != .streaming && $0.id != old }
         let request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history, discussing: discussing,
                                             diaryNotes: Companion.myDiaryNotes(context: context),
                                             sharedMemory: PromptBuilder.sharedMemory(of: persona, besides: convo, context: context),
@@ -272,7 +289,7 @@ final class ChatEngine {
                                             appointments: Appointments.summary(persona: persona, convo: convo))
         let relayID = UUID().uuidString
         var (message, buffer) = firstBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
-        try? context.save()
+        context.persist()
         var sent: [String] = []
         // 工作模式的回复是一份完整的汇报，不拆成几条
         var rich = persona.canWork
@@ -334,6 +351,8 @@ final class ChatEngine {
                 let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
                 // 小点变成文字、气泡撑开、「已读」淡出：放在同一个平滑动画里一起完成
                 withAnimation(Motion.bubble) {
+                    // 重新生成：新的第一句出来了，旧的那条这时才退场
+                    retireReplaced(convo.id, context: context)
                     buffers[message.id] = nil
                     if cleaned.isEmpty {
                         // 这一段只有一个表情：表情已经单独发出，空气泡不要了
@@ -349,13 +368,13 @@ final class ChatEngine {
                 lastCommit = .now
                 if pending[convo.id] != nil {
                     interrupted = true
-                    try? context.save()
+                    context.persist()
                     return
                 }
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
                 buffer.hold = true
                 buffer.text = rest
-                try? context.save()
+                context.persist()
             }
         }
 
@@ -386,7 +405,11 @@ final class ChatEngine {
                     pendingReasoning = ""
                     lastFlush = .now
                     // 只有你屏幕上已经看到 TA 在说话，才算「开口了」；还藏着没显示时被你插话，就重新看全部再回
-                    if !buffer.text.trimmed.isEmpty && !buffer.hold { speaking.insert(convo.id) }
+                    if (!buffer.text.trimmed.isEmpty && !buffer.hold) || !buffer.steps.isEmpty {
+                        speaking.insert(convo.id)
+                        // 边写边显示的认真回答：新的开始出字了，旧的那条退场
+                        if replacing[convo.id] != nil { withAnimation(Motion.bubble) { retireReplaced(convo.id, context: context) } }
+                    }
                     if !rich && ReplyText.looksRich(buffer.text) { becomeRich() }
                     await commitParagraphs()
                     if interrupted { break }
@@ -397,7 +420,7 @@ final class ChatEngine {
                 if let last = sent.last { notify(convo: convo, persona: persona, text: last) }
                 convo.updatedAt = .now
                 if router?.openConversation == convo.id { convo.lastReadAt = .now }
-                try? context.save()
+                context.persist()
                 return
             }
             buffer.text += pendingText
@@ -432,18 +455,25 @@ final class ChatEngine {
         let final = message.status == .done
             ? applyMarkers(buffer.text.trimmed, to: message, persona: persona, convo: convo, context: context)
             : buffer.text.trimmed
+        // 重新生成出错了、新的一句也没说出来：失败的这条不要，原来那条留着，只提示一下
+        let failedRedo = message.status == .error && replacing[convo.id] != nil
+        let saidSomething = message.status == .done && (!final.isEmpty || !buffer.steps.isEmpty)
         // 最后一句也和前面一样：小点变成文字、气泡撑开，在同一个平滑动画里完成
         withAnimation(Motion.bubble) {
             buffers[message.id] = nil
             message.content = final
             message.reasoning = buffer.reasoning.trimmed
             message.steps = buffer.steps.joined(separator: "\n")
-            if message.status == .done && message.content.isEmpty && message.steps.isEmpty {
+            if failedRedo || (message.status == .done && message.content.isEmpty && message.steps.isEmpty) {
                 context.delete(message)
             } else if message.status == .done, let lastAudio {
                 attach(lastAudio, to: message)
             }
+            if saidSomething { retireReplaced(convo.id, context: context) }
         }
+        // 没换成（出错、被你停下）：原来那条照旧留着
+        replacing[convo.id] = nil
+        if failedRedo { redoFailed.insert(convo.id) }
         if !final.isEmpty && message.status == .done {
             sent.append(lastAudio == nil ? final : "[语音]")
         }
@@ -452,7 +482,7 @@ final class ChatEngine {
         }
         convo.updatedAt = .now
         if router?.openConversation == convo.id { convo.lastReadAt = .now }
-        try? context.save()
+        context.persist()
     }
 
     /// 处理 TA 回复里的小标记，返回去掉标记后的文字：
@@ -498,7 +528,7 @@ final class ChatEngine {
             a.message = m
             context.insert(a)
         }
-        try? context.save()
+        context.persist()
     }
 
     /// 回复好了：在别的页面时顶部滑下提示；App 在后台时发系统通知

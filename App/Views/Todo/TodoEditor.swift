@@ -20,7 +20,7 @@ struct TodoEditor: View {
                         Task {
                             try? await Task.sleep(for: .milliseconds(350))
                             context.delete(target)
-                            try? context.save()
+                            context.persist()
                         }
                     }
                     .foregroundStyle(Palette.danger)
@@ -91,7 +91,7 @@ struct TodoEditor: View {
         .onDisappear {
             guard !deleted else { return }
             if item.title.trimmed.isEmpty { item.title = "未命名" }
-            try? context.save()
+            context.persist()
             Reminders.sync(item)
         }
     }
@@ -353,7 +353,7 @@ struct DiaryCard: View {
         guard !text.isEmpty || myEntry != nil else { return }
         let entry = ensureMine()
         entry.text = text
-        try? context.save()
+        context.persist()
         // 写完（或改了）就请 TA 回信
         guard let writer, text.count >= 6, text != entry.repliedText else { return }
         Task { await Companion.replyToDiary(entry, by: writer, context: context, relay: relay) }
@@ -363,6 +363,6 @@ struct DiaryCard: View {
         let entry = ensureMine()
         entry.mood = entry.mood == mood ? "" : mood
         entry.text = myText.trimmed
-        try? context.save()
+        context.persist()
     }
 }
