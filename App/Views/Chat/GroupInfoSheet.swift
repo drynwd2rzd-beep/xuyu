@@ -99,7 +99,7 @@ struct GroupInfoSheet: View {
                         VStack(alignment: .leading, spacing: Space.tight) {
                             Segmented(items: [(1, "不讨论"), (-1, "偶尔"), (2, "2 轮"), (3, "3 轮")], selection: $convo.discussRounds)
                             Text("你说一句后，大家会接着彼此的话聊几轮；「偶尔」是有时聊上两三轮、有时各回一句。你随时插话就会停下来听你说。")
-                                .font(.system(size: 12.5))
+                                .font(.system(size: Typo.secondary))
                                 .foregroundStyle(Palette.inkSoft)
                                 .padding(.horizontal, 4)
                         }

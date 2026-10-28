@@ -146,7 +146,7 @@ struct ChatSearchView: View {
                                     Spacer()
                                     Text(m.createdAt.listStamp)
                                 }
-                                .font(.system(size: 12.5))
+                                .font(.system(size: Typo.secondary))
                                 .foregroundStyle(Palette.inkSoft)
                                 Text(highlighted(m.content))
                                     .font(.system(size: 15))

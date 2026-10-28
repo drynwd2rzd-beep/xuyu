@@ -51,6 +51,16 @@ enum Typo {
     static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .serif)
     }
+
+    // 反复出现的几种字：同一种用途只用这一个字号，页面里不再各写各的数字
+    /// 正文：气泡和动态里的字、输入框
+    static let body: CGFloat = 15.5
+    /// 分区标题、页内小标签、分段控件
+    static let label: CGFloat = 13.5
+    /// 副标题、次要说明（行下面那一行灰字、点赞、回复对象）
+    static let secondary: CGFloat = 12.5
+    /// 更小的注释：图片张数、工作过程、代码块语言
+    static let caption: CGFloat = 11.5
 }
 
 /// 统一圆角：所有页面只从这里取值，全部使用 iPhone 屏幕同款的连续曲率圆角（.continuous）。
@@ -129,10 +139,14 @@ enum Motion {
     static let pressOut = Animation.spring(duration: 0.5, bounce: 0.18)
     /// 拖动松手后的归位：跟着手势速度，柔和收尾
     static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
+    /// 很快地淡掉（或在原地换一样东西）：小点变字前淡出、切页前旧页淡出、键盘和面板互换
+    static let fade = Animation.easeOut(duration: 0.18)
     /// 打开聊天：从点的那一行飞进去，一气呵成不回弹
-    static let shuttleIn = Animation.spring(duration: 0.5, bounce: 0)
+    static var shuttleIn: Animation { reduced ? .easeInOut(duration: 0.3) : .spring(duration: 0.5, bounce: 0) }
     /// 返回：聊天页像雾一样散开，列表退回原位
-    static let shuttleOut = Animation.timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46)
+    static var shuttleOut: Animation { reduced ? .easeInOut(duration: 0.3) : .timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46) }
+    /// 系统设置里打开了「减少动态效果」：放大、飞入、滑动都换成原地淡入淡出
+    static var reduced: Bool { UIAccessibility.isReduceMotionEnabled }
     /// 所有气泡都只用这一条：你发的、TA 回的、正在输入的小点、表情、图片、语音、文件，
     /// 冒出来、小点撑开成文字、撤回、拿掉，节奏都一样（这一行撑开、上面让开、气泡放大显现，最后一点点回弹）
     static let bubble = Animation.spring(duration: 0.5, bounce: 0.08)
@@ -196,9 +210,11 @@ struct RiseIn: ViewModifier {
 
     func body(content: Content) -> some View {
         let on = !fresh || shown
-        GrowIn(progress: on ? 1 : 0) {
+        // 减少动态效果：不撑开、不放大，只在原地淡入
+        let still = Motion.reduced
+        GrowIn(progress: on || still ? 1 : 0) {
             content
-                .scaleEffect(on ? 1 : 0.86, anchor: anchor)
+                .scaleEffect(on || still ? 1 : 0.86, anchor: anchor)
                 .opacity(on ? 1 : 0)
         }
         .onAppear {
@@ -289,7 +305,7 @@ struct SectionLabel: View {
     let text: String
     var body: some View {
         Text(LocalizedStringKey(text))
-            .font(Typo.serif(13.5))
+            .font(Typo.serif(Typo.label))
             .foregroundStyle(Palette.inkSoft)
             .padding(.leading, 6)
     }
@@ -324,7 +340,7 @@ struct Segmented<T: Hashable>: View {
                     withAnimation(Motion.snappy) { selection = item.0 }
                 } label: {
                     Text(LocalizedStringKey(item.1))
-                        .font(.system(size: 13.5, weight: on ? .semibold : .regular))
+                        .font(.system(size: Typo.label, weight: on ? .semibold : .regular))
                         .foregroundStyle(on ? Palette.ink : Palette.inkSoft)
                         .padding(.horizontal, 13)
                         .frame(height: 30)
@@ -370,7 +386,7 @@ struct SettingRow<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(LocalizedStringKey(title)).font(.system(size: 16)).foregroundStyle(Palette.ink)
                 if let subtitle {
-                    Text(LocalizedStringKey(subtitle)).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft)
+                    Text(LocalizedStringKey(subtitle)).font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft)
                 }
             }
             Spacer(minLength: 8)

@@ -108,15 +108,16 @@ struct MomentsView: View {
         let name = target.flatMap { t in (t.comment?.personaID ?? t.moment.personaID).flatMap { id in personas.first { $0.id == id }?.name } }
         return HStack(spacing: Space.tight) {
             TextField(name.map { String(localized: "回复 \($0)…") } ?? String(localized: "评论…"), text: $draft, axis: .vertical)
-                .font(.system(size: 15.5))
+                .font(.system(size: Typo.body))
                 .lineLimit(1...4)
                 .focused($typing)
                 .submitLabel(.send)
                 .onSubmit(send)
                 .padding(.horizontal, Space.card)
                 .padding(.vertical, 11)
-                .background(Palette.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+                // 和聊天输入框同一个圆角：一行时是胶囊，多行时四角一样圆
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: Space.control / 2, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Space.control / 2, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
             Button(action: send) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
@@ -257,7 +258,7 @@ struct MomentCard: View {
             Text(moment.text).font(Typo.serif(23)).lineSpacing(4).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            Text(moment.text).font(.system(size: 15.5)).lineSpacing(6).foregroundStyle(Palette.ink)
+            Text(moment.text).font(.system(size: Typo.body)).lineSpacing(6).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -270,7 +271,7 @@ struct MomentCard: View {
                     ForEach(likers.prefix(3)) { AvatarView(persona: $0, size: 22, ring: true) }
                     if moment.likedByMe { UserAvatar(size: 22) }
                 }
-                Text(likeText(likers.map(\.name))).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                Text(likeText(likers.map(\.name))).font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).lineLimit(1)
             }
             Spacer(minLength: 0)
             Button {
@@ -314,8 +315,8 @@ struct MomentCard: View {
                 if c.personaID == nil { UserAvatar(size: 24) } else { AvatarView(persona: who, size: 24) }
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 4) {
-                        Text(whoName).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Palette.ink)
-                        if let to { Text("回复 \(to)").font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft) }
+                        Text(whoName).font(.system(size: Typo.secondary, weight: .semibold)).foregroundStyle(Palette.ink)
+                        if let to { Text("回复 \(to)").font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft) }
                     }
                     Text(c.text).font(.system(size: 14.5)).lineSpacing(3).foregroundStyle(Palette.ink)
                         .multilineTextAlignment(.leading)
@@ -366,7 +367,7 @@ struct VoiceMomentButton: View {
                     .background(Palette.ink, in: Circle())
                 Waveform(seed: id, bars: 16, progress: playing ? player.progress : 0)
                 Text(Self.length(player.duration(id, data: data)))
-                    .font(.system(size: 12.5).monospacedDigit())
+                    .font(.system(size: Typo.secondary).monospacedDigit())
                     .foregroundStyle(Palette.inkSoft)
             }
             .padding(.leading, 6)
@@ -492,7 +493,7 @@ struct MomentComposer: View {
                         ForEach(Self.moods, id: \.self) { m in
                             Button { withAnimation(Motion.snappy) { mood = mood == m ? "" : m } } label: {
                                 Text(LocalizedStringKey(m))
-                                    .font(.system(size: 13.5))
+                                    .font(.system(size: Typo.label))
                                     .foregroundStyle(mood == m ? Palette.inkInverse : Palette.ink)
                                     .padding(.horizontal, 12)
                                     .frame(height: 32)

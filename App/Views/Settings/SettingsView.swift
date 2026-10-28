@@ -156,7 +156,7 @@ struct SettingsView: View {
                 .background(Palette.fill, in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 16)).foregroundStyle(Palette.ink)
-                Text(subtitle).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                Text(subtitle).font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).lineLimit(1)
             }
             Spacer()
             StatusDot(ok: ok)
@@ -184,7 +184,7 @@ struct SettingsView: View {
                     .background(Palette.fill, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text(engine.label).font(.system(size: 16)).foregroundStyle(Palette.ink)
-                    Text(subtitle).font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                    Text(subtitle).font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).lineLimit(1)
                 }
                 Spacer()
                 StatusDot(ok: s?.installed == true && relay.isConnected)
@@ -275,7 +275,7 @@ struct ModelPicker: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             .card()
             if models.isEmpty {
-                Text("连接电脑后显示可用的模型").font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).padding(.leading, 6)
+                Text("连接电脑后显示可用的模型").font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).padding(.leading, 6)
             }
         }
     }

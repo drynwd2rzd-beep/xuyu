@@ -31,7 +31,7 @@ struct ImageStack: View {
             }
             if count > 1 {
                 Text("\(top + 1) / \(count)")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: Typo.caption, weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 3)

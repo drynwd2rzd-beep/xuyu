@@ -263,7 +263,7 @@ struct MomentQuoteCard: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("moment · \(Fmt.hm.string(from: moment.createdAt))")
-                        .font(Typo.serif(12.5).italic())
+                        .font(Typo.serif(Typo.secondary).italic())
                         .foregroundStyle(Palette.inkSoft)
                     Text("“\(moment.text)”")
                         .font(Typo.serif(15))

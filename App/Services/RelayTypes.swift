@@ -89,7 +89,7 @@ enum RelayError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: "还没有连接电脑。去「设置 → 连接」填写地址和配对码。"
+        case .notConfigured: "还没有连接电脑。在 To Do 右上角打开设置，点「电脑中继」填写地址和配对码。"
         case .unreachable: "连不上电脑上的中继。请确认电脑开着中继窗口，并且和手机在同一个网络。"
         case .server(let message): message
         }

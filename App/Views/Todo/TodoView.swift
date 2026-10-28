@@ -75,8 +75,11 @@ struct TodoView: View {
                 }
                 .frame(height: 30)
                 .padding(.leading, Space.tight)
+                // 能点的范围上下各多出一点，凑够 44 高；排版不变
+                .contentShape(Rectangle().inset(by: -7))
             }
             .buttonStyle(.plain)
+            .accessibilityValue(monthOpen ? "月历已展开" : "月历已收起")
             .accessibilityIdentifier("monthToggle")
             FoldingCalendar(selected: $selectedDay, marked: markedDays, open: monthOpen)
         }
@@ -295,19 +298,29 @@ struct FoldingCalendar: View {
         weeks.firstIndex { row in row.contains { cal.isDate($0, inSameDayAs: selected) } } ?? 0
     }
 
+    /// 月份左右箭头：看起来还是那么小，能点的范围是 44×44
+    private func monthArrow(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .frame(width: 44, height: 30)
+            .contentShape(Rectangle().inset(by: -7))
+    }
+
     var body: some View {
         let rows = weeks
         let keep = selectedRow
         VStack(spacing: 4) {
             // 月份切换：只在展开时出现
             HStack {
-                Button { shift(-1) } label: { Image(systemName: "chevron.left").frame(width: 40, height: 30) }
+                Button { shift(-1) } label: { monthArrow("chevron.left") }
+                    .accessibilityLabel("上个月")
                 Spacer()
                 Text(Fmt.enMonth.string(from: month) + " " + String(cal.component(.year, from: month)))
                     .font(Typo.serif(14))
                 Spacer()
-                Button { shift(1) } label: { Image(systemName: "chevron.right").frame(width: 40, height: 30) }
+                Button { shift(1) } label: { monthArrow("chevron.right") }
+                    .accessibilityLabel("下个月")
             }
+            .allowsHitTesting(open)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Palette.ink)
             .frame(height: open ? 30 : 0)

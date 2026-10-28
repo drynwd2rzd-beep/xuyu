@@ -188,7 +188,7 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(lang.isEmpty ? "code" : lang)
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .font(.system(size: Typo.caption, weight: .medium, design: .monospaced))
                     .foregroundStyle(Palette.inkSoft)
                 Spacer()
                 Button {
@@ -197,7 +197,7 @@ struct CodeBlockView: View {
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
                     Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: Typo.caption))
                         .foregroundStyle(Palette.inkSoft)
                 }
                 .buttonStyle(.plain)

@@ -127,7 +127,7 @@ struct AppearanceSettingsView: View {
                 VStack(alignment: .leading, spacing: Space.tight) {
                     WallpaperPicker(owner: nil)
                     Text("每个聊天也可以单独换背景：在角色页或群聊信息里设置。")
-                        .font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft)
+                        .font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft)
                 }
                 .padding(Space.card)
             }
@@ -229,7 +229,7 @@ struct BackupView: View {
             }
 
             Text("恢复会用备份里的内容替换现在 App 里的全部角色、聊天、待办和日记。")
-                .font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft).padding(.horizontal, 6)
+                .font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).padding(.horizontal, 6)
         }
         .overlay(alignment: .top) {
             if let note = working ?? toast {

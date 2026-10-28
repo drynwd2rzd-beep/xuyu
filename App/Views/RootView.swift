@@ -91,11 +91,13 @@ struct RootView: View {
     private func tabPage<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
         let active = shownTab == tab
         let visible = active && revealed
+        // 减少动态效果：不滑、不缩，只淡入淡出
+        let still = visible || Motion.reduced
         let shift: CGFloat = entering ? 28 * direction : -18 * direction
         return content()
             .opacity(visible ? 1 : 0)
-            .offset(x: visible ? 0 : shift)
-            .scaleEffect(visible ? 1 : 0.975)
+            .offset(x: still ? 0 : shift)
+            .scaleEffect(still ? 1 : 0.975)
             .allowsHitTesting(active)
             .accessibilityHidden(!active)
     }
@@ -107,9 +109,9 @@ struct RootView: View {
         let order: [AppTab] = [.home, .chats, .todo]
         direction = (order.firstIndex(of: new) ?? 0) > (order.firstIndex(of: shownTab) ?? 0) ? 1 : -1
         entering = false
-        withAnimation(.easeIn(duration: 0.14)) { revealed = false }
+        withAnimation(Motion.fade) { revealed = false }
         Task {
-            try? await Task.sleep(for: .milliseconds(140))
+            try? await Task.sleep(for: .milliseconds(180))
             // 连续点得很快时，只显示最后点的那个
             guard router.tab == new else { return }
             var t = Transaction()
@@ -118,7 +120,7 @@ struct RootView: View {
                 shownTab = new
                 entering = true
             }
-            withAnimation(.spring(duration: 0.5, bounce: 0.12)) { revealed = true }
+            withAnimation(Motion.spring) { revealed = true }
         }
     }
 }
@@ -156,7 +158,7 @@ struct FloatingTabBar: View {
                     withAnimation(Motion.spring) { selection = item.tab }
                 } label: {
                     Text(item.title)
-                        .font(Typo.serif(15.5, selected ? .semibold : .regular))
+                        .font(Typo.serif(Typo.body, selected ? .semibold : .regular))
                         .foregroundStyle(selected ? Palette.inkInverse : Palette.inkSoft)
                         .padding(.horizontal, 20)
                         .frame(height: 44)
@@ -191,7 +193,7 @@ struct InAppBanner: View {
                     .frame(width: 34, height: 34)
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(banner.title).font(Typo.serif(13.5)).foregroundStyle(Palette.onNoir.opacity(0.7))
+                    Text(banner.title).font(Typo.serif(Typo.label)).foregroundStyle(Palette.onNoir.opacity(0.7))
                     Text(banner.body).font(.system(size: 14)).foregroundStyle(Palette.onNoir).lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -287,9 +289,12 @@ struct SubpageHeader<Trailing: View>: View {
         }
         .frame(height: 44)
         .padding(.horizontal, Space.tight)
-        .padding(.bottom, Space.tight)
-        .background { HeaderFade(fade: 20) }
+        // 渐变整段收在页头里面：没滚动时，第一个分区的标题不会被盖得发白；往上滚的内容照样在这里柔和地淡出
+        .padding(.bottom, Self.fade)
+        .background { HeaderFade(fade: Self.fade).padding(.bottom, Self.fade) }
     }
+
+    private static var fade: CGFloat { 16 }
 }
 
 extension SubpageHeader where Trailing == Color {

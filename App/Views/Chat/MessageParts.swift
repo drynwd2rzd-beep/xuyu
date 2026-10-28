@@ -14,7 +14,7 @@ struct QuoteChip: View {
                 .fill(Palette.faint.opacity(0.7))
                 .frame(width: 2.5)
             Text(text)
-                .font(.system(size: 12.5))
+                .font(.system(size: Typo.secondary))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.inkSoft)
                 .lineLimit(2)
@@ -44,7 +44,7 @@ struct QuoteChip: View {
 struct TimedText: View {
     let text: String
     let time: String
-    var fontSize: CGFloat = 15.5
+    var fontSize: CGFloat = Typo.body
 
     var body: some View {
         (Text(text) + reserve)

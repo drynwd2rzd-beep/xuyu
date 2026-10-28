@@ -198,7 +198,7 @@ struct DiaryCard: View {
                         let on = myEntry?.mood == mood
                         Button { setMood(mood) } label: {
                             Text(mood)
-                                .font(.system(size: 12.5))
+                                .font(.system(size: Typo.secondary))
                                 .foregroundStyle(on ? Palette.inkInverse : Palette.ink2)
                                 .padding(.horizontal, 10)
                                 .frame(height: 28)
@@ -262,7 +262,7 @@ struct DiaryCard: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard canFold else { return }
-                withAnimation(.spring(duration: 0.5, bounce: 0)) { expanded.toggle() }
+                withAnimation(Motion.spring) { expanded.toggle() }
             }
             .sensoryFeedback(.selection, trigger: expanded)
     }
@@ -273,7 +273,7 @@ struct DiaryCard: View {
         if let entry = myEntry, DiaryState.shared.replying.contains(entry.id) {
             HStack(spacing: Space.tight) {
                 AvatarView(persona: writer, size: 22)
-                Text("\(writer?.name ?? "TA") 正在回信").font(.system(size: 12.5)).foregroundStyle(Palette.inkSoft)
+                Text("\(writer?.name ?? "TA") 正在回信").font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft)
                 TypingDots().scaleEffect(0.7, anchor: .leading)
             }
             .padding(.top, 4)

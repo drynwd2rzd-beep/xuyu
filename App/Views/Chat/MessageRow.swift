@@ -11,6 +11,8 @@ struct MessageActions {
     var addTodo: (String) -> Void
     var openImages: ([Attachment], Int) -> Void
     var retry: (Message) -> Void
+    /// 长按「正在输入」的气泡：让 TA 别回了
+    var stop: () -> Void
     var quote: (Message) -> Void
     var recall: (Message) -> Void
     /// 点引用：跳到被引用的原文
@@ -46,6 +48,8 @@ struct MessageRow: View {
     /// 名字旁有没有可以展开的内容（工作过程或思考过程）
     private var hasDetail: Bool { !steps.isEmpty || !reasoning.isEmpty }
     private var time: String { Fmt.bubble.string(from: message.createdAt) }
+    /// 这个对话里 TA 们还在回：这时不能重新生成 / 重试（菜单里不出现，「重试」变灰）
+    private var replying: Bool { message.conversation.map { engine.busy.contains($0.id) } ?? false }
     /// 已经开始回复、但还没有出字
     private var isThinking: Bool { live != nil && (text.isEmpty || live?.hold == true) }
 
@@ -118,7 +122,7 @@ struct MessageRow: View {
                 .transition(.opacity.combined(with: .offset(y: -6)))
         } else if engine.translating.contains(message.id) {
             Text("翻译中…")
-                .font(.system(size: 12.5))
+                .font(.system(size: Typo.secondary))
                 .foregroundStyle(Palette.inkSoft)
                 .padding(.horizontal, 6)
                 .transition(.opacity)
@@ -129,11 +133,11 @@ struct MessageRow: View {
     private var label: some View {
         Button {
             guard hasDetail else { return }
-            withAnimation(.spring(duration: 0.45, bounce: 0.05)) { reasoningOpen.toggle() }
+            withAnimation(Motion.spring) { reasoningOpen.toggle() }
         } label: {
             HStack(spacing: 6) {
                 if showEngineLogo { EngineLogo(engine: persona?.engine ?? .claude, size: 14) }
-                Text(persona?.name ?? "已删除的角色").font(Typo.serif(12.5)).foregroundStyle(Palette.ink2)
+                Text(persona?.name ?? "已删除的角色").font(Typo.serif(Typo.secondary)).foregroundStyle(Palette.ink2)
                 if hasDetail {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8.5, weight: .bold))
@@ -143,7 +147,7 @@ struct MessageRow: View {
                 // 正在干活时，名字旁淡淡地显示当前这一步
                 if live != nil, !reasoningOpen, let current = steps.last {
                     Text(current)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: Typo.caption))
                         .foregroundStyle(Palette.inkSoft)
                         .lineLimit(1)
                         .contentTransition(.opacity)
@@ -160,7 +164,7 @@ struct MessageRow: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !steps.isEmpty {
-                Text("工作过程 · \(steps.count) 步").font(.system(size: 11.5, weight: .medium)).foregroundStyle(Palette.inkSoft)
+                Text("工作过程 · \(steps.count) 步").font(.system(size: Typo.caption, weight: .medium)).foregroundStyle(Palette.inkSoft)
                 ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Circle()
@@ -168,14 +172,14 @@ struct MessageRow: View {
                             .frame(width: 5, height: 5)
                             .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
                         Text(step)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: Typo.secondary))
                             .foregroundStyle(Palette.ink2)
                             .lineLimit(3)
                     }
                     // 展开时一条接一条依次淡入
                     .opacity(reasoningOpen ? 1 : 0)
                     .offset(y: reasoningOpen ? 0 : -4)
-                    .animation(.spring(duration: 0.4, bounce: 0).delay(reasoningOpen ? Double(min(index, 12)) * 0.035 : 0),
+                    .animation(Motion.snappy.delay(reasoningOpen ? Double(min(index, 12)) * 0.035 : 0),
                                value: reasoningOpen)
                 }
             }
@@ -204,10 +208,10 @@ struct MessageRow: View {
                     ZStack(alignment: .topLeading) {
                         if isThinking {
                             TypingDots(bare: true)
-                                .transition(.opacity.animation(.easeOut(duration: 0.18)))
+                                .transition(.opacity.animation(Motion.fade))
                         } else if !isUser && MarkdownParser.looksRich(text) {
                             VStack(alignment: .trailing, spacing: 2) {
-                                MarkdownView(text: text, fontSize: 15.5)
+                                MarkdownView(text: text, fontSize: Typo.body)
                                 timeLabel
                             }
                             .transition(.reveal)
@@ -273,8 +277,18 @@ struct MessageRow: View {
         Text(time).font(TimedText.stampFont).foregroundStyle(TimedText.stampColor)
     }
 
+    /// 长按菜单。TA 正在打字或正在逐字说的这一条：只有一件事可做，让 TA 停下（不在聊天页多放按钮）
     @ViewBuilder
     private var menu: some View {
+        if message.status == .streaming {
+            Button { actions.stop() } label: { Label("停止回复", systemImage: "stop.circle") }
+        } else {
+            doneMenu
+        }
+    }
+
+    @ViewBuilder
+    private var doneMenu: some View {
         if message.kind == .voice {
             Button {
                 // 等长按菜单完全收起再展开，两个动画不会撞在一起
@@ -313,7 +327,7 @@ struct MessageRow: View {
             Button { actions.recall(message) } label: { Label("撤回", systemImage: "arrow.uturn.backward") }
         }
         Button { actions.select(message) } label: { Label("多选", systemImage: "checkmark.circle") }
-        if message.role == .assistant && message.kind == .text {
+        if message.role == .assistant && message.kind == .text && !replying {
             Button { actions.regenerate(message) } label: { Label("重新生成", systemImage: "arrow.clockwise") }
         }
         if !message.content.isEmpty {
@@ -327,7 +341,17 @@ struct MessageRow: View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.circle").font(.system(size: 13))
             Text(LocalizedStringKey(message.errorText ?? "出错了")).font(.system(size: 13)).lineLimit(3)
-            Button("重试") { actions.retry(message) }.font(.system(size: 13, weight: .semibold))
+            Button { actions.retry(message) } label: {
+                Text("重试")
+                    .font(.system(size: 13, weight: .semibold))
+                    // 字还是那么小，能点的范围扩到 44 高
+                    .padding(.horizontal, Space.tight)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(replying)
+            .opacity(replying ? 0.4 : 1)
+            .padding(.vertical, -14)
         }
         .foregroundStyle(Palette.danger)
         .padding(.leading, 4)

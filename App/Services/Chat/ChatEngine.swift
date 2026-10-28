@@ -122,10 +122,11 @@ final class ChatEngine {
 
     func regenerate(_ message: Message, in convo: Conversation, members: [Persona], context: ModelContext) {
         guard !isBusy(convo), message.role == .assistant else { return }
-        let persona = members.first { $0.id == message.personaID } ?? (convo.isGroup ? nil : members.first)
+        // 先确认还有人能回，再删旧的那条：角色已经删掉时不动，免得这条消息白白没了
+        guard let persona = members.first(where: { $0.id == message.personaID }) ?? (convo.isGroup ? nil : members.first)
+        else { return }
         context.delete(message)
         try? context.save()
-        guard let persona else { return }
         run([persona], in: convo, members: members, context: context)
     }
 

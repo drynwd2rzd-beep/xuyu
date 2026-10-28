@@ -9,10 +9,16 @@ import UIKit
 /// 这一层任何时候都不做圆角裁切：聊天页里有系统的导航和滚动视图，裁切会被系统做成只罩住安全区的遮罩，
 /// 动画时状态栏和底部横条那两截就被切掉、露出黑边。也不让它忽略安全区：那样动画中系统按缩小后的位置算留白，
 /// 动画结束才改回来，内容会跳一下
+///
+/// 聊天背景在这一层的最外面（系统导航容器外面）再铺一张整屏的：真机录屏看到，进场动画途中系统只画导航容器
+/// 自己那块（安全区），聊天页里伸到状态栏和底部横条的背景被切掉，露出后面的列表；动画一结束又补满，像抽了一下。
+/// 外面这张和聊天页里那张是同一张图、同样铺满，平时完全重合看不出来，动画中替它把上下两截补上
 struct ChatLayer: View {
     let id: UUID
     @Environment(Router.self) private var router
     @Environment(\.modelContext) private var context
+    @AppStorage(Prefs.wallpaper) private var globalWallpaper = 0
+    @AppStorage(WallpaperStore.stampKey) private var wallpaperStamp = 0.0
 
     var body: some View {
         @Bindable var router = router
@@ -25,12 +31,17 @@ struct ChatLayer: View {
                 .navigationDestination(for: Route.self) { RouteView(route: $0) }
             }
             .background {
-                // 影子只在侧滑时出现，投在左边，像一张纸叠在列表上
-                if swipe > 0 {
-                    Rectangle()
-                        .fill(Palette.paper)
-                        .shadow(color: .black.opacity(0.22 * (1 - swipe)), radius: 20, x: -6)
-                        .ignoresSafeArea()
+                ZStack {
+                    // 影子只在侧滑时出现，投在左边，像一张纸叠在列表上
+                    if swipe > 0 {
+                        Rectangle()
+                            .fill(Palette.paper)
+                            .shadow(color: .black.opacity(0.22 * (1 - swipe)), radius: 20, x: -6)
+                            .ignoresSafeArea()
+                    }
+                    let paper = wallpaper
+                    ChatWallpaper(index: paper.index, owner: paper.owner)
+                        .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
                 }
             }
             .offset(x: swipe * geo.size.width)
@@ -52,6 +63,12 @@ struct ChatLayer: View {
                 }
             }))
         }
+    }
+
+    /// 和聊天页里用的是同一张背景（对话自己设的优先，否则跟随全局）
+    private var wallpaper: (index: Int, owner: UUID?) {
+        _ = wallpaperStamp
+        return WallpaperStore.resolve(for: id, global: globalWallpaper)
     }
 }
 
@@ -122,10 +139,12 @@ struct ShuttleEffect: ViewModifier, Animatable {
         let from = origin ?? CGRect(x: 0, y: screen.midY - 36, width: screen.width, height: 72)
         // 这一层占的是安全区，中心是安全区的中心
         let center = CGPoint(x: screen.midX, y: insets.top + (screen.height - insets.top - insets.bottom) / 2)
+        // 减少动态效果：不飞、不放大、不模糊，只淡入淡出
+        let still = Motion.reduced
         return content
-            .scaleEffect(leaving ? 1 + 0.08 * q : 0.18 + 0.82 * progress)
-            .offset(x: leaving ? 0 : (from.midX - center.x) * q, y: leaving ? 0 : (from.midY - center.y) * q)
-            .blur(radius: leaving ? 14 * q : 0)
+            .scaleEffect(still ? 1 : leaving ? 1 + 0.08 * q : 0.18 + 0.82 * progress)
+            .offset(x: still || leaving ? 0 : (from.midX - center.x) * q, y: still || leaving ? 0 : (from.midY - center.y) * q)
+            .blur(radius: !still && leaving ? 14 * q : 0)
             .opacity(leaving ? Double(progress) : Double(min(1, progress * 1.4)))
     }
 }
@@ -146,7 +165,7 @@ extension View {
     /// 聊天开着时，底下的页面朝你放大、淡开（像从它中间穿过去）；侧滑或返回时跟着回到原位、亮回来。
     /// 只用缩放和透明度，不模糊；放大不会露出边
     func recede(_ amount: CGFloat) -> some View {
-        scaleEffect(1 + 0.12 * amount)
+        scaleEffect(Motion.reduced ? 1 : 1 + 0.12 * amount)
             .opacity(Double(1 - 0.85 * amount))
     }
 }

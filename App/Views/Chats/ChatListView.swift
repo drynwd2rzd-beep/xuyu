@@ -114,7 +114,7 @@ struct SearchField: View {
         HStack(spacing: Space.tight) {
             Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(Palette.inkSoft)
             TextField(placeholder, text: $text)
-                .font(.system(size: 15.5))
+                .font(.system(size: Typo.body))
                 .foregroundStyle(Palette.ink)
                 .submitLabel(.search)
             if !text.isEmpty {
@@ -173,6 +173,9 @@ struct ConversationRow: View {
             .padding(.horizontal, Space.card)
             .padding(.vertical, 13)
             .contentShape(Rectangle())
+            // 旁白：名字、最新一句一起读，有新消息时说「未读」（小圆点本身读不出来）
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(unread ? Text("未读") : Text(""))
         }
     }
 

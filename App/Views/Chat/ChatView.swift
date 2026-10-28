@@ -394,6 +394,7 @@ struct ChatView: View {
                 viewer = ImageViewerItem(attachments: attachments, index: index)
             },
             retry: { m in engine.regenerate(m, in: convo, members: members, context: context) },
+            stop: { engine.stop(convo) },
             quote: { m in
                 let who = m.role == .user ? "我" : (m.personaID.flatMap { personaMap[$0]?.name } ?? "AI")
                 let body: String = switch m.kind {
@@ -431,7 +432,7 @@ struct ChatView: View {
                 withAnimation(Motion.spring) { highlighted = id }
                 Task {
                     try? await Task.sleep(for: .seconds(1.4))
-                    withAnimation(.easeOut(duration: 0.6)) { if highlighted == id { highlighted = nil } }
+                    withAnimation(Motion.glide) { if highlighted == id { highlighted = nil } }
                 }
             },
             selectText: { text in selectableText = SelectableTextItem(text: text) },

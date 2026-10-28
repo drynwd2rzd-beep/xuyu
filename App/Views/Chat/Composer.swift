@@ -245,7 +245,7 @@ struct Composer: View {
     private var field: some View {
         HStack(alignment: .bottom, spacing: 4) {
             TextField("Message to \(convo.isGroup ? convo.displayTitle(members) : members.first?.name ?? "")…", text: $draft, axis: .vertical)
-                .font(.system(size: 15.5))
+                .font(.system(size: Typo.body))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1...6)
                 .focused($focused)
@@ -347,7 +347,7 @@ struct Composer: View {
             focused = true
         } else if focused || panel != nil {
             // 键盘 → 面板（或换另一个面板）：面板和键盘一样高，在原地淡入，输入框不动
-            withAnimation(.easeOut(duration: 0.22)) { panel = p }
+            withAnimation(Motion.fade) { panel = p }
             focused = false
         } else {
             withAnimation(Motion.spring) { panel = p }
