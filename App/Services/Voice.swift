@@ -7,8 +7,16 @@ import Observation
 enum Voice {
     private static let keyAccount = "elevenlabs"
     private static let base = URL(string: "https://api.elevenlabs.io")!
-    /// 先用情感最丰富的 v4；账号不支持就退回稳定的多语言模型
-    private static let models = ["eleven_v4", "eleven_multilingual_v2"]
+    /// 没选模型时用情感最丰富的 v4
+    static let defaultModel = "eleven_v4"
+    /// 选的模型用不了时退回这个：最稳定、支持中文和韩语
+    private static let fallbackModel = "eleven_multilingual_v2"
+
+    /// 设置里选的语音模型（空 = 默认）
+    static var model: String {
+        let chosen = UserDefaults.standard.string(forKey: Prefs.voiceModel) ?? ""
+        return chosen.isEmpty ? defaultModel : chosen
+    }
 
     static var apiKey: String { Keychain.get(keyAccount) ?? "" }
     static var isConfigured: Bool { !apiKey.isEmpty }
@@ -58,13 +66,45 @@ enum Voice {
         }
     }
 
-    /// 把一句话念成语音（mp3）
+    /// 你的账号能用的语音模型（只要能把文字念出来的）
+    struct ModelChoice: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let detail: String
+    }
+
+    static func models() async throws -> [ModelChoice] {
+        let (data, response) = try await URLSession.shared.data(for: request(base.appending(path: "v1/models")))
+        try check(response, data)
+        let list = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] ?? []
+        return list.compactMap { m in
+            guard let id = m["model_id"] as? String, m["can_do_text_to_speech"] as? Bool == true else { return nil }
+            return ModelChoice(id: id, name: m["name"] as? String ?? id, detail: modelNote(id))
+        }
+    }
+
+    /// 每个模型一句话说明，方便挑
+    static func modelNote(_ id: String) -> String {
+        switch id {
+        case "eleven_v4": "情感最丰富，最像真人"
+        case "eleven_v4_turbo": "很有感情，生成更快"
+        case "eleven_v3": "表现力强，语气起伏大"
+        case "eleven_v3_conversational": "适合对话，生成快"
+        case "eleven_multilingual_v2": "最稳定，支持中文和韩语"
+        case "eleven_flash_v2_5": "最快、最省额度"
+        case "eleven_turbo_v2_5": "快，适合短句"
+        default: ""
+        }
+    }
+
+    /// 把一句话念成语音（mp3）：用设置里选的模型，用不了就退回最稳定的多语言模型
     static func speak(_ text: String, voiceID: String) async throws -> Data {
         guard isConfigured else { throw Failure.noKey }
         var url = base.appending(path: "v1/text-to-speech/\(voiceID)")
         url.append(queryItems: [URLQueryItem(name: "output_format", value: "mp3_44100_128")])
         var lastError: Error = Failure.other("没有生成语音")
-        for model in models {
+        let tries = model == fallbackModel ? [model] : [model, fallbackModel]
+        for model in tries {
             var req = request(url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

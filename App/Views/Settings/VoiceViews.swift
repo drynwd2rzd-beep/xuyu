@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// 设置 › 语音：填 ElevenLabs 密钥（只存在这台手机的钥匙串里）
+/// 设置 › 语音：填 ElevenLabs 密钥（只存在这台手机的钥匙串里），选语音模型
 struct VoiceSettingsView: View {
     @State private var key = ""
     @State private var configured = Voice.isConfigured
     @State private var status: String?
+    @State private var models: [Voice.ModelChoice] = []
+    @AppStorage(Prefs.voiceModel) private var model = ""
 
     var body: some View {
         SettingsPage(title: "语音") {
@@ -18,6 +20,23 @@ struct VoiceSettingsView: View {
                         }
                         .font(.system(size: 14))
                         .foregroundStyle(Palette.danger)
+                    }
+                    Hairline()
+                    SettingRow(title: "模型", subtitle: modelNote) {
+                        Menu {
+                            ForEach(models) { m in
+                                Button {
+                                    model = m.id == Voice.defaultModel ? "" : m.id
+                                } label: {
+                                    let on = (model.isEmpty ? Voice.defaultModel : model) == m.id
+                                    if on { Label(m.name, systemImage: "checkmark") } else { Text(m.name) }
+                                }
+                            }
+                        } label: {
+                            MenuValue(text: currentModelName)
+                        }
+                        .disabled(models.isEmpty)
+                        .sensoryFeedback(.selection, trigger: model)
                     }
                 } else {
                     HStack(spacing: Space.tight) {
@@ -47,12 +66,25 @@ struct VoiceSettingsView: View {
         withAnimation(Motion.spring) { configured = true }
     }
 
+    /// 模型下面那句小字说明（没有说明的模型就不显示）
+    private var modelNote: String? {
+        let note = Voice.modelNote(model.isEmpty ? Voice.defaultModel : model)
+        return note.isEmpty ? nil : note
+    }
+
+    /// 现在用的模型叫什么（列表还没读到时先显示 id）
+    private var currentModelName: String {
+        let id = model.isEmpty ? Voice.defaultModel : model
+        return models.first { $0.id == id }?.name ?? id
+    }
+
     private func check() async {
         guard configured else { return }
         status = "正在连接…"
         do {
             let voices = try await Voice.voices()
             status = "已连接 · \(voices.count) 个声音"
+            models = (try? await Voice.models()) ?? []
         } catch {
             status = error.localizedDescription
         }
