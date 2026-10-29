@@ -72,6 +72,8 @@ enum PromptBuilder {
         if convo != nil, let context = persona.modelContext, let moments = MomentPrompt.chatContext(for: persona, context: context) {
             parts.append(moments)
         }
+        // 像真人：会忙、长短跟着心情、小情绪、关系、记得你的事、分享照片（一整天内不变的部分）
+        if let convo, !persona.canWork { parts.append(HumanTouch.systemNotes(for: persona, convo: convo)) }
         // 这里只写到「今天」：一整天内开头都不变，模型的提示缓存才能一直命中；具体时间放在消息末尾
         parts.append("今天是 \(Fmt.day.string(from: .now))。")
         return parts.joined(separator: "\n\n")
@@ -100,7 +102,8 @@ enum PromptBuilder {
         case .images: body = "[发了 \(m.attachments?.count ?? 0) 张图片]" + (m.content.isEmpty ? "" : " \(m.content)")
         case .file: body = "[发了文件：\(m.sortedAttachments.map(\.fileName).joined(separator: "、"))]" + (m.content.isEmpty ? "" : " \(m.content)")
         case .note: body = "【写下的想法】\(m.content)"
-        case .sticker: body = "[发了一个表情]"
+        // 你发的表情：TA 第一次看到时记下了它是什么样（存在这条消息的正文里，界面上不显示）
+        case .sticker: body = "[发了一个表情\(m.content.isEmpty ? "" : "：\(m.content)")]"
         case .voice: body = "[发了一条语音] \(m.content)"
         }
         if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
@@ -177,12 +180,14 @@ enum PromptBuilder {
             : "请以「\(persona.name)」的身份回复。"
         // 你最近发的动态、写的日记：TA 会记在心上，合适的时候自然地关心，但不要生硬地复述
         let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天发的动态、写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
+        // 这一刻的状态（今天的心情、你隔了多久才回、闹没闹别扭、相册里能发的照片）：每次都不一样，放在末尾
+        let state = persona.canWork ? "" : HumanTouch.momentNotes(for: persona, convo: convo, members: members, history: history)
         let prompt = """
         \(shared)\(diary)下面是你们最近的聊天记录：
 
         \(transcript(recent(history, convo: convo), names: names))
 
-        现在是 \(Fmt.time24.string(from: .now))。\(gapNote(history))\(ask)直接输出要说的话，不要加名字或时间。
+        现在是 \(Fmt.time24.string(from: .now))。\(gapNote(history))\(state)\(ask)直接输出要说的话，不要加名字或时间。
         """
         return RelayRequest(engine: persona.engine.rawValue, model: model(for: persona), effort: effort(for: persona),
                             system: system(for: persona, convo: convo, members: members,

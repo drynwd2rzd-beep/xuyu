@@ -310,6 +310,8 @@ struct PersonaEditor: View {
                             MenuValue(text: Self.followUpLabel(persona.followUp))
                         }
                     }
+                    Hairline()
+                    HumanRows(persona: persona)
                 }
                 .animation(Motion.spring, value: persona.proactive)
 
@@ -553,6 +555,28 @@ struct PersonaEditor: View {
             }
             context.delete(target)
             context.persist()
+        }
+    }
+}
+
+/// 角色设置「互动」里的两项：真人节奏（会忙、晚点回、补一句、打字犹豫）和小情绪的程度。存在本机，见 HumanTouch
+struct HumanRows: View {
+    @AppStorage private var pace: Bool
+    @AppStorage private var mood: Int
+
+    init(persona: Persona) {
+        _pace = AppStorage(wrappedValue: true, HumanTouch.paceKey(persona.id))
+        _mood = AppStorage(wrappedValue: 1, HumanTouch.moodKey(persona.id))
+    }
+
+    var body: some View {
+        SettingRow(title: "真人节奏", subtitle: "会忙、会晚点回、想起来再补一句") {
+            InkToggle(isOn: $pace, label: "真人节奏")
+        }
+        Hairline()
+        SettingRow(title: "小情绪") {
+            Segmented(items: [(0, "不要"), (1, "一点点"), (2, "明显")], selection: $mood)
+                .fixedSize()
         }
     }
 }

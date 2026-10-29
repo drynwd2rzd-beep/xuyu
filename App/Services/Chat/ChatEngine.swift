@@ -14,6 +14,8 @@ final class StreamBuffer {
     var hold = false
     /// 工作模式里正等你点「允许 / 不允许」的那一步
     var approval: PendingApproval?
+    /// 打字犹豫：「正在输入」淡出一会儿再出现（像真人打了又删）
+    var paused = false
 }
 
 struct PendingApproval: Equatable {
@@ -55,6 +57,10 @@ final class ChatEngine {
     @ObservationIgnored private var background: [UUID: UIBackgroundTaskIdentifier] = [:]
     /// 正在取回中断的回复（见 ChatEngine+Recover），避免同时取两遍
     @ObservationIgnored var recovering = false
+    /// TA 在忙、晚点才回（见 HumanTouch.lateness）：正在写的那次、为什么忙
+    @ObservationIgnored private var latePlans: [UUID: HumanTouch.Late] = [:]
+    @ObservationIgnored private var lateTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var lateReasons: [UUID: String] = [:]
     @ObservationIgnored private(set) weak var relay: RelayClient?
     @ObservationIgnored private weak var banners: BannerCenter?
     @ObservationIgnored private weak var router: Router?
@@ -99,9 +105,21 @@ final class ChatEngine {
         }
         convo.updatedAt = .now
         convo.lastReadAt = .now
+        // TA 正在忙、晚回的那几条已经排好了：你又说了话，按同一个时间重新写（把你新说的也回了），TA 不会因为你多发几条就突然有空
+        let waiting = convo.plannedMessages().filter { $0.relayID == HumanTouch.lateRead || $0.relayID == HumanTouch.lateUnread }
+        let carriedLate = latePlans[convo.id] ?? waiting.min(by: { $0.createdAt < $1.createdAt }).map {
+            HumanTouch.Late(deliver: $0.createdAt, reason: lateReasons[convo.id] ?? "在忙", read: $0.relayID == HumanTouch.lateRead)
+        }
+        lateTasks[convo.id]?.cancel()
         Companion.cancelPlannedMessages(in: convo, context: context)
         context.persist()
         let responders = Self.responders(for: text, convo: convo, members: members)
+        if !busy.contains(convo.id), let persona = responders.first, let relay, relay.isConnected,
+           let late = carriedLate.flatMap({ $0.deliver > .now.addingTimeInterval(20) ? $0 : nil })
+                ?? HumanTouch.lateness(for: persona, convo: convo) {
+            planLate(late, persona: persona, convo: convo, members: members, context: context, relay: relay)
+            return
+        }
         if busy.contains(convo.id) {
             // 像真人聊天一样可以连着发。连着 @ 了不同的人，这些人都要回
             pending[convo.id] = Self.merge(pending[convo.id] ?? [], responders)
@@ -122,6 +140,37 @@ final class ChatEngine {
         guard !unanswered.isEmpty else { return stop(convo) }
         pending[convo.id] = Self.responders(for: unanswered.map(\.content).joined(separator: "\n"), convo: convo, members: members)
         tasks[convo.id]?.cancel()
+    }
+
+    /// TA 在忙：看到了就先显示已读、过一阵再回；没看到就一直未读，到回的时候才算看过。
+    /// 回复先写好、排在那个时间出现（App 关着也会到点弹通知）；没写成就照常马上回
+    private func planLate(_ late: HumanTouch.Late, persona: Persona, convo: Conversation, members: [Persona],
+                          context: ModelContext, relay: RelayClient) {
+        let convoID = convo.id
+        latePlans[convoID] = late
+        lateReasons[convoID] = late.reason
+        holdBackground(convoID)
+        lateTasks[convoID] = Task { [weak self] in
+            if late.read {
+                try? await Task.sleep(for: .seconds(Double.random(in: 1...2.5)))
+                if !Task.isCancelled { withAnimation(Motion.bubble) { self?.markRead(convo, context: context) } }
+            } else {
+                // 到 TA 回的前一小会儿才算看过（已读只在那之后显示）
+                let seen = late.deliver.addingTimeInterval(-Double.random(in: 5...20))
+                for m in convo.messages ?? [] where m.role == .user && m.readAt == nil { m.readAt = seen }
+                context.persist()
+            }
+            let written = await HumanTouch.writeLate(late, persona: persona, convo: convo, members: members, context: context, relay: relay)
+            guard let self, !Task.isCancelled else { return }
+            self.latePlans[convoID] = nil
+            self.lateTasks[convoID] = nil
+            self.releaseBackground(convoID)
+            if !written {
+                // 没写成（断线、出错）：别让你一直等，照常马上回
+                for m in convo.messages ?? [] where m.role == .user && (m.readAt ?? .distantPast) > .now { m.readAt = nil }
+                self.run([persona], in: convo, members: members, context: context, react: true)
+            }
+        }
     }
 
     /// TA 开始看你的消息了：你发的消息显示已读双勾
@@ -224,6 +273,10 @@ final class ChatEngine {
             // 聊得够多了，就在后台把更早的部分整理进长期记忆
             if let relay = self.relay {
                 Task { await Memory.updateIfNeeded(convo, members: members, context: context, relay: relay) }
+                // 偶尔过几分钟又想起来补一句（单聊）
+                if !convo.isGroup, let persona = responders.first {
+                    Task { await HumanTouch.maybeAfterthought(persona: persona, convo: convo, context: context, relay: relay) }
+                }
             }
         }
     }
@@ -323,6 +376,18 @@ final class ChatEngine {
         buffer.hold = !rich
         var lastCommit = ContinuousClock.now
 
+        /// 打字犹豫：开口前偶尔「正在输入」淡掉一会儿再出现，像打了几个字又删掉重想（开了「真人节奏」才会，每轮最多一次）
+        var hesitated = false
+        func hesitate() async {
+            guard !hesitated, !rich, HumanTouch.pace(persona), !DemoMode.isOn else { return }
+            hesitated = true
+            guard Double.random(in: 0..<1) < 0.18 else { return }
+            withAnimation(Motion.fade) { buffer.paused = true }
+            try? await Task.sleep(for: .seconds(Double.random(in: 1.2...2.4)))
+            withAnimation(Motion.fade) { buffer.paused = false }
+            try? await Task.sleep(for: .seconds(Double.random(in: 0.7...1.4)))
+        }
+
         /// 像真人打字：下一条按长度留出 0.8～3 秒的「打字时间」，期间显示跳动的小点
         func pace(for text: String) async {
             guard !sent.isEmpty else { return }
@@ -382,6 +447,7 @@ final class ChatEngine {
                 guard !head.isEmpty else { buffer.text = rest; continue }
                 // 带格式或特别长的一段：是认真的回答，整段放一条，不拆
                 if ReplyText.looksRich(head) || head.count > 140 { becomeRich(); return }
+                if sent.isEmpty { await hesitate() }
                 await pace(for: head)
                 let audio = await record(head)
                 // 藏着打字的这条，以真正冒出来的时刻为准
@@ -478,8 +544,11 @@ final class ChatEngine {
             if Task.isCancelled { throw CancellationError() }
             await commitParagraphs()
             if buffer.text.trimmed.isEmpty && sent.isEmpty && !Task.isCancelled { throw RelayError.server("没有收到回复。") }
-            // 最后一条也按打字节奏出现
-            if !rich && !buffer.text.trimmed.isEmpty { await pace(for: buffer.text) }
+            // 最后一条也按打字节奏出现（只有一句话的回复，犹豫也在这里）
+            if !rich && !buffer.text.trimmed.isEmpty {
+                if sent.isEmpty { await hesitate() }
+                await pace(for: buffer.text)
+            }
             if !rich { lastAudio = await record(buffer.text) }
             if buffer.hold { message.createdAt = max(.now, message.createdAt) }
             buffer.hold = false
@@ -550,6 +619,24 @@ final class ChatEngine {
         }
         // TA 提起自己的动态：消息上附上 TA 最近那条
         if markers.moment, let latest = context.visibleMoments(by: persona.id).first { message.momentID = latest.id }
+        // 换了称呼、闹别扭、和好
+        HumanTouch.apply(markers, persona: persona)
+        // TA 看了你发的表情：记下它是什么样（写在你那条表情消息里，界面上不显示，聊天记录里 TA 下次就知道）
+        if let note = markers.stickerNote, !note.isEmpty,
+           let sticker = convo.visibleMessages().last(where: { $0.role == .user && $0.kind == .sticker && $0.content.isEmpty }) {
+            sticker.content = String(note.prefix(40))
+        }
+        // TA 分享相册里的一张照片：单独一条图片消息，跟在这句话后面
+        if let number = markers.photo, let photo = HumanTouch.takePhoto(number, persona: persona, context: context) {
+            let picture = Message(role: .assistant, kind: .images, content: "", personaID: persona.id)
+            picture.createdAt = max(.now, message.createdAt).addingTimeInterval(0.000005)
+            let a = Attachment(kind: "image", fileName: "photo.jpg", data: photo.data, order: 0)
+            withAnimation(Motion.bubble) {
+                convo.add(picture, context: context)
+                a.message = picture
+                context.insert(a)
+            }
+        }
         let stickers = markers.stickerPacks.isEmpty ? [] : (try? context.fetch(FetchDescriptor<Sticker>())) ?? []
         for pack in markers.stickerPacks {
             // 找不到这个分类就不发

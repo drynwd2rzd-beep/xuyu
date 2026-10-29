@@ -387,7 +387,8 @@ struct ChatView: View {
     private func readReceiptTarget(_ messages: [Message]) -> UUID? {
         guard let index = messages.lastIndex(where: { $0.role == .user && !$0.recalled }) else { return nil }
         let mine = messages[index]
-        guard mine.readAt != nil else { return nil }
+        // TA 在忙没看到：已读时间排在以后，到那时才显示「已读」
+        guard let read = mine.readAt, read <= .now else { return nil }
         let replied = messages[(index + 1)...].contains { m in
             guard m.status == .streaming else { return true }
             // 只看「还藏着」这一个开关，不读正文，免得每冒一个字整个列表都重排一次

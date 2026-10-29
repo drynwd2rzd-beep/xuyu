@@ -39,6 +39,15 @@ enum ReplyText {
         var moment = false
         /// 要念出来的话：保留语气标签（笑、叹气、停顿），body 里的已经去掉
         var spoken = ""
+        /// 【称呼:…】TA 换了个叫你的称呼
+        var nickname: String?
+        /// 【闹别扭】【和好】
+        var sulk = false
+        var makeUp = false
+        /// 【照片:编号】TA 分享相册里的一张照片
+        var photo: Int?
+        /// 【表情描述:…】TA 看了你发的表情，记一句它是什么样
+        var stickerNote: String?
     }
 
     // 中英文括号都认：【】 和 []
@@ -50,10 +59,35 @@ enum ReplyText {
     private static let momentMarker = try! Regex("[【\\[]动态[】\\]]")
     /// TA 偶尔会用文字假装发表情（比如「[表情]」「【捂脸表情】」）
     private static let fakeSticker = try! Regex("[【\\[][^】\\]]{0,8}表情[^】\\]]{0,8}[】\\]]")
+    private static let nicknameMarker = try! Regex("[【\\[]称呼[:：]\\s*(.+?)[】\\]]")
+    private static let sulkMarker = try! Regex("[【\\[]闹别扭[】\\]]")
+    private static let makeUpMarker = try! Regex("[【\\[]和好[】\\]]")
+    private static let photoMarker = try! Regex("[【\\[]照片[:：]\\s*(\\d+)\\s*[】\\]]")
+    private static let stickerNoteMarker = try! Regex("[【\\[]表情描述[:：]\\s*(.+?)[】\\]]")
 
     /// 【引用:那句话里的几个字】把你说过的话挂在 TA 这条下面；【表情:分类】发一个表情；假装的表情文字直接去掉
     static func markers(in text: String) -> Markers {
         var body = text
+        // 这几个先拿掉：【表情描述:…】不能被当成假装的表情删掉
+        var stickerNote: String?
+        if let match = body.firstMatch(of: stickerNoteMarker) {
+            stickerNote = match.output[1].substring.map { String($0).trimmed }
+            body.removeSubrange(match.range)
+        }
+        var nickname: String?
+        if let match = body.firstMatch(of: nicknameMarker) {
+            nickname = match.output[1].substring.map { String($0).trimmed }
+            body.removeSubrange(match.range)
+        }
+        var photo: Int?
+        if let match = body.firstMatch(of: photoMarker) {
+            photo = match.output[1].substring.flatMap { Int(String($0)) }
+            body.removeSubrange(match.range)
+        }
+        let sulk = body.firstMatch(of: sulkMarker) != nil
+        body = body.replacing(sulkMarker, with: "")
+        let makeUp = body.firstMatch(of: makeUpMarker) != nil
+        body = body.replacing(makeUpMarker, with: "")
         var quoteKey: String?
         if let match = body.firstMatch(of: quoteMarker) {
             quoteKey = match.output[1].substring.map { String($0).trimmed }
@@ -81,8 +115,14 @@ enum ReplyText {
         let voice = body.firstMatch(of: voiceMarker) != nil
         body = body.replacing(voiceMarker, with: "")
         body = body.replacing(fakeSticker, with: "")
-        return Markers(body: VoiceTags.strip(body), quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels,
-                       voice: voice, moment: moment, spoken: body.trimmed)
+        var markers = Markers(body: VoiceTags.strip(body), quoteKey: quoteKey, stickerPacks: packs, promises: promises, cancels: cancels,
+                              voice: voice, moment: moment, spoken: body.trimmed)
+        markers.nickname = nickname
+        markers.sulk = sulk
+        markers.makeUp = makeUp
+        markers.photo = photo
+        markers.stickerNote = stickerNote
+        return markers
     }
 
     /// TA 引用的是你哪句话：从最近的往前找，包含这几个字的那条（或这几个字包含那条的开头）

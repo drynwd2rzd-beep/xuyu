@@ -184,6 +184,26 @@ final class LogicTests: XCTestCase {
         XCTAssertTrue(c.promises.isEmpty)
     }
 
+    // MARK: - 像真人
+
+    func testHumanMarkers() {
+        let n = ReplyText.markers(in: "以后就叫你小敏啦【称呼:小敏】")
+        XCTAssertEqual(n.body, "以后就叫你小敏啦")
+        XCTAssertEqual(n.nickname, "小敏")
+        let s = ReplyText.markers(in: "哦。【闹别扭】")
+        XCTAssertEqual(s.body, "哦。")
+        XCTAssertTrue(s.sulk)
+        XCTAssertTrue(ReplyText.markers(in: "好啦不气了【和好】").makeUp)
+        let p = ReplyText.markers(in: "【照片:2】看，桂花开了")
+        XCTAssertEqual(p.photo, 2)
+        XCTAssertEqual(p.body, "看，桂花开了")
+        // 表情描述比较长，也不能被当成「假装的表情」删掉
+        let d = ReplyText.markers(in: "哈哈哈这个表情好好笑【表情描述:一只橘猫捂着脸偷偷从指缝里看】")
+        XCTAssertEqual(d.stickerNote, "一只橘猫捂着脸偷偷从指缝里看")
+        XCTAssertEqual(d.body, "哈哈哈这个表情好好笑")
+        XCTAssertTrue(d.stickerPacks.isEmpty)
+    }
+
     func testAppointmentTimes() throws {
         let cal = Calendar.current
         let now = try XCTUnwrap(cal.date(bySettingHour: 19, minute: 0, second: 0, of: .now))

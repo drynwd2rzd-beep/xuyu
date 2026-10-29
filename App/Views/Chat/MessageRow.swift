@@ -215,6 +215,8 @@ struct MessageRow: View {
                 ZStack(alignment: .topLeading) {
                     if isThinking {
                         bubble(isUser: isUser) { TypingDots(bare: true) }
+                            // 打字犹豫：小点淡掉一会儿再出现（位置不动，上面的消息不会跟着跳）
+                            .opacity(live?.paused == true ? 0 : 1)
                             .transition(.opacity.animation(Motion.fade))
                     } else {
                         bubble(isUser: isUser) {
