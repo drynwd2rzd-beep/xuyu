@@ -153,6 +153,14 @@ enum World {
         return base > date ? base : base.addingTimeInterval(86400)
     }
 
+    /// TA 主动做点什么（发动态、来找你、分享视频）的时间：落在 TA 睡觉的时候，就推到醒来以后一会儿（也避开你的免打扰）
+    static func awake(_ date: Date, for id: UUID) -> Date {
+        guard status(of: id, at: date) == .asleep else { return date }
+        var moved = nextWake(of: id, after: date).addingTimeInterval(Double.random(in: 1200...5400))
+        for _ in 0..<6 where Prefs.isQuiet(moved) { moved = moved.addingTimeInterval(3600) }
+        return moved
+    }
+
     // MARK: - 写进提示词
 
     /// 一整天都不变的部分（世界、你、关系、TA 自己是谁、作息）

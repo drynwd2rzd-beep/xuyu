@@ -67,6 +67,12 @@ struct XuyuApp: App {
                         await Companion.refresh(context: container.mainContext, relay: relay)
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: RelayClient.didConnect)) { _ in
+                    guard !DemoMode.isOn else { return }
+                    // 断开期间你发的消息：现在回；主动消息、动态这些也趁连上准备好（打开 App 时可能还没连上）
+                    engine.answerQueued(context: container.mainContext)
+                    Task { await Companion.refresh(context: container.mainContext, relay: relay) }
+                }
         }
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in

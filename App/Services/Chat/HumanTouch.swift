@@ -126,12 +126,31 @@ enum HumanTouch {
             }
         }
         if !convo.isGroup, let menu = photoLines(for: persona) { lines.append(menu) }
+        // 你一口气发了好几条、问了好几个问题：像真人一样先回最想回的，不必条条都回（漏掉的过一会儿会想起来补上）
+        if !convo.isGroup, pace(persona) {
+            let batch = lastBatch(history)
+            if batch.count >= 3, batch.filter({ isQuestion($0.content) }).count >= 2, Double.random(in: 0..<1) < 0.4 {
+                lines.append("TA 一下子发了好几条，你先回最想回的就好，不用每个问题都回到。")
+            }
+        }
         // 群里你最新说的那句还没人回：轮到的这位不能潜水，不然你这句就没人理了
         if convo.isGroup, let lastUser = history.lastIndex(where: { $0.role == .user }),
            !history[(lastUser + 1)...].contains(where: { $0.role == .assistant && !$0.content.isEmpty }) {
             lines.append("TA 刚说的这句群里还没人回，你要回，不能写【潜水】。")
         }
         return lines.joined(separator: "")
+    }
+
+    /// 你最近连着发的那几条（TA 上次说话之后的）
+    static func lastBatch(_ history: [Message]) -> [Message] {
+        Array(history.reversed().prefix { $0.role == .user }.reversed()).filter { !$0.recalled && $0.kind == .text }
+    }
+
+    /// 看起来是在问问题
+    static func isQuestion(_ text: String) -> Bool {
+        let t = text.trimmed
+        return t.contains("？") || t.contains("?") || ["吗", "呢", "么", "没", "不"].contains { t.hasSuffix($0) }
+            || ["什么", "怎么", "为什么", "哪", "几", "多少", "要不要", "是不是", "有没有"].contains { t.contains($0) }
     }
 
     /// TA 今天的心情：TA 自己写的日记里记的（今天没写就看昨天的）
@@ -302,21 +321,28 @@ enum HumanTouch {
     /// 一段回复说完后，偶尔过几分钟又来一条「对了……」。你先开口了就不补
     @MainActor
     static func maybeAfterthought(persona: Persona, convo: Conversation, context: ModelContext, relay: RelayClient) async {
-        guard !convo.isGroup, !persona.canWork, pace(persona), !DemoMode.isOn, relay.isConnected,
-              Double.random(in: 0..<1) < 0.12 else { return }
+        guard !convo.isGroup, !persona.canWork, pace(persona), !DemoMode.isOn, relay.isConnected else { return }
         let visible = convo.visibleMessages()
         guard let last = visible.last, last.role == .assistant, last.status == .done,
               !Companion.endedNaturally(visible.suffix(3).map(\.content)) else { return }
+        // 你刚才问的几个问题（TA 这次回复之前你连着发的）：问得多，就更可能有漏回的，要补上
+        let replyStart = (visible.lastIndex(where: { $0.role == .user }) ?? visible.count - 1) + 1
+        let asked = lastBatch(Array(visible[..<replyStart])).filter { isQuestion($0.content) }
+        let checkMissed = asked.count >= 2
+        guard Double.random(in: 0..<1) < (checkMissed ? 0.6 : 0.12) else { return }
         let deliver = Date.now.addingTimeInterval(Double.random(in: 90...420))
         guard !Prefs.isQuiet(deliver) else { return }
         let names = [persona.id: persona.name]
+        let questions = asked.map { "「\($0.content.prefix(40))」" }.joined(separator: "、")
+        let task = checkMissed
+            ? "你刚发完上面最后那几条。TA 之前问了你这几个问题：\(questions)。过了几分钟，你回头看了看，发现有没回到的问题，就像真人那样补一句（可以用「刚才你问的那个……」「对了你说的……」开头）。\n都已经回过了、或者补了会显得啰嗦，就只输出：不补充"
+            : "你刚发完上面最后那几条。过了几分钟，你又想起来一件相关的小事想补一句：刚才忘了说的、突然想到的细节、或者一个小问题。\n如果没什么值得补的、补了会显得啰嗦，就只输出：不补充"
         let prompt = """
         下面是你们最近的聊天记录：
 
         \(PromptBuilder.transcript(Array(visible.suffix(16)), names: names))
 
-        你刚发完上面最后那几条。过了几分钟，你又想起来一件相关的小事想补一句：刚才忘了说的、突然想到的细节、或者一个小问题。
-        如果没什么值得补的、补了会显得啰嗦，就只输出：不补充
+        \(task)
         否则只写一两句，口语化，可以用「对了」「刚想起来」这类开头，但不一定。只输出消息内容。
         """
         guard let text = try? await relay.complete(Companion.lightRequest(persona, prompt)),

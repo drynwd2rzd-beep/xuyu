@@ -106,7 +106,8 @@ enum MomentsPlanner {
             let theirs = all.filter { $0.personaID == persona.id }
             // 已经写好、还没到点的：等它发出去再排下一条
             if theirs.contains(where: { $0.createdAt > now }) { continue }
-            let deliver = nextTime(after: now, last: theirs.first?.createdAt, freq: persona.momentsFreq)
+            // TA 睡着的时候不发：推到醒来以后
+            let deliver = World.awake(nextTime(after: now, last: theirs.first?.createdAt, freq: persona.momentsFreq), for: persona.id)
             await write(for: persona, at: deliver, context: context, relay: relay)
         }
         // 到点发出来的动态：别的角色来看一眼

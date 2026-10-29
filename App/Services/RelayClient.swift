@@ -91,6 +91,9 @@ final class RelayClient {
 
     var isConnected: Bool { state == .connected }
 
+    /// 连上电脑了（断开后重新连上也算）：排着队没回的消息这时再回
+    static let didConnect = Notification.Name("relay.didConnect")
+
     // MARK: - 连接
 
     func connectIfConfigured() {
@@ -281,6 +284,7 @@ final class RelayClient {
             if let decoded = try? JSONDecoder().decode(RelayStatus.self, from: data) { status = decoded }
             if state != .connected {
                 state = .connected
+                NotificationCenter.default.post(name: Self.didConnect, object: nil)
                 retryDelay = 2
                 orphanTimeout?.cancel()
                 waiters.values.forEach { $0.resume() }

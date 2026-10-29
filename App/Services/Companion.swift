@@ -319,7 +319,10 @@ enum Companion {
             let convo = context.chat(for: persona)
             // 约好的消息不算：它们到点照常来
             guard convo.plannedMessages(after: now).allSatisfy({ Appointments.isAppointment($0.id) }) else { continue }
-            let deliver = nextSlot(after: now, frequency: persona.proactiveFreq, habits: habits)
+            // 你最后说的话 TA 还没回（比如电脑断开时发的）：先回你，不另起话题
+            // （通话记录气泡在你这边，但不是要 TA 回的话）
+            if let last = convo.visibleMessages(at: now).last, last.role == .user, last.kind != .call { continue }
+            let deliver = World.awake(nextSlot(after: now, frequency: persona.proactiveFreq, habits: habits), for: persona.id)
             let history = convo.visibleMessages(at: now)
             let names = [persona.id: persona.name]
             let todos = todayTodos(context).map(\.title).prefix(5).joined(separator: "、")

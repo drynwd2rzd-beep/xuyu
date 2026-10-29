@@ -146,7 +146,56 @@ final class Books {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try JSONEncoder().encode(book).write(to: dir.appendingPathComponent("book.json"), options: .atomic)
         shelf.insert(book, at: 0)
+        // 从备份恢复过这本书的进度：重新导入时接上
+        adoptRestored()
         return book
+    }
+
+    // MARK: - 备份
+
+    /// 备份里的一本书：书名、作者、章数和进度、划线、批注、问答（正文太大，不备份）
+    struct Saved: Codable {
+        var title: String
+        var author: String
+        var chapters: Int
+        var state: State
+    }
+
+    /// 从本机文件读（备份在后台线程做）
+    static func savedStates() -> [Saved] {
+        let fm = FileManager.default
+        var list: [Saved] = []
+        for dir in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            guard let state = (try? Data(contentsOf: dir.appendingPathComponent("state.json"))).flatMap({ try? JSONDecoder().decode(State.self, from: $0) }),
+                  let book = (try? Data(contentsOf: dir.appendingPathComponent("book.json"))).flatMap({ try? JSONDecoder().decode(Book.self, from: $0) })
+            else { continue }
+            list.append(Saved(title: book.title, author: book.author, chapters: book.chapters.count, state: state))
+        }
+        return list
+    }
+
+    private static var restoredURL: URL { root.appendingPathComponent("restored.json") }
+
+    /// 从备份恢复：书架上已经有的同一本书（书名和章数都一样）马上接上进度；还没导入的先记着，导入时再接
+    func restore(_ saved: [Saved]) {
+        if let data = try? JSONEncoder().encode(saved) { try? data.write(to: Self.restoredURL, options: .atomic) }
+        adoptRestored()
+        publish()
+    }
+
+    private func adoptRestored() {
+        guard let data = try? Data(contentsOf: Self.restoredURL),
+              var pending = try? JSONDecoder().decode([Saved].self, from: data), !pending.isEmpty else { return }
+        for book in shelf {
+            guard let i = pending.firstIndex(where: { $0.title == book.title && $0.chapters == book.chapters.count }) else { continue }
+            let restored = pending.remove(at: i).state
+            update(book.id) { $0 = restored }
+        }
+        if pending.isEmpty {
+            try? FileManager.default.removeItem(at: Self.restoredURL)
+        } else if let data = try? JSONEncoder().encode(pending) {
+            try? data.write(to: Self.restoredURL, options: .atomic)
+        }
     }
 
     /// TXT：先试 UTF-8，再试 GBK（国内的 txt 很多是 GBK）
@@ -187,6 +236,21 @@ final class Books {
             return parts
         }
         return chapters
+    }
+
+    /// 写进长期记忆：这段时间和这位一起读的书、读到哪、TA 被问到的那几段
+    func memoryLines(for id: UUID, from start: Date, to end: Date) -> [String] {
+        var lines: [String] = []
+        for book in shelf {
+            let s = state(book.id)
+            guard s.persona == id, let last = s.lastRead, last > start else { continue }
+            let chapter = book.chapters[min(s.chapter, book.chapters.count - 1)].title
+            lines.append("一起读《\(book.title)》，读到「\(chapter)」")
+            for ask in s.asks where ask.at > start && ask.at <= end {
+                lines.append("读《\(book.title)》时问 TA「\(ask.question.prefix(40))」（那段：\(ask.quote.prefix(30))），TA 说：\(ask.answer.prefix(60))")
+            }
+        }
+        return Array(lines.suffix(8))
     }
 
     // MARK: - 写进聊天的提示词

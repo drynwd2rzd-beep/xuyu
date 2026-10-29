@@ -103,10 +103,13 @@ final class VideoCards {
         let card = options[index - 1]
         let convo = context.chat(for: persona)
         // 已经排着别的消息（晚回、补一句、主动来找你）：这次就不发了，免得和那几条撞在一起
-        guard convo.plannedMessages().isEmpty else { return }
+        let last = convo.visibleMessages().last
+        guard convo.plannedMessages().isEmpty, last?.role != .user || last?.kind == .call else { return }
         // 排在今天晚些时候（像 TA 刷到时随手发来），避开免打扰
         var deliver = Date.now.addingTimeInterval(Double.random(in: 600...5400))
         if Prefs.isQuiet(deliver) { deliver = Date.now.addingTimeInterval(600) }
+        // TA 这会儿在睡觉：等醒了再「刷到」
+        deliver = World.awake(deliver, for: persona.id)
         let m = Message(role: .assistant, content: text, personaID: persona.id)
         m.isProactive = true
         m.relayID = "video"

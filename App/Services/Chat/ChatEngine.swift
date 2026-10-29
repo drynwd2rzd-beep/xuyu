@@ -61,6 +61,8 @@ final class ChatEngine {
     @ObservationIgnored private var latePlans: [UUID: HumanTouch.Late] = [:]
     @ObservationIgnored private var lateTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var lateReasons: [UUID: String] = [:]
+    /// 电脑没连上时排队的提示：每次打开 App 只说一次
+    @ObservationIgnored private var queuedNoticeShown = false
     @ObservationIgnored private(set) weak var relay: RelayClient?
     @ObservationIgnored private weak var banners: BannerCenter?
     @ObservationIgnored private weak var router: Router?
@@ -124,6 +126,14 @@ final class ChatEngine {
         if convo.isGroup, members.count > 1, responders.count == members.count, !text.contains("@所有人") {
             responders = Self.lurking(members)
         }
+        // 电脑没连上：消息照常发出、先不显示已读，连上以后 TA 再回（见 answerQueued）
+        if !busy.contains(convo.id), !(relay?.isConnected ?? false), !DemoMode.isOn {
+            if !queuedNoticeShown {
+                queuedNoticeShown = true
+                notices[convo.id] = String(localized: "电脑还没连上，连上后 TA 就会回你")
+            }
+            return
+        }
         if !busy.contains(convo.id), let persona = responders.first, let relay, relay.isConnected,
            let late = carriedLate.flatMap({ $0.deliver > .now.addingTimeInterval(20) ? $0 : nil })
                 ?? HumanTouch.lateness(for: persona, convo: convo) {
@@ -183,6 +193,35 @@ final class ChatEngine {
         }
     }
 
+    /// 连上电脑以后：你在断开期间发的、TA 还没看过的消息（最近一天内），按正常规则回（在忙就晚点回）
+    func answerQueued(context: ModelContext) {
+        guard let relay, relay.isConnected, !DemoMode.isOn else { return }
+        let convos = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
+        let personas = context.allPersonas()
+        let since = Date.now.addingTimeInterval(-86400)
+        for convo in convos where !busy.contains(convo.id) && latePlans[convo.id] == nil && lateTasks[convo.id] == nil {
+            let said = convo.visibleMessages().filter { $0.status != .streaming }
+            guard let last = said.last, last.role == .user, !last.recalled, last.readAt == nil, last.createdAt > since else { continue }
+            // 晚回已经排好了：到点照常来
+            guard !convo.plannedMessages().contains(where: { $0.relayID == HumanTouch.lateRead || $0.relayID == HumanTouch.lateUnread })
+            else { continue }
+            let members = convo.memberIDs.compactMap { id in personas.first { $0.id == id } }
+            guard !members.isEmpty else { continue }
+            let unanswered = said.reversed().prefix { $0.role == .user }.filter { !$0.recalled }
+            let text = unanswered.map(\.content).joined(separator: "\n")
+            var responders = Self.responders(for: text, convo: convo, members: members)
+            if convo.isGroup, members.count > 1, responders.count == members.count, !text.contains("@所有人") {
+                responders = Self.lurking(members)
+            }
+            guard let persona = responders.first else { continue }
+            if let late = HumanTouch.lateness(for: persona, convo: convo) {
+                planLate(late, persona: persona, convo: convo, members: members, context: context, relay: relay)
+            } else {
+                run(responders, in: convo, members: members, context: context, react: true)
+            }
+        }
+    }
+
     /// 拍一拍：你双击了 TA 的头像。TA 有时回拍你一下，有时看到「你拍了拍 TA」回一句
     func nudge(_ persona: Persona, in convo: Conversation, members: [Persona], context: ModelContext) {
         let m = Message(role: .user, kind: .nudge, content: persona.name)
@@ -199,7 +238,8 @@ final class ChatEngine {
         }
         Companion.cancelPlannedMessages(in: convo, context: context)
         context.persist()
-        guard !busy.contains(convo.id) else { return }
+        // 电脑没连上：先留着这一下，连上后 TA 再回
+        guard !busy.contains(convo.id), relay?.isConnected ?? false else { return }
         if Double.random(in: 0..<1) < 0.35 {
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(Double.random(in: 1.2...2.6)))

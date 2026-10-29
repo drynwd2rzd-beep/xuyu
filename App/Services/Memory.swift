@@ -29,6 +29,15 @@ enum Memory {
         let user = PromptBuilder.userName
         let names = Dictionary(members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         let who = convo.isGroup ? "群聊「\(convo.displayTitle(members))」里的大家" : "「\(persona.name)」"
+        // 这段时间一起读的书、一起听的歌（不在聊天记录里，也该记住）
+        var together: [String] = []
+        if !convo.isGroup {
+            together += Books.shared.memoryLines(for: persona.id, from: convo.memoryUntil, to: last.createdAt)
+            if let songs = ListenTogether.shared.memoryLine(for: persona.id, from: convo.memoryUntil, to: last.createdAt) {
+                together.append(songs)
+            }
+        }
+        let alsoDid = together.isEmpty ? "" : "\n这段时间你们还一起做过：\n" + together.map { "- " + $0 }.joined(separator: "\n") + "\n"
         let prompt = """
         你在帮\(who)整理和\(user)聊天的长期记忆。下面是现有的记忆，和一段更早的聊天记录。
 
@@ -37,9 +46,9 @@ enum Memory {
 
         更早的聊天记录：
         \(PromptBuilder.transcript(chunk, names: names))
-
+        \(alsoDid)
         请输出更新后的完整记忆：
-        - 保留关于\(user)的重要信息：身份、喜好、习惯、经历、正在做的事和计划、重要的日子、情绪上的变化，以及你们之间的约定、昵称、梗。
+        - 保留关于\(user)的重要信息：身份、喜好、习惯、经历、正在做的事和计划、重要的日子、情绪上的变化，以及你们之间的约定、昵称、梗，一起做过的事（打过的电话、一起读的书、一起听的歌）。
         - 合并新信息，删掉过时、重复或琐碎的内容；能写日期的写上日期。
         - 用简洁的中文要点，每条一行，以「- 」开头，最多 25 条，总共不超过 600 字。
         只输出记忆本身，不要别的话。

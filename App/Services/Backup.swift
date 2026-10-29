@@ -29,6 +29,8 @@ enum Backup {
         var files: [String: Data]?
         /// 每个角色的「真人感」设置和关系、天气设置（存成 plist）
         var touches: Data?
+        /// 一起读的书：进度、划线、批注、问答（不含正文，重新导入同一本书时接上）
+        var books: [Books.Saved]?
     }
 
     struct PersonaDTO: Codable {
@@ -182,7 +184,8 @@ enum Backup {
             }),
             touches: try? PropertyListSerialization.data(
                 fromPropertyList: defaults.dictionaryRepresentation().filter { key, _ in touchPrefixes.contains { key.hasPrefix($0) } },
-                format: .binary, options: 0))
+                format: .binary, options: 0),
+            books: Books.savedStates())
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         return try encoder.encode(archive)
@@ -226,6 +229,7 @@ enum Backup {
             CallLogs.shared.reload()
             ListenTogether.shared.reloadHistory()
         }
+        if let books = archive.books { Books.shared.restore(books) }
         if let touches = archive.touches,
            let saved = try? PropertyListSerialization.propertyList(from: touches, format: nil) as? [String: Any] {
             for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("human.") { defaults.removeObject(forKey: key) }

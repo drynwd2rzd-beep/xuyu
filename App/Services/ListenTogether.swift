@@ -20,6 +20,9 @@ final class ListenTogether {
         var title: String
         var artist: String
         var artwork: String = ""
+        /// 和谁一起听的、什么时候（写进长期记忆用；旧记录里没有）
+        var with: UUID?
+        var at: Date?
     }
 
     /// 正在和谁一起听（nil = 没开）
@@ -139,7 +142,9 @@ final class ListenTogether {
     private func songChanged() {
         let before = now
         refresh()
-        guard let song = now, song.id != before?.id else { return }
+        guard var song = now, song.id != before?.id else { return }
+        song.with = persona
+        song.at = .now
         history.removeAll { $0.id == song.id }
         history.insert(song, at: 0)
         history = Array(history.prefix(200))
@@ -192,6 +197,14 @@ final class ListenTogether {
                 Reminders.notifyReply(conversationID: convo.id, title: persona.name, body: m.content)
             }
         }
+    }
+
+    /// 写进长期记忆：这段时间和这位一起听过的歌
+    func memoryLine(for id: UUID, from start: Date, to end: Date) -> String? {
+        let songs = history.filter { $0.with == id && ($0.at ?? .distantPast) > start && ($0.at ?? .distantPast) <= end }
+        guard !songs.isEmpty else { return nil }
+        let list = songs.prefix(12).map { "《\($0.title)》\($0.artist.isEmpty ? "" : " - \($0.artist)")" }.joined(separator: "、")
+        return "一起听过：\(list)"
     }
 
     // MARK: - 点歌

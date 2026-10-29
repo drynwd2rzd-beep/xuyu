@@ -262,6 +262,15 @@ final class LogicTests: XCTestCase {
         XCTAssertTrue(ChatEngine.lurking([]).isEmpty)
     }
 
+    /// 漏回再补上：认得出哪些是在问问题
+    func testQuestionDetection() {
+        XCTAssertTrue(HumanTouch.isQuestion("今天吃什么"))
+        XCTAssertTrue(HumanTouch.isQuestion("你睡了吗"))
+        XCTAssertTrue(HumanTouch.isQuestion("明天几点出发？"))
+        XCTAssertFalse(HumanTouch.isQuestion("我到家了"))
+        XCTAssertFalse(HumanTouch.isQuestion("哈哈哈"))
+    }
+
     /// 只写了心声的一段：正文是空的（不发空气泡），心声留着
     func testThoughtOnlyParagraph() {
         let m = ReplyText.markers(in: "【心声:其实有点想你】")

@@ -52,6 +52,12 @@ final class CallSession {
     @ObservationIgnored private var replying: Task<Void, Never>?
     @ObservationIgnored private var player: AVAudioPlayer?
     @ObservationIgnored private var ended = false
+    /// 接话声：你说完、TA 还没想好第一句时，先「嗯……」一声，不冷场（通话开始时用 TA 的声音提前念好）
+    @ObservationIgnored private var fillers: [Data] = []
+    @ObservationIgnored private var fillerIndex = 0
+    @ObservationIgnored private var filling: Task<Void, Never>?
+    @ObservationIgnored private var fillerPlayer: AVAudioPlayer?
+    @ObservationIgnored private var fillerPlaying = false
 
     init(persona: Persona, convo: Conversation, members: [Persona], context: ModelContext, relay: RelayClient) {
         self.persona = persona
@@ -72,7 +78,30 @@ final class CallSession {
         try? session.setActive(true)
         route()
         listen()
+        prepareFillers()
         return nil
+    }
+
+    private func prepareFillers() {
+        let phrases = persona.language == "ko" ? ["음…", "음, 잠깐만."] : ["嗯……", "嗯，我想想。"]
+        let persona = self.persona
+        Task { [weak self] in
+            for phrase in phrases {
+                guard let audio = try? await Voice.speak(phrase, for: persona) else { continue }
+                self?.fillers.append(audio)
+            }
+        }
+    }
+
+    /// 等了一会儿第一句还没好：放一声接话（不进字幕和通话记录）
+    private func playFiller() async {
+        guard !fillers.isEmpty, !ended, let p = try? AVAudioPlayer(data: fillers[fillerIndex % fillers.count]) else { return }
+        fillerIndex += 1
+        fillerPlaying = true
+        defer { fillerPlaying = false }
+        fillerPlayer = p
+        p.play()
+        while p.isPlaying, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) }
     }
 
     private func route() {
@@ -150,6 +179,12 @@ final class CallSession {
         """
         let request = RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
                                    system: PromptBuilder.system(for: persona, convo: convo, members: members), prompt: prompt)
+        filling?.cancel()
+        filling = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            await self?.playFiller()
+        }
         replying = Task { [weak self] in
             guard let self else { return }
             var buffer = ""
@@ -168,6 +203,8 @@ final class CallSession {
                 let clean = ReplyText.markers(in: s).body.trimmed
                 guard !clean.isEmpty else { return }
                 texts.append(clean)
+                // 第一句来了：还没开始的接话声就不放了（已经在放的放完）
+                if texts.count == 1 && !self.fillerPlaying { self.filling?.cancel() }
                 let persona = self.persona
                 // 一边念这一句，一边先合成下一句：不用等
                 sentences.append(Task { try? await Voice.speak(clean, for: persona) })
@@ -203,6 +240,9 @@ final class CallSession {
 
     /// 念一句：字幕先出来，跟着声音一个字一个字亮起来；念完把这句并进 TA 的那一行
     private func say(_ text: String, audio: Data?) async {
+        // 接话声还没放完：等它放完再说，不叠在一起
+        while fillerPlaying, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(40)) }
+        filling?.cancel()
         phase = .speaking
         if let last = lines.last, !last.mine {
             lines[lines.count - 1].zh += text
@@ -229,7 +269,9 @@ final class CallSession {
     func interrupt() {
         guard phase != .listening else { return }
         replying?.cancel()
+        filling?.cancel()
         player?.stop()
+        fillerPlayer?.stop()
         listen()
     }
 
@@ -239,7 +281,9 @@ final class CallSession {
         guard !ended else { return }
         ended = true
         replying?.cancel()
+        filling?.cancel()
         player?.stop()
+        fillerPlayer?.stop()
         stopListening()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         let seconds = Date.now.timeIntervalSince(started)
