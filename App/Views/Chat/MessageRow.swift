@@ -20,6 +20,8 @@ struct MessageActions {
     /// 长按「选择文字」：可以框选其中一部分
     var selectText: (String) -> Void
     var edit: (Message) -> Void
+    /// 双击 TA 的头像：拍一拍
+    var nudge: (Persona) -> Void = { _ in }
 }
 
 struct MessageRow: View {
@@ -89,6 +91,9 @@ struct MessageRow: View {
     private var assistantSide: some View {
         HStack(alignment: .top, spacing: 10) {
             AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
+                // 双击头像：拍一拍（看不见的头像不算）
+                .onTapGesture(count: 2) { if first, let persona { actions.nudge(persona) } }
+                .accessibilityAction(named: Text("拍一拍")) { if let persona { actions.nudge(persona) } }
             VStack(alignment: .leading, spacing: 5) {
                 // 名字只在 TA 这一串的第一条上面出现（像 iMessage）。以前「正在输入」时也总带着名字，
                 // 连着发第二条时名字先冒出来、小点变成字时又消失，这一行忽高忽低，看起来像抽了一下
@@ -258,6 +263,9 @@ struct MessageRow: View {
             }
         case .note:
             NoteCard(text: message.content, time: time).contextMenu { menu }
+        case .nudge:
+            // 拍一拍在聊天页单独画成居中的一行（NudgeLine），不会走到这里
+            EmptyView()
         case .file:
             ForEach(message.sortedAttachments) { a in
                 FileCard(name: a.fileName, size: a.data.count, time: time, data: a.data).contextMenu { menu }

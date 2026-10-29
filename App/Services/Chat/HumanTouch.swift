@@ -3,8 +3,8 @@ import SwiftData
 
 /// 让 TA 更像真人：会忙、会晚点回、想起来再补一句、打字会犹豫、长短跟着心情变、有小情绪、关系慢慢变、
 /// 记得你说过要做的事、会分享自己拍的照片。每个角色在设置里有「真人节奏」开关和「小情绪」三档。
-/// 这些开关和 TA 对你的称呼存在本机（按角色），不进数据库
-@MainActor
+/// 这些开关和 TA 对你的称呼存在本机（按角色），不进数据库。
+/// 不整个放在主线程上：拼提示词（PromptBuilder）不在主线程，也要能用；只有要联网写回复的两处标在主线程
 enum HumanTouch {
     // MARK: - 每个角色的开关
 
@@ -86,6 +86,8 @@ enum HumanTouch {
         if !convo.isGroup {
             lines.append("你也会分享自己的日常：消息末尾会列出你手机相册里还没发过的照片。想分享时，单独一段开头写【照片:编号】，后面跟一句话，比如「【照片:1】看，桂花开了」；偶尔才用，要和聊的事、你最近在做的事对得上。")
         }
+        // 拍一拍：聊天记录里「（拍了拍…）」就是拍一拍
+        lines.append("聊天记录里的「（拍了拍…）」是聊天软件的「拍一拍」：TA 拍了拍你，你可以回一句，也可以拍回去。想逗 TA 时也可以单独写【拍一拍】拍拍 TA；偶尔用。")
         return lines.joined(separator: "\n")
     }
 
@@ -215,6 +217,7 @@ enum HumanTouch {
     }
 
     /// 晚回的那几条先写好、排在到点的时候出现（App 关着也会到点弹通知），和主动消息、追问一样
+    @MainActor
     static func writeLate(_ late: Late, persona: Persona, convo: Conversation, members: [Persona],
                           context: ModelContext, relay: RelayClient) async -> Bool {
         let history = convo.visibleMessages().filter { $0.status != .streaming }
@@ -255,6 +258,7 @@ enum HumanTouch {
     // MARK: - 想起来再补一句
 
     /// 一段回复说完后，偶尔过几分钟又来一条「对了……」。你先开口了就不补
+    @MainActor
     static func maybeAfterthought(persona: Persona, convo: Conversation, context: ModelContext, relay: RelayClient) async {
         guard !convo.isGroup, !persona.canWork, pace(persona), !DemoMode.isOn, relay.isConnected,
               Double.random(in: 0..<1) < 0.12 else { return }

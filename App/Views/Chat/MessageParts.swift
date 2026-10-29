@@ -148,6 +148,22 @@ struct RecalledLine: View {
     }
 }
 
+/// 拍一拍：和撤回一样是中间一行浅灰色小字。你拍的写「你拍了拍 Claude」，TA 拍你写「Claude 拍了拍你」
+struct NudgeLine: View {
+    let message: Message
+    /// 拍你的那位角色的名字（你拍别人时不用）
+    let name: String
+
+    var body: some View {
+        Text(message.role == .user ? "你拍了拍\(message.content)" : "\(name) 拍了拍你")
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.inkSoft)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .transition(.opacity)
+    }
+}
+
 extension AnyTransition {
     /// 小点变成文字时，带字的气泡出现的样子：从自己那一边的下角以最终大小轻轻弹出（和新消息冒出来同一条曲线）
     static func bubblePop(anchor: UnitPoint) -> AnyTransition {

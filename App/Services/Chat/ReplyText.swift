@@ -48,6 +48,10 @@ enum ReplyText {
         var photo: Int?
         /// 【表情描述:…】TA 看了你发的表情，记一句它是什么样
         var stickerNote: String?
+        /// 【拍一拍】TA 拍了拍你
+        var pat = false
+        /// 【潜水】群里这条 TA 不说话
+        var lurk = false
     }
 
     // 中英文括号都认：【】 和 []
@@ -64,6 +68,8 @@ enum ReplyText {
     private static let makeUpMarker = try! Regex("[【\\[]和好[】\\]]")
     private static let photoMarker = try! Regex("[【\\[]照片[:：]\\s*(\\d+)\\s*[】\\]]")
     private static let stickerNoteMarker = try! Regex("[【\\[]表情描述[:：]\\s*(.+?)[】\\]]")
+    private static let patMarker = try! Regex("[【\\[]拍一拍[】\\]]")
+    private static let lurkMarker = try! Regex("[【\\[]潜水[】\\]]")
 
     /// 【引用:那句话里的几个字】把你说过的话挂在 TA 这条下面；【表情:分类】发一个表情；假装的表情文字直接去掉
     static func markers(in text: String) -> Markers {
@@ -88,6 +94,11 @@ enum ReplyText {
         body = body.replacing(sulkMarker, with: "")
         let makeUp = body.firstMatch(of: makeUpMarker) != nil
         body = body.replacing(makeUpMarker, with: "")
+        let pat = body.firstMatch(of: patMarker) != nil
+        body = body.replacing(patMarker, with: "")
+        // 潜水：这条整个不发
+        let lurk = body.firstMatch(of: lurkMarker) != nil
+        if lurk { body = "" }
         var quoteKey: String?
         if let match = body.firstMatch(of: quoteMarker) {
             quoteKey = match.output[1].substring.map { String($0).trimmed }
@@ -122,6 +133,8 @@ enum ReplyText {
         markers.makeUp = makeUp
         markers.photo = photo
         markers.stickerNote = stickerNote
+        markers.pat = pat
+        markers.lurk = lurk
         return markers
     }
 

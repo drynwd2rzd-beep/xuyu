@@ -264,6 +264,9 @@ struct ChatView: View {
                         case .message(let m, _) where m.recalled:
                             RecalledLine(message: m, onEdit: actions.edit)
                                 .id(m.id)
+                        case .message(let m, _) where m.kind == .nudge:
+                            NudgeLine(message: m, name: m.personaID.flatMap { personaMap[$0]?.name } ?? "")
+                                .id(m.id)
                         case .message(let m, let first):
                             MessageRow(message: m,
                                        persona: m.personaID.flatMap { personaMap[$0] },
@@ -434,9 +437,9 @@ struct ChatView: View {
                 case .file: "[文件] " + m.sortedAttachments.map(\.fileName).joined(separator: "、")
                 case .sticker: "[表情]"
                 case .voice: "[语音] " + m.content
-                case .note, .text: m.content
+                case .note, .text, .nudge: m.content
                 }
-                withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
+                withAnimation(Motion.spring) { quoting ="\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
                 quotingID = m.id
                 pinBottom += 1
             },
@@ -479,6 +482,10 @@ struct ChatView: View {
                 context.persist()
                 engine.reconsider(convo, members: members, context: context)
                 inputFocused = true
+                pinBottom += 1
+            },
+            nudge: { p in
+                engine.nudge(p, in: convo, members: members, context: context)
                 pinBottom += 1
             }
         )

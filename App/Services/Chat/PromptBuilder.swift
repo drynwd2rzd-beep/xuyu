@@ -38,6 +38,7 @@ enum PromptBuilder {
             parts.append("""
             你正在群聊「\(convo.displayTitle(members))」里，你的名字是「\(persona.name)」。群成员：\(roster)。
             只以「\(persona.name)」的身份说话，不要替别人发言，不要在开头写自己的名字。
+            像真的群聊一样：想跟群里某个人说话就 @ 一下（写「@名字」），被 @ 的人会接着回你；也可以接别人的话、接梗、开个小玩笑。这条你没什么想说的、或者别人已经说得差不多了，就只写【潜水】，什么都不会发出去。
             """)
         }
         if !stickerCategories.isEmpty {
@@ -105,6 +106,8 @@ enum PromptBuilder {
         // 你发的表情：TA 第一次看到时记下了它是什么样（存在这条消息的正文里，界面上不显示）
         case .sticker: body = "[发了一个表情\(m.content.isEmpty ? "" : "：\(m.content)")]"
         case .voice: body = "[发了一条语音] \(m.content)"
+        // 拍一拍：你拍的那条正文里存着被拍的人的名字
+        case .nudge: body = m.role == .user ? "（拍了拍\(m.content)）" : "（拍了拍\(userName)）"
         }
         if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
         if m.recalled { body = "（撤回了一条消息）" }
@@ -181,7 +184,9 @@ enum PromptBuilder {
         // 你最近发的动态、写的日记：TA 会记在心上，合适的时候自然地关心，但不要生硬地复述
         let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天发的动态、写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
         // 这一刻的状态（今天的心情、你隔了多久才回、闹没闹别扭、相册里能发的照片）：每次都不一样，放在末尾
-        let state = persona.canWork ? "" : HumanTouch.momentNotes(for: persona, convo: convo, members: members, history: history)
+        // 真实天气也放在这里（每小时会变）：TA 能自然地提醒带伞、降温、天黑了
+        let weather = Weather.summary.map { "\(userName)那边的天气：\($0)" } ?? ""
+        let state = weather + (persona.canWork ? "" : HumanTouch.momentNotes(for: persona, convo: convo, members: members, history: history))
         let prompt = """
         \(shared)\(diary)下面是你们最近的聊天记录：
 

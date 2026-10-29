@@ -24,6 +24,8 @@ enum Companion {
         running = true
         defer { running = false }
         relay.connectIfConfigured()
+        // 真实天气：一小时内取过就不取（不用连电脑）
+        await Weather.refreshIfNeeded()
         try? await Task.sleep(for: .seconds(1.5))
         guard relay.isConnected else { return }
         let personas = context.allPersonas()
@@ -214,7 +216,7 @@ enum Companion {
         guard defaults.string(forKey: Prefs.whisperDay) != dayKey else { return }
         let todos = todayTodos(context).map(\.title).prefix(5).joined(separator: "、")
         let prompt = """
-        今天是 \(Fmt.full.string(from: .now))。\(todos.isEmpty ? "" : "\(PromptBuilder.userName)今天的待办：\(todos)。")
+        今天是 \(Fmt.full.string(from: .now))。\(Weather.summary.map { "\(PromptBuilder.userName)那边的天气：\($0)" } ?? "")\(todos.isEmpty ? "" : "\(PromptBuilder.userName)今天的待办：\(todos)。")
         写一句今天想对\(PromptBuilder.userName)说的话：温柔、具体、有画面感，不超过 28 个字，可以用逗号分成两小句。不要引号，只输出这一句。
         """
         guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.isEmpty else { return }
@@ -314,7 +316,7 @@ enum Companion {
 
             \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(Array(history.suffix(20)), names: names))
 
-            现在是 \(Fmt.full.string(from: now))。你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptBuilder.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
+            现在是 \(Fmt.full.string(from: now))。\(Weather.summary.map { "\(PromptBuilder.userName)那边的天气：\($0)" } ?? "")你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptBuilder.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
             像朋友一样自然地开个话题：可以接着之前聊的事、关心一下 TA、或者轻轻提醒一件事。一两句话，口语化，不要说「我来主动找你」。只输出消息内容。
             """
             guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.isEmpty else { continue }

@@ -202,6 +202,13 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(d.stickerNote, "一只橘猫捂着脸偷偷从指缝里看")
         XCTAssertEqual(d.body, "哈哈哈这个表情好好笑")
         XCTAssertTrue(d.stickerPacks.isEmpty)
+        // 群里潜水：这条什么都不发；拍一拍
+        let quiet = ReplyText.markers(in: "【潜水】")
+        XCTAssertTrue(quiet.lurk)
+        XCTAssertEqual(quiet.body, "")
+        let pat = ReplyText.markers(in: "嘿嘿【拍一拍】")
+        XCTAssertTrue(pat.pat)
+        XCTAssertEqual(pat.body, "嘿嘿")
     }
 
     func testAppointmentTimes() throws {

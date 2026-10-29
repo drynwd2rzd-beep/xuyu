@@ -6,3 +6,4 @@
 "NSMicrophoneUsageDescription" = "음성으로 글자를 입력해요.";
 "NSSpeechRecognitionUsageDescription" = "말한 내용을 글자로 바꿔요.";
 "NSFaceIDUsageDescription" = "Xuyu를 열거나 AI가 컴퓨터를 조작하기 전에 본인인지 확인해요.";
+"NSLocationWhenInUseUsageDescription" = "캐릭터가 당신 쪽 날씨를 알 수 있게 해요 (도시로만 바꿔 쓰고, 정확한 위치는 보내지 않아요).";

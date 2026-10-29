@@ -113,7 +113,11 @@ final class ChatEngine {
         lateTasks[convo.id]?.cancel()
         Companion.cancelPlannedMessages(in: convo, context: context)
         context.persist()
-        let responders = Self.responders(for: text, convo: convo, members: members)
+        var responders = Self.responders(for: text, convo: convo, members: members)
+        // 群里没 @ 谁：不是每个人都回，有人潜水
+        if convo.isGroup, members.count > 1, responders.count == members.count, !text.contains("@所有人") {
+            responders = Self.lurking(members)
+        }
         if !busy.contains(convo.id), let persona = responders.first, let relay, relay.isConnected,
            let late = carriedLate.flatMap({ $0.deliver > .now.addingTimeInterval(20) ? $0 : nil })
                 ?? HumanTouch.lateness(for: persona, convo: convo) {
@@ -171,6 +175,41 @@ final class ChatEngine {
                 self.run([persona], in: convo, members: members, context: context, react: true)
             }
         }
+    }
+
+    /// 拍一拍：你双击了 TA 的头像。TA 有时回拍你一下，有时看到「你拍了拍 TA」回一句
+    func nudge(_ persona: Persona, in convo: Conversation, members: [Persona], context: ModelContext) {
+        let m = Message(role: .user, kind: .nudge, content: persona.name)
+        withAnimation(Motion.bubble) { convo.add(m, context: context) }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        convo.updatedAt = .now
+        convo.lastReadAt = .now
+        Companion.cancelPlannedMessages(in: convo, context: context)
+        context.persist()
+        guard !busy.contains(convo.id) else { return }
+        if Double.random(in: 0..<1) < 0.35 {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(Double.random(in: 1.2...2.6)))
+                self?.patBack(persona, in: convo, context: context, after: .now)
+            }
+        } else {
+            run([persona], in: convo, members: members, context: context, react: true)
+        }
+    }
+
+    /// TA 拍了拍你
+    private func patBack(_ persona: Persona, in convo: Conversation, context: ModelContext, after: Date) {
+        let m = Message(role: .assistant, kind: .nudge, content: "", personaID: persona.id)
+        m.createdAt = max(.now, after).addingTimeInterval(0.000008)
+        withAnimation(Motion.bubble) { convo.add(m, context: context) }
+        context.persist()
+    }
+
+    /// 群里没 @ 谁：不是每个人都回，有人潜水（至少一个人回）
+    static func lurking(_ members: [Persona]) -> [Persona] {
+        let order = members.shuffled()
+        guard let first = order.first else { return [] }
+        return [first] + order.dropFirst().filter { _ in Double.random(in: 0..<1) < 0.6 }
     }
 
     /// TA 开始看你的消息了：你发的消息显示已读双勾
@@ -248,14 +287,28 @@ final class ChatEngine {
                 self?.markRead(convo, context: context)
             }
             var spoke = false
+            // 群里有人在话里 @ 了别人：被 @ 的人接着回（一轮最多插两次，免得两个人一直互相 @ 停不下来）
+            var extra = 0
             rounds: for round in 0..<rounds {
-                for persona in round == 0 ? responders : members {
+                var queue = round == 0 ? responders : members
+                var index = 0
+                while index < queue.count {
+                    let persona = queue[index]
+                    index += 1
                     // 群聊换人回：上一个人这句冒出来以后停一小会儿，下一个人的「正在输入」才出现。
                     // 以前紧跟着就冒出来，和上一句变成文字的动画撞在同一瞬间，名字还会压到上一条上（真机录屏）
                     if spoke { try? await Task.sleep(for: .milliseconds(450)) }
                     guard let self, !Task.isCancelled, self.pending[convoID] == nil else { break rounds }
                     await self.reply(as: persona, in: convo, members: members, context: context, discussing: round > 0)
                     spoke = true
+                    guard convo.isGroup, extra < 2,
+                          let said = convo.visibleMessages().last(where: { $0.role == .assistant && $0.personaID == persona.id })?.content
+                    else { continue }
+                    for other in members where other.id != persona.id && said.contains("@\(other.name)")
+                        && !queue[index...].contains(where: { $0.id == other.id }) && extra < 2 {
+                        queue.insert(other, at: index)
+                        extra += 1
+                    }
                 }
             }
             guard let self else { return }
@@ -621,6 +674,8 @@ final class ChatEngine {
         if markers.moment, let latest = context.visibleMoments(by: persona.id).first { message.momentID = latest.id }
         // 换了称呼、闹别扭、和好
         HumanTouch.apply(markers, persona: persona)
+        // TA 拍了拍你：跟在这句后面一行小字
+        if markers.pat { patBack(persona, in: convo, context: context, after: message.createdAt) }
         // TA 看了你发的表情：记下它是什么样（写在你那条表情消息里，界面上不显示，聊天记录里 TA 下次就知道）
         if let note = markers.stickerNote, !note.isEmpty,
            let sticker = convo.visibleMessages().last(where: { $0.role == .user && $0.kind == .sticker && $0.content.isEmpty }) {
