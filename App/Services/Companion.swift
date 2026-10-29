@@ -30,6 +30,8 @@ enum Companion {
         guard relay.isConnected else { return }
         let personas = context.allPersonas()
         guard let main = personas.first else { return }
+        // 世界观：每天第一次连上时给大家安排好今天（之后的主动消息、动态、日记都能对得上）
+        await World.dailyTurn(context: context, relay: relay)
         await whisper(context: context, relay: relay, persona: main)
         await writeDiaries(context: context, relay: relay)
         await followUps(context: context, relay: relay, personas: personas)

@@ -75,6 +75,10 @@ enum PromptBuilder {
         }
         // 像真人：会忙、长短跟着心情、小情绪、关系、记得你的事、分享照片（一整天内不变的部分）
         if let convo, !persona.canWork { parts.append(HumanTouch.systemNotes(for: persona, convo: convo)) }
+        // 世界观：大家生活的世界、你是谁、关系、TA 自己的身份和作息（一天内不变）
+        if convo != nil, !persona.canWork, let world = World.systemNotes(for: persona, members: persona.modelContext?.allPersonas() ?? members) {
+            parts.append(world)
+        }
         // 这里只写到「今天」：一整天内开头都不变，模型的提示缓存才能一直命中；具体时间放在消息末尾
         parts.append("今天是 \(Fmt.day.string(from: .now))。")
         return parts.joined(separator: "\n\n")
@@ -186,7 +190,8 @@ enum PromptBuilder {
         // 这一刻的状态（今天的心情、你隔了多久才回、闹没闹别扭、相册里能发的照片）：每次都不一样，放在末尾
         // 真实天气也放在这里（每小时会变）：TA 能自然地提醒带伞、降温、天黑了
         let weather = Weather.summary.map { "\(userName)那边的天气：\($0)" } ?? ""
-        let state = weather + (persona.canWork ? "" : HumanTouch.momentNotes(for: persona, convo: convo, members: members, history: history))
+        let state = weather + (persona.canWork ? ""
+            : World.momentNotes(for: persona) + HumanTouch.momentNotes(for: persona, convo: convo, members: members, history: history))
         let prompt = """
         \(shared)\(diary)下面是你们最近的聊天记录：
 

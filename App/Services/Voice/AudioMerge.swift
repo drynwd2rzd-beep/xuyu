@@ -2,10 +2,10 @@ import AVFoundation
 
 /// 复刻用的录音：几段音频、视频里的声音按顺序接成一段，压成 m4a（大小不用管）；超过上限的部分截掉
 enum AudioMerge {
-    /// 复刻最多用 5 分钟
-    static let cloneLimit: Double = 300
-    /// 参考录音最多 8 秒
-    static let referenceLimit: Double = 7.9
+    /// 复刻最多用 4 分 50 秒：MiniMax 要求 10 秒～5 分钟，压缩后时长会多出零点几秒，卡在 5 分钟正好会超（报 2037）
+    static let cloneLimit: Double = 290
+    /// 参考录音最多 8 秒（同样留一点余量）
+    static let referenceLimit: Double = 7.5
 
     /// 一段音频或视频有多长（秒）；读不出声音就是 0
     static func duration(_ url: URL) async -> Double {

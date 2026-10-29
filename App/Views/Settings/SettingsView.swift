@@ -38,6 +38,9 @@ struct SettingsView: View {
                     }
                     .buttonStyle(PressableRowStyle())
                     Hairline()
+                    // 世界观：大家生活的世界、关系、每个人的作息和今天
+                    navRow("World", route: .world)
+                    Hairline()
                     meRow
                     Hairline()
                     WeatherRows()

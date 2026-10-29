@@ -7,9 +7,6 @@ struct RootView: View {
     @Environment(BannerCenter.self) private var banners
     @State private var keyboardShown = false
     @State private var shownTab: AppTab = .today
-    @State private var revealed = true
-    @State private var direction: CGFloat = 1
-    @State private var entering = false
     /// 上次打开时数据库升级失败、旧数据被挪进了「数据库备份」文件夹（见 XuyuApp.openStore）：告诉你一声
     @AppStorage(Prefs.lastStoreRescue) private var storeRescue = ""
 
@@ -132,18 +129,22 @@ struct RootView: View {
 
     private var tabBarShown: Bool { !keyboardShown && !router.hideTabBar }
 
+    private static let tabOrder: [AppTab] = [.today, .chats, .moments]
+
     /// 三个页面常驻，切换时保留滚动位置
-    /// 切页：旧页朝反方向轻轻滑走、淡出；新页从点的方向滑进来、淡入（不做模糊，切页不掉帧）
+    /// 切页：两页同时交叉淡入淡出——旧页往反方向轻轻滑走，新页从点的那一边滑进来，中间不会有空白。
+    /// 以前是旧页先完全淡掉、隔 0.18 秒新页才出来，真机录屏里每次都有一两帧整屏黑的空白（页面越重越久）
     private func tabPage<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
         let active = shownTab == tab
-        let visible = active && revealed
+        let order = Self.tabOrder
+        // 在当前页左边的页面停在左边一点，右边的停在右边一点
+        let side: CGFloat = (order.firstIndex(of: tab) ?? 0) < (order.firstIndex(of: shownTab) ?? 0) ? -1 : 1
         // 减少动态效果：不滑、不缩，只淡入淡出
-        let still = visible || Motion.reduced
-        let shift: CGFloat = entering ? 28 * direction : -18 * direction
+        let still = active || Motion.reduced
         return content()
-            .opacity(visible ? 1 : 0)
-            .offset(x: still ? 0 : shift)
-            .scaleEffect(still ? 1 : 0.975)
+            .opacity(active ? 1 : 0)
+            .offset(x: still ? 0 : 24 * side)
+            .scaleEffect(still ? 1 : 0.985)
             .allowsHitTesting(active)
             .accessibilityHidden(!active)
     }
@@ -152,22 +153,7 @@ struct RootView: View {
         guard new != shownTab else { return }
         // 切页时先收起键盘，底栏不会因为键盘状态残留而消失
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        let order: [AppTab] = [.today, .chats, .moments]
-        direction = (order.firstIndex(of: new) ?? 0) > (order.firstIndex(of: shownTab) ?? 0) ? 1 : -1
-        entering = false
-        withAnimation(Motion.fade) { revealed = false }
-        Task {
-            try? await Task.sleep(for: .milliseconds(180))
-            // 连续点得很快时，只显示最后点的那个
-            guard router.tab == new else { return }
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) {
-                shownTab = new
-                entering = true
-            }
-            withAnimation(Motion.spring) { revealed = true }
-        }
+        withAnimation(Motion.reduced ? Motion.fade : Motion.snappy) { shownTab = new }
     }
 }
 
@@ -288,6 +274,12 @@ struct RouteView: View {
             MomentsView()
         case .momentsOf(let id):
             if let persona = context.persona(id) { MomentProfileView(persona: persona) } else { missing }
+        case .world:
+            WorldView()
+        case .worldLife(let id):
+            if let persona = context.persona(id) { PersonaLifeView(persona: persona) } else { missing }
+        case .worldEvents:
+            WorldEventsView()
         }
     }
 

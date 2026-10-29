@@ -113,7 +113,8 @@ struct Composer: View {
             Button("好", role: .cancel) {}
         }
         .onAppear {
-            dictation.onText = { text in draft = dictationBase + text }
+            // 停了以后才到的识别结果不要：不然发出去以后，字又被写回输入框
+            dictation.onText = { text in if dictation.isRecording { draft = dictationBase + text } }
         }
         .onDisappear { dictation.stop() }
     }
@@ -359,6 +360,7 @@ struct Composer: View {
         let text = draft.trimmed
         guard !text.isEmpty || !staged.isEmpty else { return }
         draft = ""
+        clearLeftover(of: text)
         sendTick += 1
         if staged.isEmpty {
             onSend(text, .text, [])
@@ -379,6 +381,18 @@ struct Composer: View {
         let items = images.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\(start + $0.offset + 1).jpg", data: $0.element) }
         withAnimation(Motion.spring) { staged += items.prefix(max(0, 9 - staged.count)) }
         focused = true
+    }
+
+    /// 中文输入法还没确认的字（候选词）会在清空之后才被键盘写回来，发出去的话又出现在输入框里（有概率）：
+    /// 过一小会儿再看两次，回来的正是刚发的那些字（或者它的一部分），就再清一次；你接着打的新字不动
+    private func clearLeftover(of sent: String) {
+        Task { @MainActor in
+            for wait in [60, 250] {
+                try? await Task.sleep(for: .milliseconds(wait))
+                let back = draft.trimmed
+                if !back.isEmpty && (back == sent || sent.hasSuffix(back) || sent.hasPrefix(back)) { draft = "" }
+            }
+        }
     }
 
     private func toggleDictation() {

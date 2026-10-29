@@ -454,7 +454,8 @@ struct VoiceCloneSheet: View {
     enum Target { case clips, reference }
 
     private var total: Double { clips.reduce(0) { $0 + $1.seconds } }
-    private var ready: Bool { !name.trimmed.isEmpty && total >= 10 && working == nil }
+    // 压缩后会短零点几秒：留一点余量，卡在 10 秒正好会被 MiniMax 当成太短（2037）
+    private var ready: Bool { !name.trimmed.isEmpty && total >= 10.5 && working == nil }
     private var defaultSample: String {
         persona.language == "ko" ? "안녕, 이제 이 목소리로 말할게." : "你好呀，以后我就用这个声音跟你说话啦。"
     }
@@ -488,7 +489,7 @@ struct VoiceCloneSheet: View {
                 .buttonStyle(PressableRowStyle())
                 if !clips.isEmpty {
                     Hairline()
-                    SettingRow(title: "合计", subtitle: total > AudioMerge.cloneLimit ? "超过 5 分钟的部分不会用" : total < 10 ? "至少要 10 秒" : nil) {
+                    SettingRow(title: "合计", subtitle: total > AudioMerge.cloneLimit ? "超过 4 分 50 秒的部分不会用" : total < 10.5 ? "至少要 10 秒" : nil) {
                         Text(Self.time(total)).font(.system(size: 14).monospacedDigit()).foregroundStyle(Palette.inkSoft)
                     }
                 }

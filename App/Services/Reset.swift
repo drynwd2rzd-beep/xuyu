@@ -40,6 +40,13 @@ enum Reset {
         try? context.delete(model: Moment.self)
         try? context.delete(model: AlbumPhoto.self)
         for key in personaKeys { UserDefaults.standard.removeObject(forKey: key) }
+        // 世界观里跟角色有关的（每个人的生活、关系、世界大事）一起清掉；你写的世界和「你是谁」留着
+        var world = World.state
+        world.lives = [:]
+        world.relations = []
+        world.events = []
+        world.lastTurn = nil
+        World.state = world
         context.persist()
         // 没有角色了：放回默认的 Claude 和 Codex
         Seeder.prepare(context)
@@ -64,6 +71,7 @@ enum Reset {
         WallpaperStore.removeAllPhotos()
         MyAvatarStore.clear()
         WidgetPhotoStore.clear()
+        World.clear()
         let fm = FileManager.default
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         for url in (try? fm.contentsOfDirectory(at: support, includingPropertiesForKeys: nil)) ?? []

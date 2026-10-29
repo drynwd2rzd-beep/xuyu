@@ -180,6 +180,25 @@ enum HumanTouch {
         guard !convo.isGroup, !persona.canWork, pace(persona), !DemoMode.isOn else { return nil }
         let history = convo.visibleMessages(at: now)
         let chatting = history.last(where: { $0.role == .assistant }).map { now.timeIntervalSince($0.createdAt) < 240 } ?? false
+        // 世界观里 TA 有自己的作息（默认就有）：按 TA 的作息看是睡着、在忙还是有空；忙的原因就是今天安排里正在做的那件
+        if World.state.lifeOn, World.life(persona.id).realRhythm {
+            let doing = World.current(of: persona.id, at: now)?.what
+            let roll = Double.random(in: 0..<1)
+            switch World.status(of: persona.id, at: now) {
+            case .asleep:
+                guard roll < (chatting ? 0.3 : 0.85) else { return nil }
+                let wake = World.nextWake(of: persona.id, after: now).addingTimeInterval(Double.random(in: 300...2400))
+                return Late(deliver: wake, reason: chatting ? "聊着聊着睡着了" : "在睡觉", read: false)
+            case .busy:
+                guard roll < (chatting ? 0.06 : 0.4) else { return nil }
+                return Late(deliver: now.addingTimeInterval(Double.random(in: 6...35) * 60),
+                            reason: doing.map { "在忙（\($0)）" } ?? "在忙", read: Double.random(in: 0..<1) < 0.45)
+            case .free:
+                guard roll < (chatting ? 0.02 : 0.1) else { return nil }
+                return Late(deliver: now.addingTimeInterval(Double.random(in: 3...15) * 60),
+                            reason: doing.map { "在\($0)" } ?? "手机没在身边", read: Double.random(in: 0..<1) < 0.45)
+            }
+        }
         let cal = Calendar.current
         let t = Double(cal.component(.hour, from: now)) + Double(cal.component(.minute, from: now)) / 60
         let workday = !cal.isDateInWeekend(now)

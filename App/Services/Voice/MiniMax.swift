@@ -164,7 +164,11 @@ enum MiniMax {
         case 1043: throw Voice.Failure.other("录音和填写的原话对不上")
         case 2038: throw Voice.Failure.other("MiniMax 账号还没实名认证，不能复刻")
         case 2013: throw Voice.Failure.other("录音不符合要求：10 秒到 5 分钟，只有一个人说话")
-        default: throw Voice.Failure.other("MiniMax 出错了（\(code)）")
+        case 2037: throw Voice.Failure.other("录音太短或太长：复刻要 10 秒到 5 分钟，参考录音要 8 秒以内")
+        default:
+            // 没认出来的错误：带上 MiniMax 自己的说明，不然只看到一个数字
+            let message = (base["status_msg"] as? String)?.trimmed ?? ""
+            throw Voice.Failure.other(message.isEmpty ? "MiniMax 出错了（\(code)）" : "MiniMax 出错了（\(code)）：\(message)")
         }
     }
 }

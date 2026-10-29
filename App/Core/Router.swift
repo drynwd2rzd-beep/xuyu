@@ -19,6 +19,10 @@ enum Route: Hashable {
     case moments
     /// 某个角色的主页和动态
     case momentsOf(UUID)
+    /// 世界观：World、某个角色的生活、世界大事和快到的日子
+    case world
+    case worldLife(UUID)
+    case worldEvents
 }
 
 @Observable
