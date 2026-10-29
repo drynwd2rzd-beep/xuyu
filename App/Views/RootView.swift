@@ -23,7 +23,7 @@ struct RootView: View {
             if let id = router.chat {
                 ChatBackdrop(id: id)
                     .ignoresSafeArea()
-                    .opacity(max(0, 1 - router.chatSwipe * 6))
+                    .opacity(Double(max(0, 1 - router.chatSwipe * 6)))
                     .id(id)
                     .transition(.opacity)
             }
