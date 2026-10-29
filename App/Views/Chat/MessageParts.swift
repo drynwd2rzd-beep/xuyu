@@ -148,24 +148,11 @@ struct RecalledLine: View {
     }
 }
 
-/// 文字浮现：淡入、从下面一点点升到位（小点变成文字时用）
-struct RevealModifier: ViewModifier {
-    let shown: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(shown ? 1 : 0)
-            .offset(y: shown ? 0 : 4)
-    }
-}
-
 extension AnyTransition {
-    static var reveal: AnyTransition {
-        .asymmetric(
-            insertion: .modifier(active: RevealModifier(shown: false), identity: RevealModifier(shown: true))
-                .animation(Motion.bubbleText),
-            removal: .opacity
-        )
+    /// 小点变成文字时，带字的气泡出现的样子：从自己那一边的下角以最终大小轻轻弹出（和新消息冒出来同一条曲线）
+    static func bubblePop(anchor: UnitPoint) -> AnyTransition {
+        let pop: AnyTransition = Motion.reduced ? .opacity : .scale(scale: 0.85, anchor: anchor).combined(with: .opacity)
+        return .asymmetric(insertion: pop.animation(Motion.bubblePop), removal: .opacity.animation(Motion.fade))
     }
 }
 

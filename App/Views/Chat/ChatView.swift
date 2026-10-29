@@ -293,8 +293,8 @@ struct ChatView: View {
                 .background { StreamFollower(buffer: live) { if follow { proxy.scrollTo("bottom", anchor: .bottom) } } }
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
-            // 跟随最新消息时，内容变高（新消息、图片加载完）也保持贴着底部
-            .defaultScrollAnchor(follow ? .bottom : nil, for: .sizeChanges)
+            // 不再让系统在「内容变高」时自己贴底：它和下面带动画的滚到最新各算各的，真机录屏里整列消息会先往下掉一截再往上窜。
+            // 跟随最新消息只靠下面那一处（最下面一截变了就带动画滚过去）
             .scrollDismissesKeyboard(.interactively)
             // 点一下聊天区域：收起表情/加号面板和键盘
             .simultaneousGesture(TapGesture().onEnded {

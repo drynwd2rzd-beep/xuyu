@@ -210,22 +210,24 @@ struct MessageRow: View {
         switch message.kind {
         case .text:
             if isThinking || !text.isEmpty {
-                // 同一个气泡：还没出字时里面三个点轮流跳；这句打好了，小点淡出，气泡柔和地撑开，文字由虚变实浮现
-                bubble(isUser: isUser) {
-                    ZStack(alignment: .topLeading) {
-                        if isThinking {
-                            TypingDots(bare: true)
-                                .transition(.opacity.animation(Motion.fade))
-                        } else if !isUser && MarkdownParser.looksRich(text) {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                MarkdownView(text: text, fontSize: Typo.body)
-                                timeLabel
+                // 像 iMessage：小点那个气泡淡掉，带字的气泡在同一个位置以最终大小轻轻弹出，两个叠在一起换。
+                // 以前是同一个气泡先撑大、字再晚一点浮现：真机录屏里会先冒出一个空白大气泡停 0.3 秒，再长高一截
+                ZStack(alignment: .topLeading) {
+                    if isThinking {
+                        bubble(isUser: isUser) { TypingDots(bare: true) }
+                            .transition(.opacity.animation(Motion.fade))
+                    } else {
+                        bubble(isUser: isUser) {
+                            if !isUser && MarkdownParser.looksRich(text) {
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    MarkdownView(text: text, fontSize: Typo.body)
+                                    timeLabel
+                                }
+                            } else {
+                                TimedText(text: text, time: time)
                             }
-                            .transition(.reveal)
-                        } else {
-                            TimedText(text: text, time: time)
-                                .transition(.reveal)
                         }
+                        .transition(.bubblePop(anchor: isUser ? .bottomTrailing : .bottomLeading))
                     }
                 }
             }

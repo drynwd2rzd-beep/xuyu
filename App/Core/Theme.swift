@@ -147,16 +147,13 @@ enum Motion {
     static var shuttleOut: Animation { reduced ? .easeInOut(duration: 0.3) : .timingCurve(0.25, 0.6, 0.3, 1, duration: 0.46) }
     /// 系统设置里打开了「减少动态效果」：放大、飞入、滑动都换成原地淡入淡出
     static var reduced: Bool { UIAccessibility.isReduceMotionEnabled }
-    // 气泡（以 iMessage 为准）：所有气泡——你发的、TA 回的、正在输入的小点、表情、图片、语音、文件——都只用下面这三条，
-    // 节奏完全一样。气泡本身轻轻一弹；被它带动的布局（这一行撑开、上面的消息让开、滚动）平稳不弹，
-    // 不然整列消息会跟着先多走一点再退回来，像在晃
+    // 气泡（以 iMessage 为准）：所有气泡——你发的、TA 回的、正在输入的小点、表情、图片、语音、文件——都只用下面这两条，
+    // 节奏完全一样。气泡本身轻轻一弹；被它带动的滚动（上面的消息让开）平稳不弹，不然整列消息会跟着晃
 
-    /// 气泡带动的布局变化：冒出来时这一行撑开、上面让开，小点撑开成文字，撤回、拿掉时合上，跟着滚到底
+    /// 气泡带动的变化：新的一行进来时滚到最新、撤回、拿掉
     static let bubble = Animation.spring(duration: 0.42, bounce: 0)
-    /// 气泡本身放大显现的那一下：同样的时长，带一点弹性
+    /// 气泡本身放大显现的那一下（新消息、小点变成文字）：同样的时长，带一点弹性
     static let bubblePop = Animation.spring(duration: 0.42, bounce: 0.2)
-    /// 气泡里的字：等气泡差不多撑开了再浮现，不会比气泡先到
-    static let bubbleText = Animation.smooth(duration: 0.28).delay(0.16)
 }
 
 struct CardStyle: ViewModifier {
@@ -206,58 +203,28 @@ struct ScaleButtonStyle: ButtonStyle {
     }
 }
 
-/// 新出现的消息（像 iMessage）：这一行的高度从 0 平稳长到原本的高度，上面的消息被柔和地推上去；
-/// 气泡同时从它那一边的下角放大、显现，轻轻一弹。你发的那条还会从下面（输入框那里）升上来一点。
-/// 布局和气泡分开走两条曲线（Motion.bubble / Motion.bubblePop），时长一样：气泡弹，整列消息不晃。旧内容直接显示，不重播
+/// 新出现的消息（像 iMessage）：这一行一进来就是它本来的高度，气泡从它那一边的下角放大、显现，轻轻一弹；
+/// 你发的那条还会从下面（输入框那里）升上来一点。上面的消息让开，交给聊天页带动画滚到最新（同一条 Motion.bubble）。
+/// 以前这一行的高度是一帧一帧长出来的，和滚动各算各的「底」，真机录屏里整列消息会先往下掉一截再往上窜。旧内容直接显示，不重播
 struct RiseIn: ViewModifier {
     let fresh: Bool
     var anchor: UnitPoint = .bottom
     /// 从下面升上来多少（你发的消息：从输入框那里升上来）
     var rise: CGFloat = 0
-    @State private var grown = false
     @State private var popped = false
 
     func body(content: Content) -> some View {
-        let grow = !fresh || grown
         let pop = !fresh || popped
-        // 减少动态效果：不撑开、不放大、不升，只在原地淡入
+        // 减少动态效果：不放大、不升，只在原地淡入
         let still = Motion.reduced
-        GrowIn(progress: grow || still ? 1 : 0) {
-            content
-                .scaleEffect(pop || still ? 1 : 0.8, anchor: anchor)
-                .offset(y: pop || still ? 0 : rise)
-                .opacity(pop ? 1 : 0)
-        }
-        .onAppear {
-            guard fresh, !popped else { return }
-            withAnimation(Motion.bubble) { grown = true }
-            withAnimation(Motion.bubblePop) { popped = true }
-        }
-    }
-}
-
-/// 高度跟着进度伸缩的容器。进度每一帧都真的改变布局高度：聊天贴着底部时，滚动区域一帧一帧变高，
-/// 上面的内容就一帧一帧平滑上移（普通的出现动画只改画面，布局高度一下子就到位，内容会跳）
-struct GrowIn: Layout {
-    var progress: CGFloat
-
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let child = subviews.first else { return .zero }
-        let size = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
-        return CGSize(width: proposal.width ?? size.width, height: size.height * min(1, max(0, progress)))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard let child = subviews.first else { return }
-        let size = child.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
-        // 贴着底边放：这一行长高时，气泡停在原地，是上面的内容在让开
-        child.place(at: CGPoint(x: bounds.minX, y: bounds.maxY - size.height), anchor: .topLeading,
-                    proposal: ProposedViewSize(width: bounds.width, height: size.height))
+        content
+            .scaleEffect(pop || still ? 1 : 0.8, anchor: anchor)
+            .offset(y: pop || still ? 0 : rise)
+            .opacity(pop ? 1 : 0)
+            .onAppear {
+                guard fresh, !popped else { return }
+                withAnimation(Motion.bubblePop) { popped = true }
+            }
     }
 }
 

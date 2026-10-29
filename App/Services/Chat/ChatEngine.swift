@@ -198,10 +198,15 @@ final class ChatEngine {
             } else {
                 self?.markRead(convo, context: context)
             }
+            var spoke = false
             rounds: for round in 0..<rounds {
                 for persona in round == 0 ? responders : members {
+                    // 群聊换人回：上一个人这句冒出来以后停一小会儿，下一个人的「正在输入」才出现。
+                    // 以前紧跟着就冒出来，和上一句变成文字的动画撞在同一瞬间，名字还会压到上一条上（真机录屏）
+                    if spoke { try? await Task.sleep(for: .milliseconds(450)) }
                     guard let self, !Task.isCancelled, self.pending[convoID] == nil else { break rounds }
                     await self.reply(as: persona, in: convo, members: members, context: context, discussing: round > 0)
+                    spoke = true
                 }
             }
             guard let self else { return }
