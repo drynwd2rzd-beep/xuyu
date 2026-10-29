@@ -54,8 +54,6 @@ enum World {
     struct State: Codable, Equatable {
         var world = ""
         var you = ""
-        /// 世界里大家在哪个城市（填了就按这个城市的天气过日子）
-        var city = ""
         var relations: [Relation] = []
         var lives: [UUID: Life] = [:]
         var events: [Event] = []
@@ -90,6 +88,12 @@ enum World {
     }
 
     static let changed = Notification.Name("world.changed")
+
+    /// 从备份恢复后：重新从文件读
+    static func reload() {
+        cache = nil
+        NotificationCenter.default.post(name: changed, object: nil)
+    }
 
     /// 恢复出厂设置时清掉
     static func clear() {

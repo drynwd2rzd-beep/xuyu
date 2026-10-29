@@ -269,9 +269,12 @@ final class CallLogs {
     private init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         file = dir.appendingPathComponent("calls.json")
-        if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([UUID: [CallSession.Line]].self, from: data) {
-            byMessage = saved
-        }
+        reload()
+    }
+
+    /// 从文件读（打开时、从备份恢复后）
+    func reload() {
+        byMessage = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([UUID: [CallSession.Line]].self, from: $0) } ?? [:]
     }
 
     func lines(_ id: UUID) -> [CallSession.Line] { byMessage[id] ?? [] }

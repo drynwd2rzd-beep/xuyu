@@ -42,8 +42,6 @@ struct SettingsView: View {
                     navRow("World", route: .world)
                     Hairline()
                     meRow
-                    Hairline()
-                    WeatherRows()
                 }
 
                 // 不常改的放进二级页面，主页面保持简短

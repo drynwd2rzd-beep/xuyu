@@ -25,6 +25,10 @@ enum Backup {
         var album: [AlbumDTO]?
         var prefs: [String: String]
         var myAvatar: Data?
+        /// 不在数据库里、各自存成小文件的：世界观、心声、视频卡片、通话内容、一起听过的歌（文件名 → 内容）
+        var files: [String: Data]?
+        /// 每个角色的「真人感」设置和关系、天气设置（存成 plist）
+        var touches: Data?
     }
 
     struct PersonaDTO: Codable {
@@ -91,8 +95,15 @@ enum Backup {
     nonisolated private static let prefKeys = [Prefs.nickname, Prefs.appearance, Prefs.wallpaper, Prefs.defaultClaudeModel, Prefs.defaultCodexModel,
                                    Prefs.defaultClaudeEffort, Prefs.defaultCodexEffort, Prefs.inAppBanner, Prefs.todoReminders,
                                    Prefs.diaryReminder, Prefs.quietStart, Prefs.quietEnd, Prefs.homeWidgets, Prefs.showEngineLogo,
-                                   Prefs.diaryWriter, Prefs.showMyDiary, Prefs.stickerPackOrder, Prefs.appointments, Prefs.minimaxRegion,
+                                   Prefs.diaryWriter, Prefs.stickerPackOrder, Prefs.appointments, Prefs.minimaxRegion,
                                    Prefs.voiceNames]
+
+    nonisolated private static let localFiles = ["world.json", "thoughts.json", "video-cards.json", "calls.json", "listened.json"]
+    nonisolated private static let touchPrefixes = ["human.", "weather.enabled", "weather.city"]
+
+    nonisolated private static var supportDir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    }
 
     // MARK: 导出
 
@@ -165,7 +176,13 @@ enum Backup {
             },
             album: album.map { AlbumDTO(id: $0.id, personaID: $0.personaID, data: $0.data, caption: $0.caption, createdAt: $0.createdAt) },
             prefs: prefs,
-            myAvatar: MyAvatarStore.fileData)
+            myAvatar: MyAvatarStore.fileData,
+            files: Dictionary(uniqueKeysWithValues: localFiles.compactMap { name in
+                (try? Data(contentsOf: supportDir.appendingPathComponent(name))).map { (name, $0) }
+            }),
+            touches: try? PropertyListSerialization.data(
+                fromPropertyList: defaults.dictionaryRepresentation().filter { key, _ in touchPrefixes.contains { key.hasPrefix($0) } },
+                format: .binary, options: 0))
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .millisecondsSince1970
         return try encoder.encode(archive)
@@ -197,6 +214,23 @@ enum Backup {
             else { defaults.set(value, forKey: key) }
         }
         if let avatar = archive.myAvatar { MyAvatarStore.save(avatar) }
+        // 旧备份里没有这些：原来的留着不动
+        if let files = archive.files {
+            for name in localFiles {
+                let url = supportDir.appendingPathComponent(name)
+                if let data = files[name] { try? data.write(to: url, options: .atomic) } else { try? FileManager.default.removeItem(at: url) }
+            }
+            World.reload()
+            Thoughts.shared.reload()
+            VideoCards.shared.reload()
+            CallLogs.shared.reload()
+            ListenTogether.shared.reloadHistory()
+        }
+        if let touches = archive.touches,
+           let saved = try? PropertyListSerialization.propertyList(from: touches, format: nil) as? [String: Any] {
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("human.") { defaults.removeObject(forKey: key) }
+            for (key, value) in saved { defaults.set(value, forKey: key) }
+        }
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         todos.forEach(Reminders.sync)
     }

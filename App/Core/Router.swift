@@ -23,6 +23,8 @@ enum Route: Hashable {
     case world
     case worldLife(UUID)
     case worldEvents
+    /// 编辑角色里收起来的二级页面：真人感、语音、动态与相册、模型
+    case personaPage(UUID, PersonaPage)
 }
 
 @Observable

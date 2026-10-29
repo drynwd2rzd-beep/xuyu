@@ -26,7 +26,12 @@ final class VideoCards {
     private init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         file = dir.appendingPathComponent("video-cards.json")
-        if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([UUID: Card].self, from: data) { byMessage = saved }
+        reload()
+    }
+
+    /// 从文件读（打开时、从备份恢复后）
+    func reload() {
+        byMessage = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([UUID: Card].self, from: $0) } ?? [:]
     }
 
     func card(_ id: UUID) -> Card? { byMessage[id] }
@@ -67,7 +72,8 @@ final class VideoCards {
     /// 每天最多一次：某位开了「刷视频分享」的角色，挑一个 B 站热门视频或一个抖音热搜，配一句话，排在今天晚些时候发来
     @MainActor
     static func maybeShare(context: ModelContext, relay: RelayClient) async {
-        guard relay.isConnected, !DemoMode.isOn else { return }
+        // 免打扰时段不刷（刷到了也别半夜发来）
+        guard relay.isConnected, !DemoMode.isOn, !Prefs.isQuiet(.now), !Prefs.isQuiet(.now.addingTimeInterval(600)) else { return }
         let last = UserDefaults.standard.double(forKey: lastShareKey)
         guard Date.now.timeIntervalSince1970 - last > 20 * 3600, Double.random(in: 0..<1) < 0.6 else { return }
         let personas = context.allPersonas().filter { !$0.canWork && HumanTouch.shareVideos($0) }
@@ -96,9 +102,11 @@ final class VideoCards {
               let text = (pick["text"] as? String)?.trimmed, !text.isEmpty else { return }
         let card = options[index - 1]
         let convo = context.chat(for: persona)
+        // 已经排着别的消息（晚回、补一句、主动来找你）：这次就不发了，免得和那几条撞在一起
+        guard convo.plannedMessages().isEmpty else { return }
         // 排在今天晚些时候（像 TA 刷到时随手发来），避开免打扰
         var deliver = Date.now.addingTimeInterval(Double.random(in: 600...5400))
-        if Prefs.isQuiet(deliver) { deliver = Date.now.addingTimeInterval(120) }
+        if Prefs.isQuiet(deliver) { deliver = Date.now.addingTimeInterval(600) }
         let m = Message(role: .assistant, content: text, personaID: persona.id)
         m.isProactive = true
         m.relayID = "video"

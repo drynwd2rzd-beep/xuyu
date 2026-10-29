@@ -43,8 +43,6 @@ enum Prefs {
     // MARK: 日记与今日一句
     /// 谁来写 AI 日记（角色 ID）
     static let diaryWriter = "diaryWriter"
-    /// 待办页是否显示「我」的日记
-    static let showMyDiary = "showMyDiary"
     static let whisperDay = "whisperDay"
     static let whisperText = "whisperText"
     static let whisperAuthor = "whisperAuthor"

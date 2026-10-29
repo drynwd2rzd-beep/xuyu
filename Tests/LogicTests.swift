@@ -250,6 +250,27 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(ChatEngine.merge([b], [a, b]).map(\.name), ["小B", "小A"])
     }
 
+    /// 群里没 @ 谁时有人潜水：但每次至少一个人回，回的人都在群里、不重复
+    func testLurkingKeepsAtLeastOne() {
+        let members = (1...4).map { Persona(name: "P\($0)") }
+        for _ in 0..<50 {
+            let picked = ChatEngine.lurking(members)
+            XCTAssertFalse(picked.isEmpty)
+            XCTAssertEqual(Set(picked.map(\.id)).count, picked.count)
+            XCTAssertTrue(picked.allSatisfy { p in members.contains { $0.id == p.id } })
+        }
+        XCTAssertTrue(ChatEngine.lurking([]).isEmpty)
+    }
+
+    /// 只写了心声的一段：正文是空的（不发空气泡），心声留着
+    func testThoughtOnlyParagraph() {
+        let m = ReplyText.markers(in: "【心声:其实有点想你】")
+        XCTAssertEqual(m.body.trimmed, "")
+        XCTAssertEqual(m.thought, "其实有点想你")
+        let w = ReplyText.markers(in: "早呀【心声:装作不在意】")
+        XCTAssertEqual(w.body, "早呀")
+    }
+
     // MARK: - 聊天间隔
 
     func testGapNote() throws {
@@ -367,8 +388,12 @@ final class LogicTests: XCTestCase {
         source.insert(DiaryEntry(day: now.startOfDay, author: .me, text: "今天很开心", mood: "开心"))
         source.insert(Sticker(pack: "猫猫", data: Data([7])))
         try source.save()
+        // 每个角色的真人感设置也一起备份
+        let moodKey = HumanTouch.moodKey(persona.id)
+        UserDefaults.standard.set(2, forKey: moodKey)
 
         let data = try Backup.export(context: source)
+        UserDefaults.standard.removeObject(forKey: moodKey)
         let target = try makeContext()
         try await Backup.restore(data, context: target)
 
@@ -384,5 +409,7 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(try target.fetchCount(FetchDescriptor<TodoItem>()), 1)
         XCTAssertEqual(try target.fetchCount(FetchDescriptor<DiaryEntry>()), 1)
         XCTAssertEqual(try target.fetch(FetchDescriptor<Sticker>()).first?.pack, "猫猫")
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: moodKey), 2)
+        UserDefaults.standard.removeObject(forKey: moodKey)
     }
 }

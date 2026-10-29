@@ -110,7 +110,13 @@ final class ChatEngine {
         let carriedLate = latePlans[convo.id] ?? waiting.min(by: { $0.createdAt < $1.createdAt }).map {
             HumanTouch.Late(deliver: $0.createdAt, reason: lateReasons[convo.id] ?? "在忙", read: $0.relayID == HumanTouch.lateRead)
         }
-        lateTasks[convo.id]?.cancel()
+        // 正在写的那次晚回停下、清干净（下面要么按同一个时间重写，要么照常马上回），后台时间也还回去
+        if lateTasks[convo.id] != nil || latePlans[convo.id] != nil {
+            lateTasks[convo.id]?.cancel()
+            lateTasks[convo.id] = nil
+            latePlans[convo.id] = nil
+            releaseBackground(convo.id)
+        }
         Companion.cancelPlannedMessages(in: convo, context: context)
         context.persist()
         var responders = Self.responders(for: text, convo: convo, members: members)
@@ -223,7 +229,8 @@ final class ChatEngine {
     private func markRead(_ convo: Conversation, context: ModelContext) {
         let now = Date.now
         var changed = false
-        for m in convo.messages ?? [] where m.role == .user && m.readAt == nil && m.createdAt <= now {
+        // 晚回「没看到」时已读排在以后；改成现在就回了，已读也提前到现在
+        for m in convo.messages ?? [] where m.role == .user && (m.readAt ?? .distantFuture) > now && m.createdAt <= now {
             m.readAt = now
             changed = true
         }
@@ -513,6 +520,8 @@ final class ChatEngine {
                 // 藏着打字的这条，以真正冒出来的时刻为准
                 message.createdAt = max(.now, message.createdAt)
                 let cleaned = applyMarkers(head, to: message, persona: persona, convo: convo, context: context)
+                // 这一段只写了心声、没说话：心声留给下一条
+                let leftThought = cleaned.isEmpty ? Thoughts.shared.text(message.id) : nil
                 // 小点变成文字、气泡撑开、「已读」淡出：放在同一个平滑动画里一起完成
                 withAnimation(Motion.bubble) {
                     // 重新生成：新的第一句出来了，旧的那条这时才退场
@@ -540,6 +549,7 @@ final class ChatEngine {
                 }
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
                 buffer.hold = true
+                if let leftThought { Thoughts.shared.set(leftThought, for: message.id) }
                 buffer.text = rest
                 context.persist()
             }

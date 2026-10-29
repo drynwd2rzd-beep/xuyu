@@ -17,9 +17,12 @@ final class Thoughts {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         url = dir.appendingPathComponent("thoughts.json")
-        if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode([UUID: String].self, from: data) {
-            byMessage = saved
-        }
+        reload()
+    }
+
+    /// 从文件读（打开时、从备份恢复后）
+    func reload() {
+        byMessage = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([UUID: String].self, from: $0) } ?? [:]
     }
 
     func text(_ id: UUID) -> String? { byMessage[id] }

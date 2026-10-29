@@ -374,9 +374,10 @@ struct AskInBook: View {
         像一起读书的朋友那样回答，口语化，不长篇大论；不要剧透这一章之后的内容。只输出你的回答。
         """
         Task {
-            let answer = (try? await relay.complete(Companion.lightRequest(persona, prompt)))?.trimmed ?? String(localized: "（没连上电脑，TA 暂时回不了）")
+            let raw = (try? await relay.complete(Companion.lightRequest(persona, prompt)))?.trimmed ?? String(localized: "（没连上电脑，TA 暂时回不了）")
+            let answer = ReplyText.markers(in: raw).body
             waiting = false
-            if let last = talk.indices.last { talk[last].a = ReplyText.markers(in: answer).body }
+            if let last = talk.indices.last { talk[last].a = answer }
             Books.shared.update(book.id) { $0.asks.append(Books.Ask(chapter: chapter, quote: quote, question: q, answer: answer)) }
         }
     }

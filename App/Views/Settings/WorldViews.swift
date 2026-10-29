@@ -26,6 +26,11 @@ struct WorldView: View {
                     .padding(Space.card)
             }
 
+            // 真实天气：TA 们按你那边的天气过日子
+            SettingsGroup(title: "Weather") {
+                WeatherRows()
+            }
+
             SettingsGroup(title: "You") {
                 HStack(alignment: .top, spacing: Space.item) {
                     UserAvatar(size: 40)

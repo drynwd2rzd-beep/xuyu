@@ -48,9 +48,12 @@ final class ListenTogether {
     }
 
     private init() {
-        if let data = try? Data(contentsOf: Self.historyURL), let saved = try? JSONDecoder().decode([Song].self, from: data) {
-            history = saved
-        }
+        reloadHistory()
+    }
+
+    /// 从文件读（打开时、从备份恢复后）
+    func reloadHistory() {
+        history = (try? Data(contentsOf: Self.historyURL)).flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
     }
 
     // MARK: - 开始 / 结束
@@ -179,6 +182,8 @@ final class ListenTogether {
             guard let text = try? await relay.complete(Companion.lightRequest(persona, prompt)),
                   !text.trimmed.isEmpty, self.persona == id else { return }
             let convo = context.chat(for: persona)
+            // TA 正在打字回你：这句就不插了，不然会把那段回复从中间隔开
+            guard !(convo.messages ?? []).contains(where: { $0.status == .streaming }) else { return }
             let m = Message(role: .assistant, content: ReplyText.markers(in: text).body.trimmed, personaID: persona.id)
             convo.add(m, context: context)
             convo.updatedAt = .now

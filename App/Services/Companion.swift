@@ -94,7 +94,10 @@ enum Companion {
             guard !Task.isCancelled else { break }
             let convo = context.chat(for: persona)
             let visible = convo.visibleMessages(at: now)
-            guard let last = visible.last, last.role == .assistant, last.status == .done, !last.isProactive,
+            // 晚回的那几条是正常回复，照样可以追问；拍一拍、通话记录、一起听时随口的一句不算
+            guard let last = visible.last, last.role == .assistant, last.status == .done,
+                  !last.isProactive || last.relayID == HumanTouch.lateRead || last.relayID == HumanTouch.lateUnread,
+                  last.kind != .nudge, last.kind != .call, ListenTogether.shared.persona != persona.id,
                   now.timeIntervalSince(last.createdAt) < 12 * 3600, !settled.contains(last.id.uuidString) else { continue }
             // 你们已经道过别（晚安、拜拜、去忙了…）：聊天自然结束了，不追问
             if endedNaturally(visible.suffix(3).map(\.content)) { settle(last.id); continue }
@@ -119,7 +122,10 @@ enum Companion {
             如果聊天已经自然收尾了（道了别、说了晚安、TA 说要去忙或去睡、你最后那条本来就不需要回），或者现在去追问会显得黏人、打扰，就只输出：不追问
             否则像真人朋友一样再发一条：可以俏皮或关心地问 TA 怎么不回消息、是不是在忙，或者接着刚才没聊完的话题再说一句。一两句话，口语化，不要重复你上一条说过的话。只输出消息内容。
             """
-            guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.trimmed.isEmpty else { continue }
+            guard let raw = try? await relay.complete(lightRequest(persona, prompt)), !raw.trimmed.isEmpty else { continue }
+            // 去掉【心声】【表情】这类聊天里的小标记，只留要说的话
+            let text = ReplyText.markers(in: raw).body
+            guard !text.trimmed.isEmpty else { continue }
             // TA 觉得这时不该追问：记下，这段话题不再问
             if text.contains("不追问") { settle(last.id); continue }
             // 生成的这段时间里你回了消息：就不用追问了
@@ -168,7 +174,7 @@ enum Companion {
         """
         guard let reply = try? await relay.complete(lightRequest(persona, prompt)), !reply.trimmed.isEmpty else { return }
         withAnimation(Motion.spring) {
-            entry.reply = reply.trimmed
+            entry.reply = ReplyText.markers(in: reply).body.trimmed
             entry.replyPersonaID = persona.id
             entry.repliedText = text
         }
@@ -225,7 +231,9 @@ enum Companion {
         今天是 \(Fmt.full.string(from: .now))。\(Weather.summary.map { "\(PromptBuilder.userName)那边的天气：\($0)" } ?? "")\(todos.isEmpty ? "" : "\(PromptBuilder.userName)今天的待办：\(todos)。")
         写一句今天想对\(PromptBuilder.userName)说的话：温柔、具体、有画面感，不超过 28 个字，可以用逗号分成两小句。不要引号，只输出这一句。
         """
-        guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.isEmpty else { return }
+        guard let raw = try? await relay.complete(lightRequest(persona, prompt)) else { return }
+        let text = ReplyText.markers(in: raw).body.trimmed
+        guard !text.isEmpty else { return }
         defaults.set(text.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "“", with: "").replacingOccurrences(of: "”", with: ""),
                      forKey: Prefs.whisperText)
         defaults.set(persona.name, forKey: Prefs.whisperAuthor)
@@ -272,7 +280,7 @@ enum Companion {
             DiaryState.shared.writing.insert(day)
             defer { DiaryState.shared.writing.remove(day) }
             guard let raw = try? await relay.complete(lightRequest(persona, prompt)), !raw.isEmpty else { continue }
-            let (text, mood) = parseMood(raw)
+            let (text, mood) = parseMood(ReplyText.markers(in: raw).body)
             let entry = DiaryEntry(day: day, author: .ai, text: text, mood: mood)
             entry.personaID = persona.id
             context.insert(entry)
@@ -325,7 +333,9 @@ enum Companion {
             现在是 \(Fmt.full.string(from: now))。\(Weather.summary.map { "\(PromptBuilder.userName)那边的天气：\($0)" } ?? "")你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptBuilder.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
             像朋友一样自然地开个话题：可以接着之前聊的事、关心一下 TA、或者轻轻提醒一件事。一两句话，口语化，不要说「我来主动找你」。只输出消息内容。
             """
-            guard let text = try? await relay.complete(lightRequest(persona, prompt)), !text.isEmpty else { continue }
+            guard let raw = try? await relay.complete(lightRequest(persona, prompt)) else { continue }
+            let text = ReplyText.markers(in: raw).body.trimmed
+            guard !text.isEmpty else { continue }
             let message = Message(role: .assistant, content: text, personaID: persona.id)
             message.isProactive = true
             message.createdAt = deliver

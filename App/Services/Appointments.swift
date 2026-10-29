@@ -152,13 +152,15 @@ enum Appointments {
         guard let text = try? await relay.complete(Companion.lightRequest(persona, prompt)), !text.trimmed.isEmpty,
               all.contains(where: { $0.id == id }) else { return }
         if let old = a.messageID { dropMessage(old, context: context) }
-        let message = Message(role: .assistant, content: text.trimmed, personaID: persona.id)
+        let body = ReplyText.markers(in: text).body.trimmed
+        guard !body.isEmpty else { return }
+        let message = Message(role: .assistant, content: body, personaID: persona.id)
         message.isProactive = true
         message.createdAt = a.at
         convo.add(message, context: context)
         context.persist()
         let title = convo.isGroup ? "\(convo.title.isEmpty ? "群聊" : convo.title) · \(persona.name)" : persona.name
-        Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id, title: title, body: text.trimmed, at: a.at)
+        Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id, title: title, body: body, at: a.at)
         a.messageID = message.id
         a.writtenAt = .now
         update(a)
