@@ -33,9 +33,6 @@ final class Router {
     var chatPath = NavigationPath()
     /// 侧滑返回聊天的进度 0～1：聊天页跟着手指往右走，底下的页面跟着回来。每次打开聊天都从 0 开始
     var chatSwipe: CGFloat = 0
-    /// 聊天页已经铺满、进场动画演完了。没演完时页头 / 底栏的渐变模糊先不画：
-    /// 系统的模糊在半透明、缩放中的页面里画不出来，会变成上下两条黑边，透明度回到 1 时又突然变回来（抽一下）
-    private(set) var chatSettled = false
     /// 当前打开的对话（用来决定要不要弹 App 内提示）
     var openConversation: UUID?
     /// 主页正在编辑小组件
@@ -49,12 +46,7 @@ final class Router {
             chatOrigin = origin
             // 先清零：刚侧滑关掉、还没完全消失的聊天页被重新打开时，不会还缩在那儿
             chatSwipe = 0
-            chatSettled = false
-            withAnimation(Motion.shuttleIn) { chat = id } completion: { [weak self] in
-                // 动画途中又打开了别的聊天：等那一次演完
-                guard let self, self.chat == id else { return }
-                self.chatSettled = true
-            }
+            withAnimation(Motion.shuttleIn) { chat = id }
         } else if chat != nil {
             chatPath.append(route)
         } else {
@@ -63,8 +55,6 @@ final class Router {
     }
 
     func closeChat() {
-        // 散开时页面也是半透明、模糊的：模糊先拿掉
-        chatSettled = false
         withAnimation(Motion.shuttleOut) { chat = nil }
     }
 

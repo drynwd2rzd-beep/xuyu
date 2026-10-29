@@ -76,21 +76,10 @@ struct ChatView: View {
             TimelineView(PlannedSchedule(convo)) { _ in
                 messageList(now: .now)
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                // 顶部：屏幕最上面最模糊，往下渐渐减弱，到头像一半左右已经基本清晰
-                header.background {
-                    ChatVeil(edge: .top, shown: router.chatSettled)
-                        .padding(.bottom, -28)
-                        .ignoresSafeArea(edges: .top)
-                }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                bottomBar.background {
-                    ChatVeil(edge: .bottom, shown: router.chatSettled)
-                        .padding(.top, -24)
-                        .ignoresSafeArea(edges: .bottom)
-                }
-            }
+            // 滚到页头、输入栏那里的消息慢慢变透明（背景照片一直清清楚楚），页头和输入栏直接浮在背景上
+            .mask { ChatEdgeMask() }
+            .safeAreaInset(edge: .top, spacing: 0) { header }
+            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
             // 面板开着时，键盘升起不推动输入框：面板和键盘一样高，两者直接互换
             .ignoresSafeArea(.keyboard, edges: panel != nil ? .bottom : [])
 

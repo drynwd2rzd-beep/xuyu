@@ -17,19 +17,20 @@ struct RootView: View {
         ZStack {
             // 列表淡开时，后面露出的是纸色，不是黑的
             Palette.paper.ignoresSafeArea()
-            // 聊天开着时，最底下这张纸换成聊天背景（淡入淡出，不跟着放大）。真机录屏：进场动画途中，
-            // 聊天层和跟着它一起放大的背景都只画在安全区里，状态栏和底部横条那两截露出这张纸；
-            // 这一层不做放大，一直能铺满整屏，替它们把那两截补上。开始侧滑时就淡掉，露出的是列表
+            pages
+                // 聊天开着时朝你放大、淡开；侧滑返回时跟着手指一点点回来
+                .recede(router.chat == nil ? 0 : 1 - router.chatSwipe)
+            // 进场动画途中，聊天层只画在安全区里（系统的限制），状态栏和底部横条那两截要靠这张整屏的聊天背景补上。
+            // 它必须在列表上面：以前放在最底下，列表淡开要 0.3 秒，这段时间两截露出的是半透明的列表（真机录屏 17:15）。
+            // 不跟着放大，只淡入淡出；开始侧滑时就淡掉，露出后面的列表
             if let id = router.chat {
                 ChatBackdrop(id: id)
                     .ignoresSafeArea()
                     .opacity(Double(max(0, 1 - router.chatSwipe * 6)))
                     .id(id)
                     .transition(.opacity)
+                    .zIndex(0.5)
             }
-            pages
-                // 聊天开着时朝你放大、淡开；侧滑返回时跟着手指一点点回来
-                .recede(router.chat == nil ? 0 : 1 - router.chatSwipe)
             if let id = router.chat {
                 ChatLayer(id: id)
                     .id(id)

@@ -131,95 +131,40 @@ enum WallpaperStore {
     }
 }
 
-/// 页头 / 底栏下面的渐变模糊：靠屏幕边缘最模糊，往里慢慢变清晰，不加任何颜色（没有白雾）。
-/// 顶部从屏幕最上面模糊到头像一半左右基本清晰；底部只在输入栏后面轻轻一层
-struct ChatVeil: View {
-    let edge: VerticalEdge
-    /// 聊天进出场动画途中不画（见 Router.chatSettled），演完再淡入
-    var shown = true
-
+/// 聊天记录在页头和输入栏那里淡出（照灵感视频）：背景照片一直清清楚楚，只有消息本身慢慢变透明，不盖毛玻璃。
+/// 以前是一层系统的可变模糊，连背景一起糊成一条灰带，进出聊天时还会画成黑边。
+/// 量的是被页头、输入栏（和键盘）占掉的那两截：顶上状态栏那段完全透明，往下到页头底部慢慢显出来；
+/// 底部从输入栏上沿一点点开始淡，输入栏后面看不到消息。停着不动时最后一条消息不受影响
+struct ChatEdgeMask: View {
     var body: some View {
-        VariableBlur(radius: edge == .top ? 14 : 10, fromTop: edge == .top, shown: shown)
-            .allowsHitTesting(false)
-    }
-}
-
-/// 可变模糊：一端模糊半径最大，另一端为 0，中间平滑过渡（和系统相册、音乐顶部的效果一样）
-struct VariableBlur: UIViewRepresentable {
-    var radius: CGFloat
-    var fromTop: Bool
-    var shown = true
-
-    func makeUIView(context: Context) -> VariableBlurView {
-        let view = VariableBlurView(radius: radius, fromTop: fromTop)
-        view.isHidden = !shown
-        return view
-    }
-
-    func updateUIView(_ view: VariableBlurView, context: Context) { view.setShown(shown) }
-}
-
-final class VariableBlurView: UIVisualEffectView {
-    private let radius: CGFloat
-
-    init(radius: CGFloat, fromTop: Bool) {
-        self.radius = radius
-        super.init(effect: UIBlurEffect(style: .regular))
-        // 系统内部的可变模糊滤镜：用一张从黑到透明的渐变图告诉它哪里模糊、哪里清晰
-        let name = String("retliFAC".reversed())
-        let make = NSSelectorFromString(String(":epyThtiWretlif".reversed()))
-        guard let type = NSClassFromString(name) as AnyObject as? NSObjectProtocol,
-              type.responds(to: make),
-              let filter = type.perform(make, with: "variableBlur")?.takeUnretainedValue() as? NSObject else { return }
-        filter.setValue("variableBlur", forKey: "name")
-        filter.setValue(radius, forKey: "inputRadius")
-        filter.setValue(Self.mask(fromTop: fromTop), forKey: "inputMaskImage")
-        filter.setValue(true, forKey: "inputNormalizeEdges")
-        subviews.first?.layer.filters = [filter]
-        // 去掉系统毛玻璃自带的那层颜色
-        for sub in subviews.dropFirst() { sub.alpha = 0 }
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        guard let window, let backdrop = subviews.first?.layer else { return }
-        backdrop.setValue(window.traitCollection.displayScale, forKey: "scale")
-    }
-
-    override func traitCollectionDidChange(_ previous: UITraitCollection?) {}
-
-    /// 藏起来时完全不画（半透明的页面里画出来是黑的）；重新出现时模糊从 0 慢慢加深，不会一下子糊上去
-    func setShown(_ shown: Bool) {
-        guard shown == isHidden else { return }
-        isHidden = !shown
-        guard shown, let backdrop = subviews.first?.layer else { return }
-        let fade = CABasicAnimation(keyPath: "filters.variableBlur.inputRadius")
-        fade.fromValue = 0
-        fade.toValue = radius
-        fade.duration = 0.32
-        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        backdrop.add(fade, forKey: "fadeIn")
-    }
-
-    /// 模糊强度的分布：边缘一小段最模糊，之后按缓和曲线一路减弱，最后一段淡到几乎察觉不到才归零，看不出边界
-    private static func mask(fromTop: Bool) -> CGImage? {
-        let size = CGSize(width: 1, height: 200)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            let stops: [(CGFloat, CGFloat)] = [(0, 1), (0.12, 1), (0.28, 0.82), (0.44, 0.56), (0.6, 0.32),
-                                               (0.75, 0.14), (0.88, 0.04), (1, 0)]
-            let colors = stops.map { UIColor.black.withAlphaComponent($0.1).cgColor } as CFArray
-            let locations = stops.map(\.0)
-            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) else { return }
-            let start = CGPoint(x: 0, y: fromTop ? 0 : size.height)
-            let end = CGPoint(x: 0, y: fromTop ? size.height : 0)
-            ctx.cgContext.drawLinearGradient(gradient, start: start, end: end, options: [])
+        GeometryReader { g in
+            let top = g.safeAreaInsets.top, bottom = g.safeAreaInsets.bottom
+            VStack(spacing: 0) {
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: 0.4),
+                    .init(color: .black.opacity(0.12), location: 0.6),
+                    .init(color: .black.opacity(0.45), location: 0.78),
+                    .init(color: .black.opacity(0.82), location: 0.92),
+                    .init(color: .black, location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                .frame(height: top + 10)
+                Color.black
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.55), location: 0.4),
+                    .init(color: .black.opacity(0.15), location: 0.75),
+                    .init(color: .clear, location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+                .frame(height: 22)
+                Color.clear.frame(height: max(0, bottom - 18))
+            }
         }
-        return image.cgImage
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
+
 
 struct ChatWallpaper: View {
     let index: Int
