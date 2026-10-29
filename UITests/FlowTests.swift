@@ -62,12 +62,14 @@ final class FlowTests: XCTestCase {
             sleep(1)
         }
 
-        // 点日期弹出月历，翻一个月再翻回来，收起
+        // 点日期弹出月历，翻一个月再翻回来；点这个月 1 号去看那一天，再回到今天
         month.tap()
         sleep(1)
         tapIfExists(app.buttons["上个月"])
         tapIfExists(app.buttons["下个月"])
-        app.swipeDown()
+        tapIfExists(app.buttons["1"].firstMatch)
+        sleep(1)
+        tapIfExists(app.buttons["回到今天"])
         sleep(1)
 
         // 头像进设置

@@ -186,6 +186,8 @@ struct HomeView: View {
                         .contentShape(Capsule().inset(by: -4))
                 }
                 .buttonStyle(ScaleButtonStyle())
+                // 和底栏的 Today 区分开
+                .accessibilityLabel("回到今天")
                 .padding(.top, 6)
                 .transition(.opacity)
             } else {
