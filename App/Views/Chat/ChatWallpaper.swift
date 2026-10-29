@@ -144,16 +144,17 @@ struct ChatEdgeMask: View {
         GeometryReader { g in
             let origin = g.frame(in: .named(ChatView.space)).minY
             let height = g.size.height
-            let top = max(0, headerBottom - origin) + 10
+            // 淡出一直延续到页头下面 40 点：名字那一行的消息只剩两成左右，到页头下面一点才完全显出来（灵感视频就是这样）
+            let top = max(0, headerBottom - origin) + 40
             // 还没量到输入栏时不淡（不然整屏消息都会被当成在输入栏后面）
             let bar = barTop > 0 ? barTop - origin : height
             VStack(spacing: 0) {
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.4),
-                    .init(color: .black.opacity(0.12), location: 0.6),
-                    .init(color: .black.opacity(0.45), location: 0.78),
-                    .init(color: .black.opacity(0.82), location: 0.92),
+                    .init(color: .clear, location: 0.5),
+                    .init(color: .black.opacity(0.06), location: 0.6),
+                    .init(color: .black.opacity(0.22), location: 0.74),
+                    .init(color: .black.opacity(0.55), location: 0.86),
                     .init(color: .black, location: 1),
                 ], startPoint: .top, endPoint: .bottom)
                 .frame(height: top)
