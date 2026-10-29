@@ -103,8 +103,9 @@ final class VideoCards {
         let card = options[index - 1]
         let convo = context.chat(for: persona)
         // 已经排着别的消息（晚回、补一句、主动来找你）：这次就不发了，免得和那几条撞在一起
-        let last = convo.visibleMessages().last
-        guard convo.plannedMessages().isEmpty, last?.role != .user || last?.kind == .call else { return }
+        // 你最后说的话 TA 还没回：先回你，不分享（通话记录气泡不算）
+        let latest = convo.visibleMessages().last
+        guard convo.plannedMessages().isEmpty, latest?.role != .user || latest?.kind == .call else { return }
         // 排在今天晚些时候（像 TA 刷到时随手发来），避开免打扰
         var deliver = Date.now.addingTimeInterval(Double.random(in: 600...5400))
         if Prefs.isQuiet(deliver) { deliver = Date.now.addingTimeInterval(600) }

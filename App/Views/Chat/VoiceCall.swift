@@ -203,8 +203,6 @@ final class CallSession {
                 let clean = ReplyText.markers(in: s).body.trimmed
                 guard !clean.isEmpty else { return }
                 texts.append(clean)
-                // 第一句来了：还没开始的接话声就不放了（已经在放的放完）
-                if texts.count == 1 && !self.fillerPlaying { self.filling?.cancel() }
                 let persona = self.persona
                 // 一边念这一句，一边先合成下一句：不用等
                 sentences.append(Task { try? await Voice.speak(clean, for: persona) })
@@ -225,6 +223,8 @@ final class CallSession {
                     if case .text(let t) = event {
                         buffer += t
                         cut(final: false)
+                        // 第一句来了：还没开始的接话声就不放了（已经在放的放完）
+                        if !texts.isEmpty && !self.fillerPlaying { self.filling?.cancel() }
                         if played < sentences.count { await playReady() }
                     }
                 }
