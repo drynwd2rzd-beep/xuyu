@@ -80,8 +80,9 @@ struct ChatView: View {
             TimelineView(PlannedSchedule(convo)) { _ in
                 messageList(now: .now)
             }
-            // 滚到页头、输入栏那里的消息慢慢变透明（背景照片一直清清楚楚），页头和输入栏直接浮在背景上。
-            // 淡出的位置按页头下沿、输入栏上沿量（同一个坐标系），键盘、面板升起时跟着走
+            // 滚到页头、输入栏那里的消息一边变糊一边变透明，到名字那一行完全看不见（照灵感视频）。
+            // 透明度靠这层遮罩，模糊是每条消息按自己的位置糊（见 edgeBlur）；都按页头下沿、输入栏上沿量（同一个坐标系），
+            // 键盘、面板升起时跟着走。不用系统的模糊：它在进出场动画里画不出来，只能等进去以后再加，会突然糊一下
             .mask { ChatEdgeMask(headerBottom: headerBottom, barTop: barTop) }
             .safeAreaInset(edge: .top, spacing: 0) {
                 header.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).maxY } action: { headerBottom = $0 }
@@ -252,6 +253,7 @@ struct ChatView: View {
                             .padding(.vertical, Space.item)
                     }
                     ForEach(rows) { row in
+                        Group {
                         switch row.kind {
                         case .stamp(let date):
                             Text(date.separatorStamp)
@@ -284,6 +286,9 @@ struct ChatView: View {
                             .id(m.id)
                             if m.id == receipt { ReadReceipt() }
                         }
+                        }
+                        // 靠近页头、输入栏的这一行跟着变糊（透明度由 ChatEdgeMask 管）
+                        .modifier(EdgeBlur(headerBottom: headerBottom, barTop: barTop))
                     }
                     Color.clear.frame(height: Space.item).id("bottom")
                 }

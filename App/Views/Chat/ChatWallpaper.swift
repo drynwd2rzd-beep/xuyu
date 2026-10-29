@@ -131,10 +131,38 @@ enum WallpaperStore {
     }
 }
 
-/// 聊天记录在页头和输入栏那里淡出（照灵感视频）：背景照片一直清清楚楚，只有消息本身慢慢变透明，不盖毛玻璃。
-/// 以前是一层系统的可变模糊，连背景一起糊成一条灰带，进出聊天时还会画成黑边。
-/// 顶上：状态栏那段完全透明，往下到页头下沿慢慢显出来；底部：从输入栏上沿一点点开始淡，输入栏后面看不到消息，
-/// 停着不动时最后一条消息不受影响。headerBottom / barTop 是页头下沿、输入栏上沿在 ChatView.space 里的位置
+/// 聊天里的一行越靠近页头（名字那里）、越靠近输入栏，就越糊。只糊消息本身，背景照片一直清楚；
+/// 是这一行自己的效果，进出聊天的动画途中也照样画得出来（系统的毛玻璃不行，只能等进去以后再加，会突然糊一下）。
+/// 按这一行的中线算：名字下面 70 点以外完全清楚，往上越来越糊，最多 7；输入栏上沿附近最多 4
+struct EdgeBlur: ViewModifier {
+    let headerBottom: CGFloat
+    let barTop: CGFloat
+
+    func body(content: Content) -> some View {
+        content.visualEffect { [headerBottom, barTop] effect, proxy in
+            effect.blur(radius: edgeBlurRadius(proxy.frame(in: .named("chatContent")), headerBottom: headerBottom, barTop: barTop))
+        }
+    }
+}
+
+/// 见 EdgeBlur。还没量到页头 / 输入栏（0）时不糊
+func edgeBlurRadius(_ frame: CGRect, headerBottom: CGFloat, barTop: CGFloat) -> CGFloat {
+    var radius: CGFloat = 0
+    if headerBottom > 0 {
+        let up = (headerBottom + 70 - frame.midY) / 110
+        radius = min(1, max(0, up)) * 7
+    }
+    if barTop > 0 {
+        let down = (frame.maxY - (barTop - 4)) / 40
+        radius = max(radius, min(1, max(0, down)) * 4)
+    }
+    return radius
+}
+
+/// 聊天记录在页头和输入栏那里淡出（照灵感视频）：和 EdgeBlur 一起，消息一边变糊一边变透明。
+/// 顶上：一直到名字那一行都完全看不见，名字下面约 56 点里慢慢显出来；底部：从输入栏上沿一点点开始淡，
+/// 输入栏后面看不到消息，停着不动时最后一条消息不受影响。
+/// headerBottom / barTop 是页头下沿、输入栏上沿在 ChatView.space 里的位置
 /// （不能用安全区去量：这里读出来是 0，第一版就因为这个整个没生效）
 struct ChatEdgeMask: View {
     let headerBottom: CGFloat
@@ -144,20 +172,20 @@ struct ChatEdgeMask: View {
         GeometryReader { g in
             let origin = g.frame(in: .named(ChatView.space)).minY
             let height = g.size.height
-            // 淡出一直延续到页头下面 40 点：名字那一行的消息只剩两成左右，到页头下面一点才完全显出来（灵感视频就是这样）
-            let top = max(0, headerBottom - origin) + 40
+            // 页头下沿往上 6 点大约就是名字的底边
+            let hidden = max(0, headerBottom - origin - 6)
             // 还没量到输入栏时不淡（不然整屏消息都会被当成在输入栏后面）
             let bar = barTop > 0 ? barTop - origin : height
             VStack(spacing: 0) {
+                Color.clear.frame(height: hidden)
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.5),
-                    .init(color: .black.opacity(0.06), location: 0.6),
-                    .init(color: .black.opacity(0.22), location: 0.74),
-                    .init(color: .black.opacity(0.55), location: 0.86),
+                    .init(color: .black.opacity(0.1), location: 0.2),
+                    .init(color: .black.opacity(0.35), location: 0.45),
+                    .init(color: .black.opacity(0.7), location: 0.7),
                     .init(color: .black, location: 1),
                 ], startPoint: .top, endPoint: .bottom)
-                .frame(height: top)
+                .frame(height: 56)
                 Color.black
                 LinearGradient(stops: [
                     .init(color: .black, location: 0),
