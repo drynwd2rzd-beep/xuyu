@@ -133,7 +133,8 @@ enum WallpaperStore {
 
 /// 聊天里的一行越靠近页头（名字那里）、越靠近输入栏，就越糊。只糊消息本身，背景照片一直清楚；
 /// 是这一行自己的效果，进出聊天的动画途中也照样画得出来（系统的毛玻璃不行，只能等进去以后再加，会突然糊一下）。
-/// 按这一行的中线算：名字下面 70 点以外完全清楚，往上越来越糊，最多 7；输入栏上沿附近最多 4
+/// 按这一行的中线算，只在快要看不见的那一小段才糊：中线到了页头下沿往下 20 点以内才开始，往上 60 点糊到最多 3；
+/// 输入栏上沿附近最多 2。上一版（最多 7、名字下面 70 点就开始）太糊：页头下面还看得清的卡片，字已经糊成一片
 struct EdgeBlur: ViewModifier {
     let headerBottom: CGFloat
     let barTop: CGFloat
@@ -149,12 +150,12 @@ struct EdgeBlur: ViewModifier {
 func edgeBlurRadius(_ frame: CGRect, headerBottom: CGFloat, barTop: CGFloat) -> CGFloat {
     var radius: CGFloat = 0
     if headerBottom > 0 {
-        let up = (headerBottom + 70 - frame.midY) / 110
-        radius = min(1, max(0, up)) * 7
+        let up = (headerBottom + 20 - frame.midY) / 60
+        radius = min(1, max(0, up)) * 3
     }
     if barTop > 0 {
         let down = (frame.maxY - (barTop - 4)) / 40
-        radius = max(radius, min(1, max(0, down)) * 4)
+        radius = max(radius, min(1, max(0, down)) * 2)
     }
     return radius
 }
