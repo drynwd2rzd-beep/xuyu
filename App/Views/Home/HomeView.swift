@@ -84,6 +84,25 @@ struct HomeView: View {
                             }
                         }
                     }
+                    // 小组件全删光了：留一个空位，点它就能再加回来。编辑只能靠长按某个小组件进入，
+                    // 一个都不剩时就没有东西可以长按，以前会再也加不回来
+                    if widgets.isEmpty && !editing {
+                        Button {
+                            setEditing(true)
+                            showGallery = true
+                        } label: {
+                            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                                .strokeBorder(Palette.inkSoft.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                                .frame(height: 96)
+                                .overlay {
+                                    Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundStyle(Palette.inkSoft)
+                                }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(ScaleButtonStyle())
+                        .accessibilityLabel("添加小组件")
+                        .transition(.opacity)
+                    }
                 }
             }
             .padding(.horizontal, Space.page)
