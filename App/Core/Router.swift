@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-enum AppTab: Hashable { case home, chats, todo }
+/// 底部三页：Today（主页和待办合在一起）· Chats · Moments
+enum AppTab: Hashable { case today, chats, moments }
 
 enum Route: Hashable {
     case chat(UUID)
@@ -22,7 +23,7 @@ enum Route: Hashable {
 
 @Observable
 final class Router {
-    var tab: AppTab = .home
+    var tab: AppTab = .today
     var path = NavigationPath()
     /// 打开着的聊天：盖在所有页面上面，像穿梭一样从点的那一行飞进去、返回时像雾一样散开（见 ChatLayer）
     private(set) var chat: UUID?
@@ -139,12 +140,12 @@ enum DemoMode {
         router.demoApplied = true
         switch screen {
         case "chats": router.tab = .chats
-        case "todo", "calendar": router.tab = .todo
+        case "today", "past", "calendar": router.tab = .today
         case "settings":
-            router.tab = .todo
+            router.tab = .today
             router.open(.settings)
         case "backup":
-            router.tab = .todo
+            router.tab = .today
             router.open(.settings)
             router.open(.backup)
         case "chat", "group", "stickers":
@@ -156,9 +157,9 @@ enum DemoMode {
             router.tab = .chats
             if let p = context.allPersonas().first { router.open(.persona(p.id)) }
         case "moments":
-            router.open(.moments)
+            router.tab = .moments
         case "profile":
-            router.tab = .chats
+            router.tab = .moments
             if let p = context.allPersonas().first { router.open(.momentsOf(p.id)) }
         case "motion":
             router.tab = .chats

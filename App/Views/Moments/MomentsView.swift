@@ -17,6 +17,12 @@ struct MomentsView: View {
     @State private var draft = ""
     @State private var composing = false
     @FocusState private var typing: Bool
+    /// 底部的 Moments 页（没有返回键）；从角色主页点进来时是推进来的一页
+    let root: Bool
+
+    init(root: Bool = false) {
+        self.root = root
+    }
 
     /// 正在评论哪条动态、回复哪条评论
     struct CommentTarget {
@@ -66,8 +72,12 @@ struct MomentsView: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
-        .onAppear { seenAt = Date.now.timeIntervalSince1970 }
+        // 底部这一页一直开着（只是看不见）：切进来、切走时才算看过
+        .onAppear { if !root || router.tab == .moments { seenAt = Date.now.timeIntervalSince1970 } }
         .onDisappear { seenAt = Date.now.timeIntervalSince1970 }
+        .onChange(of: router.tab) { old, new in
+            if root && (old == .moments || new == .moments) { seenAt = Date.now.timeIntervalSince1970 }
+        }
         .onChange(of: typing) { _, on in
             // 键盘收起、又没写字：输入框一起收起
             if !on && draft.trimmed.isEmpty { withAnimation(Motion.spring) { target = nil } }
@@ -76,32 +86,42 @@ struct MomentsView: View {
 
     private func header(_ now: Date) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Palette.ink)
-                        .frame(width: 44, height: 44)
+            if !root {
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("返回")
+                    Spacer()
+                    composeButton
                 }
-                .accessibilityLabel("返回")
-                Spacer()
-                Button { composing = true } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                        .frame(width: 40, height: 40)
-                        .background {
-                            Circle().fill(Palette.card).shadow(color: .black.opacity(0.05), radius: 6, y: 3)
-                        }
-                        .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 0.5))
-                }
-                .buttonStyle(ScaleButtonStyle())
-                .accessibilityLabel("发动态")
+                .padding(.horizontal, Space.tight)
             }
-            .padding(.horizontal, Space.tight)
-            PageTitle(caption: Fmt.enLong.string(from: now), title: "Moments") { EmptyView() }
-                .padding(.horizontal, Space.page)
+            PageTitle(caption: Fmt.enLong.string(from: now), title: "Moments") {
+                if root { composeButton.padding(.bottom, 4) }
+            }
+            .padding(.horizontal, Space.page)
+            .padding(.top, root ? Space.top : 0)
         }
+    }
+
+    private var composeButton: some View {
+        Button { composing = true } label: {
+            Image(systemName: "square.and.pencil")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Palette.ink)
+                .frame(width: 40, height: 40)
+                .background {
+                    Circle().fill(Palette.card).shadow(color: .black.opacity(0.05), radius: 6, y: 3)
+                }
+                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 0.5))
+                .contentShape(Circle().inset(by: -2))
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityLabel("发动态")
     }
 
     private var commentBar: some View {

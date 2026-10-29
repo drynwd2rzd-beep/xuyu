@@ -120,9 +120,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                 router.tab = .chats
                 router.path = NavigationPath()
                 router.open(.chat(id))
-            } else if tab == "todo" {
+            } else if tab == "todo" || tab == "today" {
                 router.path = NavigationPath()
-                router.tab = .todo
+                router.tab = .today
             }
         }
     }

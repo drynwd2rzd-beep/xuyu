@@ -6,7 +6,7 @@ struct RootView: View {
     @Environment(Router.self) private var router
     @Environment(BannerCenter.self) private var banners
     @State private var keyboardShown = false
-    @State private var shownTab: AppTab = .home
+    @State private var shownTab: AppTab = .today
     @State private var revealed = true
     @State private var direction: CGFloat = 1
     @State private var entering = false
@@ -56,7 +56,7 @@ struct RootView: View {
         .alert("原来的数据没能打开", isPresented: Binding(get: { !storeRescue.isEmpty }, set: { if !$0 { storeRescue = "" } })) {
             Button("从电脑恢复") {
                 storeRescue = ""
-                router.tab = .todo
+                router.tab = .today
                 router.path = NavigationPath()
                 router.open(.settings)
                 router.open(.backup)
@@ -86,13 +86,28 @@ struct RootView: View {
         return NavigationStack(path: $router.path) {
             ZStack {
                 Palette.paper.ignoresSafeArea()
-                tabPage(.home) { HomeView() }
+                tabPage(.today) { HomeView() }
                 tabPage(.chats) { ChatListView() }
-                tabPage(.todo) { TodoView() }
+                tabPage(.moments) { MomentsView(root: true) }
+            }
+            // 顶上状态栏那一截：往上滚的内容在这里柔和地淡进纸色，不会硬生生切在时间下面
+            .overlay {
+                GeometryReader { g in
+                    EdgeFade(edge: .top).frame(height: g.safeAreaInsets.top + 6)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !keyboardShown && !router.hideTabBar {
                     FloatingTabBar(selection: $router.tab)
+                        .frame(maxWidth: .infinity)
+                        // 底栏后面一层由浓到淡的纸色：滚到底下的内容慢慢隐去，底栏像浮在纸上
+                        .background(alignment: .bottom) {
+                            EdgeFade(edge: .bottom)
+                                .frame(height: 110)
+                                .ignoresSafeArea(edges: .bottom)
+                        }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -133,7 +148,7 @@ struct RootView: View {
         guard new != shownTab else { return }
         // 切页时先收起键盘，底栏不会因为键盘状态残留而消失
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        let order: [AppTab] = [.home, .chats, .todo]
+        let order: [AppTab] = [.today, .chats, .moments]
         direction = (order.firstIndex(of: new) ?? 0) > (order.firstIndex(of: shownTab) ?? 0) ? 1 : -1
         entering = false
         withAnimation(Motion.fade) { revealed = false }
@@ -162,7 +177,7 @@ extension UIView {
 
 extension Router {
     /// 主页编辑小组件时隐藏底栏
-    var hideTabBar: Bool { homeEditing && tab == .home }
+    var hideTabBar: Bool { homeEditing && tab == .today }
 }
 
 struct FloatingTabBar: View {
@@ -175,7 +190,7 @@ struct FloatingTabBar: View {
         var id: AppTab { tab }
     }
 
-    private let items = [Item(tab: .home, title: "Home"), Item(tab: .chats, title: "Chats"), Item(tab: .todo, title: "To Do")]
+    private let items = [Item(tab: .today, title: "Today"), Item(tab: .chats, title: "Chats"), Item(tab: .moments, title: "Moments")]
 
     var body: some View {
         HStack(spacing: 2) {

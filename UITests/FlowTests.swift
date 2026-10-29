@@ -49,15 +49,28 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "App 闪退了")
     }
 
-    func testTodoAndSettings() {
-        let app = launch("todo")
+    func testTodayAndSettings() {
+        let app = launch("today")
         let month = app.buttons["monthToggle"]
-        XCTAssertTrue(month.waitForExistence(timeout: 10), "待办页没有出现")
+        XCTAssertTrue(month.waitForExistence(timeout: 10), "Today 页没有出现")
+
+        // 清单末尾直接写一条新待办
+        let add = app.textFields["新待办"]
+        if add.waitForExistence(timeout: 5) {
+            add.tap()
+            add.typeText("测试待办\n")
+            sleep(1)
+        }
+
+        // 点日期弹出月历，翻一个月再翻回来，收起
         month.tap()
         sleep(1)
-        month.tap()
+        tapIfExists(app.buttons["上个月"])
+        tapIfExists(app.buttons["下个月"])
+        app.swipeDown()
         sleep(1)
 
+        // 头像进设置
         tapIfExists(app.buttons["设置"])
         tapIfExists(app.buttons["备份与恢复"])
         sleep(1)
@@ -71,9 +84,9 @@ final class FlowTests: XCTestCase {
         // 切换底部三个页面
         tapIfExists(app.buttons["返回"])
         tapIfExists(app.buttons["返回"])
-        tapIfExists(app.buttons["Home"])
+        tapIfExists(app.buttons["Moments"])
         tapIfExists(app.buttons["Chats"])
-        tapIfExists(app.buttons["To Do"])
+        tapIfExists(app.buttons["Today"])
         XCTAssertEqual(app.state, .runningForeground, "App 闪退了")
     }
 }

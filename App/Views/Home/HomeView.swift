@@ -36,80 +36,59 @@ enum HomeWidget: String, CaseIterable, Identifiable {
         }
     }
 
-    static let defaults: [HomeWidget] = [.whisper, .moments, .days, .todo, .diary]
+    static let defaults: [HomeWidget] = [.whisper, .days, .moments]
+
+    /// 待办和日记现在就在 Today 页上（小组件下面），不再单独做成小组件
+    static let onPage: Set<HomeWidget> = [.todo, .diary]
 }
 
+/// Today：主页和待办合在一起。上面是日期、问候和小组件，下面是今天的待办和 TA 的日记。
+/// 点日期弹出月历，可以去以前的某一天（那天的日记、做完的事、你发的动态）或以后的某一天（那天的安排）
 struct HomeView: View {
     @Environment(\.modelContext) private var context
     @Environment(Router.self) private var router
+    @Environment(RelayClient.self) private var relay
     @AppStorage(Prefs.homeWidgets) private var widgetsRaw = HomeWidget.defaults.map(\.rawValue).joined(separator: ",")
     @AppStorage(Prefs.nickname) private var nickname = ""
     @State private var showGallery = false
     @State private var pickPhoto = false
     @State private var photoItem: PhotosPickerItem?
+    /// 正在看哪一天：平时是今天
+    @State private var day = DemoMode.isOn && DemoMode.screen == "past" ? Date.now.startOfDay.adding(days: -1) : Date.now.startOfDay
+    @State private var calendarOpen = DemoMode.isOn && DemoMode.screen == "calendar"
 
+    /// 以前加过的「今日待办」「日记」小组件不显示了（设置里还记着，不删）
     private var widgets: [HomeWidget] {
-        widgetsRaw.split(separator: ",").compactMap { HomeWidget(rawValue: String($0)) }
+        widgetsRaw.split(separator: ",").compactMap { HomeWidget(rawValue: String($0)) }.filter { !HomeWidget.onPage.contains($0) }
     }
 
     private var editing: Bool { router.homeEditing }
+    private var isToday: Bool { Calendar.current.isDateInToday(day) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.section) {
-                TimelineView(.everyMinute) { ctx in
-                    PageTitle(caption: Fmt.enLong.string(from: ctx.date), title: greeting(ctx.date)) {
-                        if editing {
-                            Button("完成") { setEditing(false) }
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Palette.inkInverse)
-                                .padding(.horizontal, Space.card)
-                                .frame(height: 36)
-                                .background(Palette.ink, in: Capsule())
-                                .padding(.bottom, Space.tight)
-                                .transition(.scale.combined(with: .opacity))
-                        }
-                    }
-                }
-                .padding(.bottom, Space.tight)
+                TimelineView(.everyMinute) { ctx in header(ctx.date) }
+                    .padding(.bottom, Space.tight)
 
-                VStack(spacing: Space.item) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                        if row.count == 1 && row[0].wide {
-                            cell(row[0])
-                        } else {
-                            HStack(spacing: Space.item) {
-                                ForEach(row) { cell($0) }
-                                if row.count == 1 { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
-                            }
-                        }
-                    }
-                    // 小组件全删光了：留一个空位，点它就能再加回来。编辑只能靠长按某个小组件进入，
-                    // 一个都不剩时就没有东西可以长按，以前会再也加不回来
-                    if widgets.isEmpty && !editing {
-                        Button {
-                            setEditing(true)
-                            showGallery = true
-                        } label: {
-                            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
-                                .strokeBorder(Palette.inkSoft.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                                .frame(height: 96)
-                                .overlay {
-                                    Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundStyle(Palette.inkSoft)
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(ScaleButtonStyle())
-                        .accessibilityLabel("添加小组件")
-                        .transition(.opacity)
+                Group {
+                    if isToday {
+                        todayContent
+                    } else if day < Date.now.startOfDay {
+                        PastDayCards(day: day)
+                    } else {
+                        TodoCard(day: day)
                     }
                 }
+                .id(day)
+                .transition(.opacity.combined(with: .offset(y: 8)))
             }
             .padding(.horizontal, Space.page)
             .padding(.top, Space.top)
-            .padding(.bottom, 96)
+            .padding(.bottom, 110)
         }
         .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
             if editing {
                 Button { showGallery = true } label: {
@@ -135,6 +114,12 @@ struct HomeView: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
+        .sheet(isPresented: $calendarOpen) {
+            DayCalendarSheet(day: $day)
+                .presentationDetents([.height(440)])
+                .presentationCornerRadius(Radius.sheet)
+                .presentationBackground(Palette.paper)
+        }
         .photosPicker(isPresented: $pickPhoto, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -145,7 +130,128 @@ struct HomeView: View {
                 photoItem = nil
             }
         }
-        .onChange(of: router.tab) { _, tab in if tab != .home { setEditing(false) } }
+        .onChange(of: router.tab) { _, tab in if tab != .today { setEditing(false) } }
+        // 看到今天的日记还没写、又已经过了 8 点：马上去写（不用等下次打开 App）
+        .task(id: "\(relay.isConnected)") {
+            guard Calendar.current.component(.hour, from: .now) >= 20 else { return }
+            await Companion.writeDiaries(context: context, relay: relay)
+        }
+        .sensoryFeedback(.selection, trigger: day)
+    }
+
+    // MARK: - 页头
+
+    private func header(_ now: Date) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Button { calendarOpen = true } label: {
+                    HStack(spacing: 5) {
+                        Text(Fmt.enLong.string(from: isToday ? now : day))
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                    }
+                    .font(Typo.serif(15).italic())
+                    .foregroundStyle(Palette.inkSoft)
+                    .frame(minHeight: 24)
+                    .contentShape(Rectangle().inset(by: -10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("打开月历")
+                .accessibilityIdentifier("monthToggle")
+                Text(isToday ? greeting(now) : dayTitle)
+                    .font(Typo.display(40))
+                    .tracking(-0.6)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+            }
+            Spacer(minLength: 12)
+            if editing {
+                Button("完成") { setEditing(false) }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.inkInverse)
+                    .padding(.horizontal, Space.card)
+                    .frame(height: 36)
+                    .background(Palette.ink, in: Capsule())
+                    .padding(.top, 6)
+                    .transition(.scale.combined(with: .opacity))
+            } else if !isToday {
+                Button { withAnimation(Motion.spring) { day = Date.now.startOfDay } } label: {
+                    Text("Today")
+                        .font(Typo.serif(16))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, Space.card)
+                        .frame(height: 36)
+                        .background(Palette.card, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
+                        .contentShape(Capsule().inset(by: -4))
+                }
+                .buttonStyle(ScaleButtonStyle())
+                .padding(.top, 6)
+                .transition(.opacity)
+            } else {
+                // 设置从头像进
+                Button { router.open(.settings) } label: {
+                    UserAvatar(size: 44)
+                        .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
+                }
+                .buttonStyle(ScaleButtonStyle())
+                .padding(.top, 2)
+                .accessibilityLabel("设置")
+                .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    /// 不是今天时的大标题
+    private var dayTitle: String {
+        let cal = Calendar.current
+        if cal.isDateInYesterday(day) { return "Yesterday" }
+        if cal.isDateInTomorrow(day) { return "Tomorrow" }
+        return Fmt.enMonthDay.string(from: day)
+    }
+
+    @ViewBuilder
+    private var todayContent: some View {
+        VStack(alignment: .leading, spacing: Space.section) {
+            widgetGrid
+            TodoCard(day: day) { next in withAnimation(Motion.spring) { day = next } }
+            TaDiaryCard(day: day)
+        }
+    }
+
+    private var widgetGrid: some View {
+        VStack(spacing: Space.item) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                if row.count == 1 && row[0].wide {
+                    cell(row[0])
+                } else {
+                    HStack(spacing: Space.item) {
+                        ForEach(row) { cell($0) }
+                        if row.count == 1 { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+                    }
+                }
+            }
+            // 小组件全删光了：留一个空位，点它就能再加回来。编辑只能靠长按某个小组件进入，
+            // 一个都不剩时就没有东西可以长按，以前会再也加不回来
+            if widgets.isEmpty && !editing {
+                Button {
+                    setEditing(true)
+                    showGallery = true
+                } label: {
+                    RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                        .strokeBorder(Palette.inkSoft.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                        .frame(height: 96)
+                        .overlay {
+                            Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundStyle(Palette.inkSoft)
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(ScaleButtonStyle())
+                .accessibilityLabel("添加小组件")
+                .transition(.opacity)
+            }
+        }
     }
 
     private func greeting(_ date: Date) -> String {
@@ -239,12 +345,14 @@ struct HomeView: View {
                 router.tab = .chats
                 router.open(.chat(context.chat(for: first).id))
             }
-        case .todo, .diary, .countdown, .mood:
-            withAnimation(Motion.spring) { router.tab = .todo }
+        case .countdown:
+            calendarOpen = true
+        case .todo, .diary, .mood:
+            break
         case .photo:
             pickPhoto = true
         case .moments:
-            router.open(.moments)
+            router.tab = .moments
         }
     }
 }
@@ -335,7 +443,7 @@ private struct WidgetGallery: View {
         VStack(alignment: .leading, spacing: Space.section) {
             Text("小组件").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink).padding(.horizontal, 4)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.item), count: 3), spacing: Space.item) {
-                ForEach(HomeWidget.allCases) { w in
+                ForEach(HomeWidget.allCases.filter { !HomeWidget.onPage.contains($0) }) { w in
                     let isAdded = added.contains(w)
                     Button { if !isAdded { onAdd(w) } } label: {
                         VStack(spacing: Space.tight) {

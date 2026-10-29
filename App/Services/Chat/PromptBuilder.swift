@@ -175,8 +175,8 @@ enum PromptBuilder {
         let ask = discussing
             ? "大家正在讨论，请以「\(persona.name)」的身份接着说：可以回应其他人的观点、补充或提出不同看法，不要重复别人说过的。"
             : "请以「\(persona.name)」的身份回复。"
-        // 你最近写的日记：TA 会记在心上，合适的时候自然地关心，但不要生硬地复述
-        let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
+        // 你最近发的动态、写的日记：TA 会记在心上，合适的时候自然地关心，但不要生硬地复述
+        let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天发的动态、写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
         let prompt = """
         \(shared)\(diary)下面是你们最近的聊天记录：
 

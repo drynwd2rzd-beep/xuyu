@@ -187,7 +187,7 @@ struct MoodWidget: View {
                             .frame(maxWidth: .infinity)
                     }
                 }
-                Text(latest.map { "最近的心情 · \($0.mood)" } ?? "在日记里选个心情吧")
+                Text(latest.map { "最近的心情 · \($0.mood)" } ?? "TA 写日记时会记下心情")
                     .font(.system(size: 12)).foregroundStyle(Palette.inkSoft).lineLimit(1)
             }
         }

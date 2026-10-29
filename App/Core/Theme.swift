@@ -124,6 +124,22 @@ struct HeaderFade: View {
     }
 }
 
+/// 屏幕上下边缘的纸色渐变：由浓到淡，中间几段放缓，看起来是自然地隐去而不是一条分界线
+struct EdgeFade: View {
+    let edge: VerticalEdge
+
+    var body: some View {
+        LinearGradient(stops: [
+            .init(color: Palette.paper.opacity(0.97), location: 0),
+            .init(color: Palette.paper.opacity(0.86), location: 0.3),
+            .init(color: Palette.paper.opacity(0.55), location: 0.6),
+            .init(color: Palette.paper.opacity(0.2), location: 0.85),
+            .init(color: Palette.paper.opacity(0), location: 1),
+        ], startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
 
 /// 统一的弹簧动画
 enum Motion {
@@ -437,6 +453,7 @@ enum Fmt {
     static let weekdayMD = template("MMMdEEE")
     static let enLong = make("EEEE, MMMM d", en)
     static let enMonth = make("MMMM", en)
+    static let enMonthDay = make("MMMM d", en)
     static let enMonthShort = make("MMM", en)
     static let ymd = make("yyyy.M.d")
     static let full = make("yyyy年M月d日 EEEE HH:mm")

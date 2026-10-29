@@ -167,18 +167,34 @@ enum Companion {
         context.persist()
     }
 
-    /// 你最近几天写的日记，给聊天、主动消息和 TA 的日记当背景
+    /// 你最近几天发的动态（以前写过的日记也算），给聊天、主动消息和 TA 的日记当背景。
+    /// 「我」的日记已经去掉了：想记下什么就发动态
     static func myDiaryNotes(context: ModelContext, days: Int = 3) -> String {
         let since = Date.now.startOfDay.adding(days: -(days - 1))
         let me = DiaryAuthor.me.rawValue
         let entries = (try? context.fetch(FetchDescriptor<DiaryEntry>(
             predicate: #Predicate { $0.authorRaw == me && $0.day >= since },
             sortBy: [SortDescriptor(\.day)]))) ?? []
-        return entries.filter { !$0.text.trimmed.isEmpty || !$0.mood.isEmpty }.map { e in
-            let body = e.text.trimmed.replacingOccurrences(of: "\n", with: " ")
-            let short = body.count > 160 ? String(body.prefix(160)) + "…" : body
-            return "- \(Fmt.md.string(from: e.day))\(e.mood.isEmpty ? "" : "（心情：\(e.mood)）")：\(short)"
-        }.joined(separator: "\n")
+        let diary = entries.filter { !$0.text.trimmed.isEmpty || !$0.mood.isEmpty }.map { e in
+            (e.day, "- \(Fmt.md.string(from: e.day))\(e.mood.isEmpty ? "" : "（心情：\(e.mood)）")：\(short(e.text))")
+        }
+        let posts = myMoments(since: since, until: .now, context: context).map { m in
+            (m.createdAt, "- \(Fmt.md.string(from: m.createdAt)) 发了动态\(m.mood.isEmpty ? "" : "（心情：\(m.mood)）")：\(m.text.trimmed.isEmpty ? "（只有图片）" : short(m.text))")
+        }
+        return (diary + posts).sorted { $0.0 < $1.0 }.map(\.1).joined(separator: "\n")
+    }
+
+    private static func short(_ text: String) -> String {
+        let body = text.trimmed.replacingOccurrences(of: "\n", with: " ")
+        return body.count > 160 ? String(body.prefix(160)) + "…" : body
+    }
+
+    /// 你自己发的动态（personaID 为空的）
+    static func myMoments(since: Date, until: Date, context: ModelContext) -> [Moment] {
+        let all = (try? context.fetch(FetchDescriptor<Moment>(
+            predicate: #Predicate { $0.createdAt >= since && $0.createdAt < until },
+            sortBy: [SortDescriptor(\.createdAt)]))) ?? []
+        return all.filter { $0.personaID == nil }
     }
 
     /// 这一天的聊天够不够写日记
@@ -223,22 +239,26 @@ enum Companion {
             let messages = messagesOn(day, context: context)
             let me = DiaryAuthor.me.rawValue
             let wroteOwn = ((try? context.fetchCount(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == day && $0.authorRaw == me }))) ?? 0) > 0
-            // 聊得够多，或者你自己写了日记，TA 就写
-            guard messages.count >= 3 || wroteOwn else { continue }
+            let posts = myMoments(since: day, until: day.adding(days: 1), context: context)
+            // 聊得够多，或者你这天写了日记、发了动态，TA 就写
+            guard messages.count >= 3 || wroteOwn || !posts.isEmpty else { continue }
             let names = Dictionary(context.allPersonas().map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             let done = todosDone(on: day, context: context).map(\.title).joined(separator: "、")
             // TA 自己写的日记和心情：写日记时一起参考
             let mine = ((try? context.fetch(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == day && $0.authorRaw == me }))) ?? []).first
-            let mineLine = mine.map { e in
+            let diaryLine = mine.map { e in
                 "\(PromptBuilder.userName)这天自己也写了日记\(e.mood.isEmpty ? "" : "（心情：\(e.mood)）")：\(e.text.trimmed)\n"
             } ?? ""
+            let postsLine = posts.isEmpty ? "" : "\(PromptBuilder.userName)这天发的动态：\n"
+                + posts.map { "- \($0.text.trimmed.isEmpty ? "（只有图片）" : short($0.text))" }.joined(separator: "\n") + "\n"
+            let mineLine = diaryLine + postsLine
             let prompt = """
             下面是 \(Fmt.md.string(from: day)) 你和\(PromptBuilder.userName)的聊天：
 
             \(PromptBuilder.transcript(Array(messages.suffix(80)), names: names))
 
             \(done.isEmpty ? "" : "这天完成的待办：\(done)。\n")\(mineLine)
-            请以「\(persona.name)」的第一人称写这一天的日记，150 字左右，温柔真诚，写你们一起聊过的事和你的感受\(mine == nil ? "" : "，也可以写读了 TA 日记后的心情")，不要列清单。
+            请以「\(persona.name)」的第一人称写这一天的日记，150 字左右，温柔真诚，写你们一起聊过的事和你的感受\(mineLine.isEmpty ? "" : "，也可以写读了 TA 的日记、动态后的心情")，不要列清单。
             最后另起一行，只写：心情：两个字
             """
             DiaryState.shared.writing.insert(day)
@@ -290,7 +310,7 @@ enum Companion {
             let memory = convo.memory.trimmed
             let notes = myDiaryNotes(context: context)
             let prompt = """
-            \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")\(notes.isEmpty ? "" : "\(PromptBuilder.userName)最近写的日记：\n\(notes)\n\n")下面是你们最近的聊天记录：
+            \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")\(notes.isEmpty ? "" : "\(PromptBuilder.userName)最近发的动态、写的日记：\n\(notes)\n\n")下面是你们最近的聊天记录：
 
             \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(Array(history.suffix(20)), names: names))
 

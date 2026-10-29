@@ -44,7 +44,7 @@ for mode in light dark; do
   shoot "$mode-2-chats" chats
   shoot "$mode-3-chat" chat
   shoot "$mode-4-group" group
-  shoot "$mode-5-todo" todo
+  shoot "$mode-5-past" past
   shoot "$mode-6-settings" settings
   shoot "$mode-7-persona" persona
   shoot "$mode-8-stickers" stickers
