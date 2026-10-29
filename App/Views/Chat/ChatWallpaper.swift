@@ -133,8 +133,9 @@ enum WallpaperStore {
 
 /// 聊天里的一行越靠近页头（名字那里）、越靠近输入栏，就越糊。只糊消息本身，背景照片一直清楚；
 /// 是这一行自己的效果，进出聊天的动画途中也照样画得出来（系统的毛玻璃不行，只能等进去以后再加，会突然糊一下）。
-/// 按这一行的中线算，只在快要看不见的那一小段才糊：中线到了页头下沿往下 20 点以内才开始，往上 60 点糊到最多 3；
-/// 输入栏上沿附近最多 2。上一版（最多 7、名字下面 70 点就开始）太糊：页头下面还看得清的卡片，字已经糊成一片
+/// 按这一行的中线算，从屏幕顶上往下一路慢慢变清楚：页头下沿往下 40 点开始有一丝，越往上越糊，到最顶上最多 4，
+/// 中间按缓入曲线走，名字那里只有一点点（那里的字本来也快看不见了）。输入栏上沿附近最多 2。
+/// 以前：最多 7、名字下面 70 点就开始，页头下面还看得清的卡片字已经糊成一片
 struct EdgeBlur: ViewModifier {
     let headerBottom: CGFloat
     let barTop: CGFloat
@@ -150,8 +151,8 @@ struct EdgeBlur: ViewModifier {
 func edgeBlurRadius(_ frame: CGRect, headerBottom: CGFloat, barTop: CGFloat) -> CGFloat {
     var radius: CGFloat = 0
     if headerBottom > 0 {
-        let up = (headerBottom + 20 - frame.midY) / 60
-        radius = min(1, max(0, up)) * 3
+        let up = min(1, max(0, (headerBottom + 40 - frame.midY) / 150))
+        radius = up * up * 4
     }
     if barTop > 0 {
         let down = (frame.maxY - (barTop - 4)) / 40
@@ -161,8 +162,8 @@ func edgeBlurRadius(_ frame: CGRect, headerBottom: CGFloat, barTop: CGFloat) -> 
 }
 
 /// 聊天记录在页头和输入栏那里淡出（照灵感视频）：和 EdgeBlur 一起，消息一边变糊一边变透明。
-/// 顶上：一直到名字那一行都完全看不见，名字下面约 56 点里慢慢显出来；底部：从输入栏上沿一点点开始淡，
-/// 输入栏后面看不到消息，停着不动时最后一条消息不受影响。
+/// 顶上：从屏幕最上面完全透明开始，一路慢慢变清楚，到名字那一行还只剩一点影子，页头下面 50 点完全显出来；
+/// 底部：从输入栏上沿一点点开始淡，输入栏后面看不到消息，停着不动时最后一条消息不受影响。
 /// headerBottom / barTop 是页头下沿、输入栏上沿在 ChatView.space 里的位置
 /// （不能用安全区去量：这里读出来是 0，第一版就因为这个整个没生效）
 struct ChatEdgeMask: View {
@@ -173,20 +174,21 @@ struct ChatEdgeMask: View {
         GeometryReader { g in
             let origin = g.frame(in: .named(ChatView.space)).minY
             let height = g.size.height
-            // 页头下沿往上 6 点大约就是名字的底边
-            let hidden = max(0, headerBottom - origin - 6)
+            // 从屏幕顶上到页头下面 50 点是一整段渐变（缓入：上面很久都几乎看不见，过了名字才快起来）
+            let top = max(0, headerBottom - origin) + 50
             // 还没量到输入栏时不淡（不然整屏消息都会被当成在输入栏后面）
             let bar = barTop > 0 ? barTop - origin : height
             VStack(spacing: 0) {
-                Color.clear.frame(height: hidden)
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.1), location: 0.2),
-                    .init(color: .black.opacity(0.35), location: 0.45),
-                    .init(color: .black.opacity(0.7), location: 0.7),
+                    .init(color: .black.opacity(0.02), location: 0.3),
+                    .init(color: .black.opacity(0.06), location: 0.55),
+                    .init(color: .black.opacity(0.16), location: 0.72),
+                    .init(color: .black.opacity(0.45), location: 0.85),
+                    .init(color: .black.opacity(0.8), location: 0.94),
                     .init(color: .black, location: 1),
                 ], startPoint: .top, endPoint: .bottom)
-                .frame(height: 56)
+                .frame(height: top)
                 Color.black
                 LinearGradient(stops: [
                     .init(color: .black, location: 0),
