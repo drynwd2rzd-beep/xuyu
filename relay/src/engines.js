@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url';
  * work = true 时是「工作模式」：可以在 cwd（工作文件夹）里读写文件、运行命令，每一步都会以 step 事件报告。
  * 返回 Promise，完成时 resolve，出错时 reject(Error)。
  */
-export function runEngine({ engine, command, model, effort = '', system, prompt, files, images, cwd, signal, onEvent, work = false, gate = null }) {
+export function runEngine({ engine, command, model, effort = '', system, prompt, files, images, cwd, signal, onEvent, work = false, gate = null, readDirs = [] }) {
   const spec = engine === 'codex'
     ? codexArgs({ model, effort, images, work })
-    : claudeArgs({ model, effort, system, allowRead: files.length > 0, work });
+    : claudeArgs({ model, effort, system, allowRead: files.length > 0, work, readDirs });
   const input = engine === 'codex' && system ? `${system}\n\n---\n\n${prompt}` : prompt;
   const parse = engine === 'codex' ? codexParser(onEvent) : claudeParser(onEvent);
   // Claude 的工作模式：每次用工具前先过把关钩子（gate.js）。它要知道这是哪一次回复、工作文件夹在哪、怎么找到中继
@@ -96,7 +96,7 @@ const GATE_SETTINGS = JSON.stringify({
   hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `node "${GATE_SCRIPT}"`, timeout: 600 }] }] },
 });
 
-function claudeArgs({ model, effort, system, allowRead, work }) {
+function claudeArgs({ model, effort, system, allowRead, work, readDirs = [] }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--max-turns', work ? '60' : allowRead ? '6' : '1'];
   if (model) args.push('--model', model);
@@ -112,6 +112,12 @@ function claudeArgs({ model, effort, system, allowRead, work }) {
     // 聊天不带任何工具和 MCP：否则每条消息都会附上几万字的工具说明，又慢又耗额度。
     // 有附件时只开 Read，让它看图片/文件。提示词从 stdin 读取
     args.push('--strict-mcp-config', '--tools', allowRead ? 'Read' : '');
+    // 你发来的图片、表情、文件存在 uploads，不在 Claude 的工作文件夹里：读那里默认要先问「允许吗」，
+    // 后台运行没人点允许，就被自动拒绝了——TA 一直看不到你发的图（实测：permission_denied）。这里明确允许只读那个文件夹
+    if (allowRead) {
+      for (const dir of readDirs) args.push('--add-dir', dir);
+      args.push('--allowedTools', 'Read');
+    }
   }
   return args;
 }

@@ -329,6 +329,7 @@ async function handleRun(ws, msg) {
       files,
       images: saved.filter((s) => s.kind === 'image').map((s) => s.file),
       cwd: work ? workPaths(config).root : paths.workspace,
+      readDirs: work ? [] : [paths.uploads],
       signal: controller.signal,
       work,
       gate: { url: `http://127.0.0.1:${listeningPort}/gate`, key: GATE_KEY, job: id },
