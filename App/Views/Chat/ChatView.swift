@@ -439,7 +439,7 @@ struct ChatView: View {
                 case .voice: "[语音] " + m.content
                 case .note, .text, .nudge: m.content
                 }
-                withAnimation(Motion.spring) { quoting ="\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
+                withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
                 quotingID = m.id
                 pinBottom += 1
             },
