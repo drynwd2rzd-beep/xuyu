@@ -90,24 +90,25 @@ struct RootView: View {
                 tabPage(.chats) { ChatListView() }
                 tabPage(.moments) { MomentsView(root: true) }
             }
-            // 顶上状态栏那一截：往上滚的内容在这里柔和地淡进纸色，不会硬生生切在时间下面
+            // 上下边缘：往上滚的内容在状态栏那一截柔和地淡进纸色，不会硬生生切在时间下面；
+            // 底栏后面也是一层由浓到淡的纸色，一直铺到屏幕最底下，底栏像浮在纸上。
+            // safeAreaInsets.bottom 已经算上了底栏的高度（这一层在底栏的 safeAreaInset 里面）
             .overlay {
                 GeometryReader { g in
-                    EdgeFade(edge: .top).frame(height: g.safeAreaInsets.top + 6)
+                    VStack(spacing: 0) {
+                        EdgeFade(edge: .top).frame(height: g.safeAreaInsets.top + 6)
+                        Spacer(minLength: 0)
+                        EdgeFade(edge: .bottom)
+                            .frame(height: g.safeAreaInsets.bottom + 28)
+                            .opacity(tabBarShown ? 1 : 0)
+                    }
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !keyboardShown && !router.hideTabBar {
+                if tabBarShown {
                     FloatingTabBar(selection: $router.tab)
-                        .frame(maxWidth: .infinity)
-                        // 底栏后面一层由浓到淡的纸色：滚到底下的内容慢慢隐去，底栏像浮在纸上
-                        .background(alignment: .bottom) {
-                            EdgeFade(edge: .bottom)
-                                .frame(height: 110)
-                                .ignoresSafeArea(edges: .bottom)
-                        }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -127,6 +128,8 @@ struct RootView: View {
             withAnimation(Motion.snappy) { keyboardShown = false }
         }
     }
+
+    private var tabBarShown: Bool { !keyboardShown && !router.hideTabBar }
 
     /// 三个页面常驻，切换时保留滚动位置
     /// 切页：旧页朝反方向轻轻滑走、淡出；新页从点的方向滑进来、淡入（不做模糊，切页不掉帧）

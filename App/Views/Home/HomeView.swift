@@ -225,12 +225,12 @@ struct HomeView: View {
     private var widgetGrid: some View {
         VStack(spacing: Space.item) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                if row.count == 1 && row[0].wide {
+                // 一行只剩一个（宽的，或者落单的小组件）：铺满这一行，右边不留一块空
+                if row.count == 1 {
                     cell(row[0])
                 } else {
                     HStack(spacing: Space.item) {
                         ForEach(row) { cell($0) }
-                        if row.count == 1 { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
                     }
                 }
             }

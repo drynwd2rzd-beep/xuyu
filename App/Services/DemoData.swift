@@ -97,8 +97,26 @@ enum DemoData {
                                mood: "惬意")
         diary.personaID = claude.id
         context.insert(diary)
-        for (i, mood) in ["开心", "平静", "累了", "惬意"].enumerated() {
-            let past = DiaryEntry(day: today.adding(days: -(i + 1)), author: .ai, text: "……", mood: mood)
+        // 昨天：TA 的日记、做完的两件事、一件没做完的（Today 页点月历看以前某天时用）
+        let yesterday = today.adding(days: -1)
+        let lastNight = DiaryEntry(day: yesterday, author: .ai,
+                                   text: "读书笔记终于理完了一半。敏敏说想把喜欢的句子抄在本子上，我说那就每天抄一句，不用多。",
+                                   mood: "开心")
+        lastNight.personaID = claude.id
+        lastNight.createdAt = yesterday.addingTimeInterval(22 * 3600)
+        context.insert(lastNight)
+        for (title, hour) in [("整理读书笔记", 16.3), ("买菜", 18.1)] {
+            let item = TodoItem(title: title, dueDate: yesterday)
+            item.createdAt = ago(60 * 30)
+            item.isDone = true
+            item.completedAt = yesterday.addingTimeInterval(hour * 3600)
+            context.insert(item)
+        }
+        let leftover = TodoItem(title: "回复房东", dueDate: yesterday)
+        leftover.createdAt = ago(60 * 30)
+        context.insert(leftover)
+        for (i, mood) in ["平静", "累了", "惬意"].enumerated() {
+            let past = DiaryEntry(day: today.adding(days: -(i + 2)), author: .ai, text: "……", mood: mood)
             context.insert(past)
         }
         let mine = DiaryEntry(day: today, author: .me, text: "周末终于可以慢下来了，读书笔记整理了一半，剩下的明天再说。", mood: "惬意")
@@ -143,6 +161,11 @@ enum DemoData {
         third.reacted = true
         context.insert(third)
         third.add(MomentComment(personaID: claude.id, text: "厉害，下次也帮我看看", createdAt: ago(60 * 25)), context: context)
+        // 你昨天发的一条
+        let mineYesterday = Moment(personaID: nil, text: "周六拍的，帮我挑一张当壁纸", createdAt: yesterday.addingTimeInterval(19 * 3600))
+        mineYesterday.photoIDs = [album[2].id]
+        mineYesterday.reacted = true
+        context.insert(mineYesterday)
         context.persist()
     }
 
