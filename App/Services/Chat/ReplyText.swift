@@ -52,6 +52,10 @@ enum ReplyText {
         var pat = false
         /// 【潜水】群里这条 TA 不说话
         var lurk = false
+        /// 【心声:…】TA 心里真正想的一句话（开了「内心想法」才显示）
+        var thought: String?
+        /// 【点歌:歌名 - 歌手】一起听时 TA 想放的下一首
+        var song: String?
     }
 
     // 中英文括号都认：【】 和 []
@@ -70,11 +74,23 @@ enum ReplyText {
     private static let stickerNoteMarker = try! Regex("[【\\[]表情描述[:：]\\s*(.+?)[】\\]]")
     private static let patMarker = try! Regex("[【\\[]拍一拍[】\\]]")
     private static let lurkMarker = try! Regex("[【\\[]潜水[】\\]]")
+    private static let thoughtMarker = try! Regex("[【\\[]心声[:：]\\s*(.+?)[】\\]]")
+    private static let songMarker = try! Regex("[【\\[]点歌[:：]\\s*(.+?)[】\\]]")
 
     /// 【引用:那句话里的几个字】把你说过的话挂在 TA 这条下面；【表情:分类】发一个表情；假装的表情文字直接去掉
     static func markers(in text: String) -> Markers {
         var body = text
         // 这几个先拿掉：【表情描述:…】不能被当成假装的表情删掉
+        var thought: String?
+        if let match = body.firstMatch(of: thoughtMarker) {
+            thought = match.output[1].substring.map { String($0).trimmed }
+            body.removeSubrange(match.range)
+        }
+        var song: String?
+        if let match = body.firstMatch(of: songMarker) {
+            song = match.output[1].substring.map { String($0).trimmed }
+            body.removeSubrange(match.range)
+        }
         var stickerNote: String?
         if let match = body.firstMatch(of: stickerNoteMarker) {
             stickerNote = match.output[1].substring.map { String($0).trimmed }
@@ -135,6 +151,8 @@ enum ReplyText {
         markers.stickerNote = stickerNote
         markers.pat = pat
         markers.lurk = lurk
+        markers.thought = thought
+        markers.song = song
         return markers
     }
 

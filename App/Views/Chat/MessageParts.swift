@@ -206,3 +206,48 @@ struct TypingDots: View {
         .accessibilityLabel("正在输入")
     }
 }
+
+/// 视频卡片：B 站视频、抖音视频、抖音热搜。点一下在对应的 App 里打开
+struct VideoCardView: View {
+    let card: VideoCards.Card
+
+    private var source: String {
+        switch card.source {
+        case .bilibili: String(localized: "哔哩哔哩")
+        case .douyin: String(localized: "抖音")
+        case .douyinHot: String(localized: "抖音热搜")
+        }
+    }
+
+    var body: some View {
+        Button { VideoCards.open(card) } label: {
+            HStack(spacing: Space.item) {
+                Group {
+                    if let url = URL(string: card.cover), !card.cover.isEmpty {
+                        AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Palette.fill }
+                    } else {
+                        ZStack {
+                            Palette.fill
+                            Image(systemName: card.source == .douyinHot ? "flame" : "play.rectangle")
+                                .font(.system(size: 18)).foregroundStyle(Palette.inkSoft)
+                        }
+                    }
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(card.title).font(.system(size: 14.5)).foregroundStyle(Palette.ink).lineLimit(2).multilineTextAlignment(.leading)
+                    Text(card.author.isEmpty ? source : "\(source) · \(card.author)")
+                        .font(.system(size: Typo.caption)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Space.tight)
+            .frame(maxWidth: 270)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityLabel(Text("\(source)：\(card.title)"))
+    }
+}

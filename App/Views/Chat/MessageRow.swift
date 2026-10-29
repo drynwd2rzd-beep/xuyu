@@ -79,6 +79,8 @@ struct MessageRow: View {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 6) {
                 content(isUser: true)
+                // 你粘贴的抖音分享：下面一张视频卡片
+                if message.kind == .text, let card = VideoCards.douyin(in: message.content) { VideoCardView(card: card) }
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 translationView
             }
@@ -109,9 +111,16 @@ struct MessageRow: View {
                         // 收起时不占 VStack 的间距
                         .padding(.bottom, reasoningOpen ? 0 : -5)
                 }
+                // TA 的心声：和工作模式的思考过程同一个位置，收成一行，点开看全部
+                if let thought = Thoughts.shared.text(message.id) {
+                    ThoughtLine(text: thought)
+                        .transition(.opacity)
+                }
                 if let id = message.momentID { MomentRef(id: id) }
                 content(isUser: false)
                     .animation(Motion.bubble, value: isThinking)
+                // TA 刷到的视频 / 热搜：下面一张卡片
+                if let card = VideoCards.shared.card(message.id) { VideoCardView(card: card) }
                 // TA 引用了你说过的话
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 translationView
@@ -266,6 +275,8 @@ struct MessageRow: View {
         case .nudge:
             // 拍一拍在聊天页单独画成居中的一行（NudgeLine），不会走到这里
             EmptyView()
+        case .call:
+            CallBubble(message: message, isUser: isUser)
         case .file:
             ForEach(message.sortedAttachments) { a in
                 FileCard(name: a.fileName, size: a.data.count, time: time, data: a.data).contextMenu { menu }

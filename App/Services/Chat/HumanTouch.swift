@@ -10,6 +10,18 @@ enum HumanTouch {
 
     static func paceKey(_ id: UUID) -> String { "human.pace.\(id.uuidString)" }
     static func moodKey(_ id: UUID) -> String { "human.mood.\(id.uuidString)" }
+    static func thoughtsKey(_ id: UUID) -> String { "human.thoughts.\(id.uuidString)" }
+    static func videosKey(_ id: UUID) -> String { "human.videos.\(id.uuidString)" }
+
+    /// 刷视频分享给你（B 站、抖音热搜）：默认开
+    static func shareVideos(_ persona: Persona) -> Bool {
+        UserDefaults.standard.object(forKey: videosKey(persona.id)) as? Bool ?? true
+    }
+
+    /// 内心想法（心声）：默认关
+    static func thoughts(_ persona: Persona) -> Bool {
+        UserDefaults.standard.object(forKey: thoughtsKey(persona.id)) as? Bool ?? false
+    }
     private static func relationKey(_ id: UUID) -> String { "human.relation.\(id.uuidString)" }
     private static func sentPhotosKey(_ id: UUID) -> String { "human.sentPhotos.\(id.uuidString)" }
 
@@ -86,6 +98,12 @@ enum HumanTouch {
         if !convo.isGroup {
             lines.append("你也会分享自己的日常：消息末尾会列出你手机相册里还没发过的照片。想分享时，单独一段开头写【照片:编号】，后面跟一句话，比如「【照片:1】看，桂花开了」；偶尔才用，要和聊的事、你最近在做的事对得上。")
         }
+        // 内心想法：只有 TA 能看到的心理活动
+        if thoughts(persona) {
+            lines.append("你有内心戏：心里真有波动时，在那一段最后写【心声:你心里真正想的一句话】，像小说里的心理活动，只有 TA 能看到。和说出口的话有点不一样才有意思（嘴上说「没事」，心里其实有点委屈）；一句就好，第一人称，不是每条都写。聊天记录里「（心里想：…）」是你之前的心声，前后要对得上。")
+        }
+        // 你发来的抖音、TA 分享过的视频：只看得到标题文案
+        lines.append("TA 发来的抖音分享链接里带着视频的文案和话题；你看不到视频画面，只按文案聊，别编具体画面。")
         // 拍一拍：聊天记录里「（拍了拍…）」就是拍一拍
         lines.append("聊天记录里的「（拍了拍…）」是聊天软件的「拍一拍」：TA 拍了拍你，你可以回一句，也可以拍回去。想逗 TA 时也可以单独写【拍一拍】拍拍 TA；偶尔用。")
         return lines.joined(separator: "\n")
@@ -108,6 +126,11 @@ enum HumanTouch {
             }
         }
         if !convo.isGroup, let menu = photoLines(for: persona) { lines.append(menu) }
+        // 群里你最新说的那句还没人回：轮到的这位不能潜水，不然你这句就没人理了
+        if convo.isGroup, let lastUser = history.lastIndex(where: { $0.role == .user }),
+           !history[(lastUser + 1)...].contains(where: { $0.role == .assistant && !$0.content.isEmpty }) {
+            lines.append("TA 刚说的这句群里还没人回，你要回，不能写【潜水】。")
+        }
         return lines.joined(separator: "")
     }
 

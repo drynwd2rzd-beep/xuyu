@@ -130,8 +130,8 @@ final class Conversation {
 }
 
 enum MessageRole: String { case user, assistant }
-/// nudge：拍一拍（聊天里居中的一行小字「你拍了拍 Claude」）
-enum MessageKind: String { case text, images, file, note, sticker, voice, nudge }
+/// nudge：拍一拍（聊天里居中的一行小字「你拍了拍 Claude」）；call：语音通话（「通话时长 04:12」气泡）
+enum MessageKind: String { case text, images, file, note, sticker, voice, nudge, call }
 enum MessageStatus: String { case done, streaming, error }
 
 @Model

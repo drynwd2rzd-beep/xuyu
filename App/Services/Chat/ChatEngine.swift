@@ -184,6 +184,13 @@ final class ChatEngine {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         convo.updatedAt = .now
         convo.lastReadAt = .now
+        // TA 正在忙、晚点回的那几条已经排好了：拍一拍不会让 TA 突然有空，只留下这一行，TA 到点再回
+        let lateWaiting = latePlans[convo.id] != nil
+            || convo.plannedMessages().contains { $0.relayID == HumanTouch.lateRead || $0.relayID == HumanTouch.lateUnread }
+        if lateWaiting {
+            context.persist()
+            return
+        }
         Companion.cancelPlannedMessages(in: convo, context: context)
         context.persist()
         guard !busy.contains(convo.id) else { return }
@@ -674,6 +681,12 @@ final class ChatEngine {
         if markers.moment, let latest = context.visibleMoments(by: persona.id).first { message.momentID = latest.id }
         // 换了称呼、闹别扭、和好
         HumanTouch.apply(markers, persona: persona)
+        // 一起听时 TA 点了一首：排在下一首
+        if let song = markers.song, !song.isEmpty { ListenTogether.shared.request(song) }
+        // 心声：开了「内心想法」才留着，显示在这条气泡上方
+        if let thought = markers.thought, !thought.isEmpty, HumanTouch.thoughts(persona) {
+            Thoughts.shared.set(String(thought.prefix(120)), for: message.id)
+        }
         // TA 拍了拍你：跟在这句后面一行小字
         if markers.pat { patBack(persona, in: convo, context: context, after: message.createdAt) }
         // TA 看了你发的表情：记下它是什么样（写在你那条表情消息里，界面上不显示，聊天记录里 TA 下次就知道）

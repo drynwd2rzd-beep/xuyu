@@ -44,6 +44,9 @@ targets:
         NSMicrophoneUsageDescription: 用语音输入文字。
         NSSpeechRecognitionUsageDescription: 把你说的话转成文字。
         NSLocationWhenInUseUsageDescription: 让角色知道你那边的天气（只换算成城市，不会发出你的具体位置）。
+        NSAppleMusicUsageDescription: 和角色一起听 Apple Music：知道正在放哪首歌、帮你点歌和建歌单。
+        UIBackgroundModes:
+          - audio
         NSFaceIDUsageDescription: 确认是你本人再打开絮语，或让 AI 操作你的电脑。
     settings:
       base:

@@ -209,6 +209,13 @@ final class LogicTests: XCTestCase {
         let pat = ReplyText.markers(in: "嘿嘿【拍一拍】")
         XCTAssertTrue(pat.pat)
         XCTAssertEqual(pat.body, "嘿嘿")
+        // 心声、点歌
+        let inner = ReplyText.markers(in: "没事啦，你去忙吧【心声:其实有点想你多陪我一会儿】")
+        XCTAssertEqual(inner.body, "没事啦，你去忙吧")
+        XCTAssertEqual(inner.thought, "其实有点想你多陪我一会儿")
+        let song = ReplyText.markers(in: "下一首听这个【点歌:晴天 - 周杰伦】")
+        XCTAssertEqual(song.song, "晴天 - 周杰伦")
+        XCTAssertEqual(song.body, "下一首听这个")
     }
 
     func testAppointmentTimes() throws {

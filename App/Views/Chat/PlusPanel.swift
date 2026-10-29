@@ -12,6 +12,10 @@ struct PlusPanel: View {
     let onFile: () -> Void
     let onNote: () -> Void
     let onMention: () -> Void
+    /// 语音通话、一起听、一起读（只有单聊有）
+    var onCall: (() -> Void)? = nil
+    var onListen: (() -> Void)? = nil
+    var onRead: (() -> Void)? = nil
 
     @State private var recent = RecentPhotos()
     @State private var picked: [String] = []
@@ -59,6 +63,9 @@ struct PlusPanel: View {
                 tile("doc", "文件", onFile)
                 tile("pencil.line", "写想法", onNote)
                 if isGroup { tile("at", "成员", onMention) }
+                if let onCall { tile("phone", "语音通话", onCall) }
+                if let onListen { tile("music.note", "一起听", onListen) }
+                if let onRead { tile("book", "一起读", onRead) }
             }
         }
         .padding(.horizontal, Space.page)

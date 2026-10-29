@@ -22,6 +22,9 @@ struct Composer: View {
     @Binding var inputFocused: Bool
 
     @Environment(\.modelContext) private var context
+    @Environment(RelayClient.self) private var relay
+    /// 正在打的语音电话（单聊）
+    @State private var call: CallSession?
     /// 待发的照片和文件：可以再打字，和文字一起发
     @State private var staged: [OutgoingAttachment] = []
     /// 正在从面板切回键盘：图标先带动画变回来（不用等键盘升起），来回都有动画
@@ -36,6 +39,8 @@ struct Composer: View {
     @State private var showCamera = false
     @State private var showFiles = false
     @State private var showNote = false
+    @State private var showListen = false
+    @State private var showRead = false
     @State private var sendTick = 0
     @FocusState private var focused: Bool
 
@@ -109,6 +114,32 @@ struct Composer: View {
             .presentationCornerRadius(Radius.sheet)
             .presentationBackground(Palette.paper)
         }
+        // 语音通话（单聊）：整屏深色的通话页
+        .fullScreenCover(item: Binding(get: { call.map(CallBox.init) }, set: { call = $0?.session })) { box in
+            CallView(session: box.session)
+        }
+        // 通话记录里点「再打一次」
+        .onReceive(NotificationCenter.default.publisher(for: CallLogs.callAgain)) { note in
+            if (note.object as? UUID) == convo.id { startCall() }
+        }
+        // 一起读（单聊）：书架和阅读页
+        .sheet(isPresented: $showRead) {
+            if let persona = members.first {
+                BookShelfSheet(persona: persona)
+                    .presentationDetents([.large])
+                    .presentationCornerRadius(Radius.sheet)
+                    .presentationBackground(Palette.paper)
+            }
+        }
+        // 一起听（单聊）：和这位角色一起听 Apple Music
+        .sheet(isPresented: $showListen) {
+            if let persona = members.first {
+                ListenSheet(persona: persona)
+                    .presentationDetents([.large])
+                    .presentationCornerRadius(Radius.sheet)
+                    .presentationBackground(Palette.paper)
+            }
+        }
         .alert(alert ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } })) {
             Button("好", role: .cancel) {}
         }
@@ -150,7 +181,10 @@ struct Composer: View {
         case .plus:
             PlusPanel(isGroup: convo.isGroup, onPhotos: stage, onCamera: { showCamera = true },
                       onLibrary: { showPhotos = true }, onFile: { showFiles = true },
-                      onNote: { showNote = true }, onMention: mention)
+                      onNote: { showNote = true }, onMention: mention,
+                      onCall: convo.isGroup ? nil : startCall,
+                      onListen: convo.isGroup ? nil : { showListen = true },
+                      onRead: convo.isGroup ? nil : { showRead = true })
         case .stickers:
             StickerPanel(onSticker: sendSticker, atTop: $panelAtTop)
         }
@@ -381,6 +415,27 @@ struct Composer: View {
         let items = images.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\(start + $0.offset + 1).jpg", data: $0.element) }
         withAnimation(Motion.spring) { staged += items.prefix(max(0, 9 - staged.count)) }
         focused = true
+    }
+
+    /// 打语音电话：TA 要先有声音（角色设置里选），还要连着电脑
+    private func startCall() {
+        guard let persona = members.first else { return }
+        guard Voice.enabled(for: persona) else {
+            alert = String(localized: "\(persona.name) 还没有声音：先在角色设置里给 TA 选一个声音。")
+            return
+        }
+        guard relay.isConnected else {
+            alert = String(localized: "要先连上电脑才能打电话。")
+            return
+        }
+        withAnimation(Motion.spring) { panel = nil }
+        focused = false
+        call = CallSession(persona: persona, convo: convo, members: members, context: context, relay: relay)
+    }
+
+    private struct CallBox: Identifiable {
+        let session: CallSession
+        var id: ObjectIdentifier { ObjectIdentifier(session) }
     }
 
     /// 中文输入法还没确认的字（候选词）会在清空之后才被键盘写回来，发出去的话又出现在输入框里（有概率）：

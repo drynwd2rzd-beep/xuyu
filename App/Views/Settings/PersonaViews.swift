@@ -563,10 +563,14 @@ struct PersonaEditor: View {
 struct HumanRows: View {
     @AppStorage private var pace: Bool
     @AppStorage private var mood: Int
+    @AppStorage private var thoughts: Bool
+    @AppStorage private var videos: Bool
 
     init(persona: Persona) {
         _pace = AppStorage(wrappedValue: true, HumanTouch.paceKey(persona.id))
         _mood = AppStorage(wrappedValue: 1, HumanTouch.moodKey(persona.id))
+        _thoughts = AppStorage(wrappedValue: false, HumanTouch.thoughtsKey(persona.id))
+        _videos = AppStorage(wrappedValue: true, HumanTouch.videosKey(persona.id))
     }
 
     var body: some View {
@@ -577,6 +581,14 @@ struct HumanRows: View {
         SettingRow(title: "小情绪") {
             Segmented(items: [(0, "不要"), (1, "一点点"), (2, "明显")], selection: $mood)
                 .fixedSize()
+        }
+        Hairline()
+        SettingRow(title: "内心想法", subtitle: "气泡上方偶尔有一句 TA 的心声") {
+            InkToggle(isOn: $thoughts, label: "内心想法")
+        }
+        Hairline()
+        SettingRow(title: "刷视频分享给我", subtitle: "B 站、抖音热搜，一天最多一次") {
+            InkToggle(isOn: $videos, label: "刷视频分享给我")
         }
     }
 }

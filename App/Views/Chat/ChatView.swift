@@ -388,7 +388,9 @@ struct ChatView: View {
     /// 「已读」挂在哪条下面：你最后一条、TA 已经看过的消息。TA 正在打字（只有跳动的小点）时还留着，
     /// 等 TA 第一句话真的冒出来才淡出，和 iMessage 一样
     private func readReceiptTarget(_ messages: [Message]) -> UUID? {
-        guard let index = messages.lastIndex(where: { $0.role == .user && !$0.recalled }) else { return nil }
+        // 「通话时长」气泡、「拍了拍」那一行不算：已读只挂在真正发出去的消息下面
+        guard let index = messages.lastIndex(where: { $0.role == .user && !$0.recalled && $0.kind != .call && $0.kind != .nudge })
+        else { return nil }
         let mine = messages[index]
         // TA 在忙没看到：已读时间排在以后，到那时才显示「已读」
         guard let read = mine.readAt, read <= .now else { return nil }
@@ -437,7 +439,7 @@ struct ChatView: View {
                 case .file: "[文件] " + m.sortedAttachments.map(\.fileName).joined(separator: "、")
                 case .sticker: "[表情]"
                 case .voice: "[语音] " + m.content
-                case .note, .text, .nudge: m.content
+                case .note, .text, .nudge, .call: m.content
                 }
                 withAnimation(Motion.spring) { quoting = "\(who)：" + body.replacingOccurrences(of: "\n", with: " ").prefix(120) }
                 quotingID = m.id

@@ -112,8 +112,16 @@ enum PromptBuilder {
         case .voice: body = "[发了一条语音] \(m.content)"
         // 拍一拍：你拍的那条正文里存着被拍的人的名字
         case .nudge: body = m.role == .user ? "（拍了拍\(m.content)）" : "（拍了拍\(userName)）"
+        // 语音通话：TA 记得电话里聊了什么（最多带上最后 8 句）
+        case .call:
+            let said = CallLogs.shared.lines(m.id).suffix(8).map { ($0.mine ? userName : "你") + "：" + $0.zh }.joined(separator: "；")
+            body = "（打了 \(m.content) 的语音电话\(said.isEmpty ? "" : "，电话里说了：\(said)")）"
         }
         if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
+        // TA 当时的心声：TA 记得自己想过什么（你看得到，聊天记录里也带着）
+        if m.role == .assistant, let thought = Thoughts.shared.text(m.id) { body += "（心里想：\(thought)）" }
+        // TA 分享过的视频 / 热搜
+        if let card = VideoCards.shared.card(m.id) { body += "（分享了：\(card.title)）" }
         if m.recalled { body = "（撤回了一条消息）" }
         return "[\(Fmt.time24.string(from: m.createdAt))] \(who)：\(body)"
     }
@@ -190,7 +198,11 @@ enum PromptBuilder {
         // 这一刻的状态（今天的心情、你隔了多久才回、闹没闹别扭、相册里能发的照片）：每次都不一样，放在末尾
         // 真实天气也放在这里（每小时会变）：TA 能自然地提醒带伞、降温、天黑了
         let weather = Weather.summary.map { "\(userName)那边的天气：\($0)" } ?? ""
-        let state = weather + (persona.canWork ? ""
+        // 正在和这位一起听歌：在放哪首、放到哪
+        let listening = (ListenTogether.line.flatMap { $0.persona == persona.id ? $0.text : nil } ?? "")
+            // 一起在读的书：各自读到哪（不剧透）
+            + (Books.lines[persona.id] ?? "")
+        let state = weather + listening + (persona.canWork ? ""
             : World.momentNotes(for: persona) + HumanTouch.momentNotes(for: persona, convo: convo, members: members, history: history))
         let prompt = """
         \(shared)\(diary)下面是你们最近的聊天记录：

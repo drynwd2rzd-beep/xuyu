@@ -72,6 +72,11 @@ enum Reset {
         MyAvatarStore.clear()
         WidgetPhotoStore.clear()
         World.clear()
+        Thoughts.shared.clear()
+        Books.shared.removeAll()
+        VideoCards.shared.clear()
+        CallLogs.shared.clear()
+        ListenTogether.shared.stop()
         let fm = FileManager.default
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         for url in (try? fm.contentsOfDirectory(at: support, includingPropertiesForKeys: nil)) ?? []
