@@ -35,6 +35,19 @@ enum WallpaperStore {
         UserDefaults.standard.removeObject(forKey: key(owner))
     }
 
+    /// 还原设置 / 恢复出厂时：选过的背景照片（全局的和每个对话的）全部删掉
+    static func removeAllPhotos() {
+        let dir = url(nil).deletingLastPathComponent()
+        for file in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        where file.lastPathComponent.hasPrefix("wallpaper") {
+            try? FileManager.default.removeItem(at: file)
+        }
+        cache.removeAll()
+        brightness.removeAll()
+        blurCache.removeAll()
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
+    }
+
     /// 照片背景的明暗（-0.6 更暗 … 0.6 更亮）和模糊（0…24），每个背景各存一份
     static func dimKey(_ owner: UUID?) -> String { owner.map { "wallpaperDim.\($0.uuidString)" } ?? "wallpaperDim" }
     static func blurKey(_ owner: UUID?) -> String { owner.map { "wallpaperBlur.\($0.uuidString)" } ?? "wallpaperBlur" }

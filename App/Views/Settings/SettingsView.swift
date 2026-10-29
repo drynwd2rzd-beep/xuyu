@@ -53,6 +53,16 @@ struct SettingsView: View {
                     Hairline()
                     navRow("隐私与安全", route: .privacy)
                 }
+
+                // 从轻到重：只还原偏好 → 删掉所有角色 → 什么都删（像刚装好）
+                section("重置") {
+                    resetRow("还原所有设置") { confirming = .settings }
+                    Hairline()
+                    resetRow("删除所有人设") { confirming = .personas }
+                    Hairline()
+                    resetRow("恢复出厂设置", danger: true) { confirming = .everything }
+                }
+                .disabled(resetting)
             }
             .padding(.horizontal, Space.page)
             .padding(.bottom, 40)
@@ -80,9 +90,94 @@ struct SettingsView: View {
             }
         }
         .onAppear { relay.refreshStatus() }
+        .confirmationDialog(Text(confirming?.title ?? ""), isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                            titleVisibility: .visible, presenting: confirming) { kind in
+            if kind != .settings {
+                Button("先备份到电脑") { router.open(.backup) }
+            }
+            Button(kind.action, role: .destructive) {
+                // 最重的那一档再问一次
+                if kind == .everything { finalCheck = true } else { reset(kind) }
+            }
+        } message: { kind in
+            Text(kind.message)
+        }
+        .alert("真的全部删除吗？", isPresented: $finalCheck) {
+            Button("全部删除", role: .destructive) { reset(.everything) }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("这一步做了就回不去了。")
+        }
+        .sensoryFeedback(.success, trigger: resetDone)
     }
 
     @Environment(\.modelContext) private var context
+    @Environment(ChatEngine.self) private var engine
+    @State private var confirming: ResetKind?
+    @State private var finalCheck = false
+    @State private var resetting = false
+    @State private var resetDone = 0
+
+    enum ResetKind: Identifiable {
+        case settings, personas, everything
+        var id: Self { self }
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .settings: "还原所有设置？"
+            case .personas: "删除所有人设？"
+            case .everything: "恢复出厂设置？"
+            }
+        }
+
+        var action: LocalizedStringKey {
+            switch self {
+            case .settings: "还原"
+            case .personas: "删除所有人设"
+            case .everything: "全部删除"
+            }
+        }
+
+        var message: LocalizedStringKey {
+            switch self {
+            case .settings: "外观、聊天背景、通知、默认模型、小组件这些回到默认。聊天、人设、待办都不动。"
+            case .personas: "所有角色，和 TA 们的聊天、动态、相册、日记都会删掉，换回默认的 Claude 和 Codex。设置和待办不动。删了就找不回来。"
+            case .everything: "所有聊天、人设、待办、表情和设置都会删掉，和电脑的配对、语音服务的密钥也会清掉，就像刚装好一样。删了就找不回来，建议先备份到电脑。"
+            }
+        }
+    }
+
+    private func resetRow(_ title: String, danger: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(LocalizedStringKey(title)).font(.system(size: 16)).foregroundStyle(danger ? Palette.danger : Palette.ink)
+                Spacer()
+                if resetting && danger { ProgressView().controlSize(.small) }
+            }
+            .padding(.horizontal, Space.card)
+            .frame(height: Space.row)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableRowStyle())
+    }
+
+    private func reset(_ kind: ResetKind) {
+        resetting = true
+        Task {
+            switch kind {
+            case .settings: Reset.settings()
+            case .personas: await Reset.personas(context: context, engine: engine)
+            case .everything: await Reset.everything(context: context, engine: engine, relay: relay)
+            }
+            resetting = false
+            resetDone += 1
+            // 删了人设或全部删掉：回到 Today 最开始的样子
+            if kind != .settings {
+                router.path = NavigationPath()
+                router.tab = .today
+            }
+        }
+    }
 
     /// 二级页面入口：只有名字和箭头，右边不放多余的信息
     private func navRow(_ title: String, route: Route) -> some View {

@@ -30,6 +30,14 @@ enum WidgetPhotoStore {
         loaded = true
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
     }
+
+    /// 恢复出厂设置时清掉
+    static func clear() {
+        try? FileManager.default.removeItem(at: url)
+        cache = nil
+        loaded = true
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
+    }
 }
 
 /// 照片：放一张你自己选的照片，点一下可以换
