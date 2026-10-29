@@ -72,7 +72,8 @@ final class Router {
     func swipeAway(velocity: CGFloat) {
         guard let id = chat else { return }
         let left = max(0.05, 1 - chatSwipe)
-        withAnimation(.interpolatingSpring(stiffness: 240, damping: 31, initialVelocity: max(0, velocity) / left)) {
+        // 短而不弹的一段：以前那条弹簧收尾太慢，聊天页滑到右边还剩一条窄边停在那儿，过一会儿才突然消失（真机录屏）
+        withAnimation(.interpolatingSpring(duration: 0.3, bounce: 0, initialVelocity: max(0, velocity) / left)) {
             chatSwipe = 1
         } completion: { [weak self] in
             // 滑出去的这段时间里又打开了聊天：不要把新打开的关掉
@@ -89,7 +90,7 @@ final class Router {
     /// 侧滑松手、不返回：带着手指的速度弹回原位
     func swipeBack(velocity: CGFloat) {
         let left = max(0.05, chatSwipe)
-        withAnimation(.interpolatingSpring(stiffness: 260, damping: 32, initialVelocity: max(0, -velocity) / left)) {
+        withAnimation(.interpolatingSpring(duration: 0.34, bounce: 0, initialVelocity: max(0, -velocity) / left)) {
             chatSwipe = 0
         }
     }

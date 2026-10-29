@@ -45,7 +45,10 @@ struct ChatLayer: View {
                 // 键盘不跟着页面走：开始滑就收起
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             }, onChange: { dx in
-                router.chatSwipe = min(1, max(0, dx) / geo.size.width)
+                // 跟手，但带一点点阻尼：系统认出这是侧滑时手指往往已经走了一段，直接跳过去会一下子窜出去
+                withAnimation(.interactiveSpring(response: 0.14, dampingFraction: 0.9)) {
+                    router.chatSwipe = min(1, max(0, dx) / geo.size.width)
+                }
             }, onEnd: { _, velocity in
                 let v = velocity / geo.size.width
                 // 滑过三分之一，或者往右甩了一下：返回
@@ -72,7 +75,6 @@ struct ChatBackdrop: View {
         let paper = WallpaperStore.resolve(for: id, global: globalWallpaper)
         ChatWallpaper(index: paper.index, owner: paper.owner)
             .id("\(paper.index)-\(paper.owner?.uuidString ?? "")-\(wallpaperStamp)")
-            .offset(x: router.chatSwipe * UIScreen.main.bounds.width)
             .allowsHitTesting(false)
     }
 }
