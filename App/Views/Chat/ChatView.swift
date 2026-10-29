@@ -38,6 +38,10 @@ struct ChatView: View {
     @State private var follow = true
     /// 键盘高度：表情 / 加号面板做成一样高，切换时输入框不跳
     @AppStorage(Prefs.keyboardHeight) private var keyboardHeight = 336.0
+    /// 页头下沿、输入栏上沿的位置：消息在这两处淡出（见 ChatEdgeMask）
+    @State private var headerBottom: CGFloat = 0
+    @State private var barTop: CGFloat = 0
+    static let space = "chatContent"
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -76,10 +80,15 @@ struct ChatView: View {
             TimelineView(PlannedSchedule(convo)) { _ in
                 messageList(now: .now)
             }
-            // 滚到页头、输入栏那里的消息慢慢变透明（背景照片一直清清楚楚），页头和输入栏直接浮在背景上
-            .mask { ChatEdgeMask() }
-            .safeAreaInset(edge: .top, spacing: 0) { header }
-            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+            // 滚到页头、输入栏那里的消息慢慢变透明（背景照片一直清清楚楚），页头和输入栏直接浮在背景上。
+            // 淡出的位置按页头下沿、输入栏上沿量（同一个坐标系），键盘、面板升起时跟着走
+            .mask { ChatEdgeMask(headerBottom: headerBottom, barTop: barTop) }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                header.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).maxY } action: { headerBottom = $0 }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomBar.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).minY } action: { barTop = $0 }
+            }
             // 面板开着时，键盘升起不推动输入框：面板和键盘一样高，两者直接互换
             .ignoresSafeArea(.keyboard, edges: panel != nil ? .bottom : [])
 
@@ -92,6 +101,7 @@ struct ChatView: View {
                 .zIndex(2)
             }
         }
+        .coordinateSpace(name: Self.space)
         .overlay(alignment: .top) {
             if let toast {
                 Text(LocalizedStringKey(toast))

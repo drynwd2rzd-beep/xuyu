@@ -133,12 +133,20 @@ enum WallpaperStore {
 
 /// 聊天记录在页头和输入栏那里淡出（照灵感视频）：背景照片一直清清楚楚，只有消息本身慢慢变透明，不盖毛玻璃。
 /// 以前是一层系统的可变模糊，连背景一起糊成一条灰带，进出聊天时还会画成黑边。
-/// 量的是被页头、输入栏（和键盘）占掉的那两截：顶上状态栏那段完全透明，往下到页头底部慢慢显出来；
-/// 底部从输入栏上沿一点点开始淡，输入栏后面看不到消息。停着不动时最后一条消息不受影响
+/// 顶上：状态栏那段完全透明，往下到页头下沿慢慢显出来；底部：从输入栏上沿一点点开始淡，输入栏后面看不到消息，
+/// 停着不动时最后一条消息不受影响。headerBottom / barTop 是页头下沿、输入栏上沿在 ChatView.space 里的位置
+/// （不能用安全区去量：这里读出来是 0，第一版就因为这个整个没生效）
 struct ChatEdgeMask: View {
+    let headerBottom: CGFloat
+    let barTop: CGFloat
+
     var body: some View {
         GeometryReader { g in
-            let top = g.safeAreaInsets.top, bottom = g.safeAreaInsets.bottom
+            let origin = g.frame(in: .named(ChatView.space)).minY
+            let height = g.size.height
+            let top = max(0, headerBottom - origin) + 10
+            // 还没量到输入栏时不淡（不然整屏消息都会被当成在输入栏后面）
+            let bar = barTop > 0 ? barTop - origin : height
             VStack(spacing: 0) {
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
@@ -148,7 +156,7 @@ struct ChatEdgeMask: View {
                     .init(color: .black.opacity(0.82), location: 0.92),
                     .init(color: .black, location: 1),
                 ], startPoint: .top, endPoint: .bottom)
-                .frame(height: top + 10)
+                .frame(height: top)
                 Color.black
                 LinearGradient(stops: [
                     .init(color: .black, location: 0),
@@ -157,13 +165,14 @@ struct ChatEdgeMask: View {
                     .init(color: .clear, location: 1),
                 ], startPoint: .top, endPoint: .bottom)
                 .frame(height: 22)
-                Color.clear.frame(height: max(0, bottom - 18))
+                Color.clear.frame(height: max(0, height - bar - 18))
             }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
     }
 }
+
 
 
 struct ChatWallpaper: View {
