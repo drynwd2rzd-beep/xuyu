@@ -90,7 +90,9 @@ struct MessageRow: View {
         HStack(alignment: .top, spacing: 10) {
             AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
             VStack(alignment: .leading, spacing: 5) {
-                if first || isThinking || !steps.isEmpty { label }
+                // 名字只在 TA 这一串的第一条上面出现（像 iMessage）。以前「正在输入」时也总带着名字，
+                // 连着发第二条时名字先冒出来、小点变成字时又消失，这一行忽高忽低，看起来像抽了一下
+                if first || !steps.isEmpty { label }
                 if hasDetail {
                     // 展开 / 收起：高度从 0 平滑长出来（或缩回去），下面的消息被柔和地推开，不会跳
                     detail

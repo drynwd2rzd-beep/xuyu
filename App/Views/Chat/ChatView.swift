@@ -232,11 +232,17 @@ struct ChatView: View {
         // 打字的那条接在最后：和打好后的消息是同一行（同一个 id），小点会在原地变成文字，而不是删掉再冒出新的一行
         var rows = ChatRow.build(messages)
         if let typing {
-            let first = !(messages.last?.role == .assistant && messages.last?.personaID == typing.personaID)
+            // 和它变成文字以后用同一条规则（同一个人、隔不到 3 分钟算接着说）：小点变成字的那一刻，名字和头像不会突然冒出来
+            let same = messages.last?.role == .assistant && messages.last?.personaID == typing.personaID
+            let gap = messages.last.map { now.timeIntervalSince($0.createdAt) } ?? .infinity
+            let first = !(same && gap < 180)
             rows.append(ChatRow(id: typing.id.uuidString, kind: .message(typing, first: first)))
         }
         let live = (typing ?? messages.last).flatMap { engine.buffers[$0.id] }
         let receipt = readReceiptTarget(messages)
+        // 最下面那一截的样子：多了一行（你发的、TA 的「正在输入」、表情图片）、小点变成了文字、「已读」出现或消失，都算变了
+        let tail = [rows.last?.id ?? "", typing == nil ? "" : "typing", messages.last?.id.uuidString ?? "",
+                    "\(messages.last?.content.count ?? 0)", receipt?.uuidString ?? ""].joined(separator: "|")
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
@@ -329,21 +335,18 @@ struct ChatView: View {
             } action: { _, value in
                 atBottom = value
             }
-            // 内容变高时贴住底部：TA 的气泡一帧一帧撑开、小点变成文字、图片加载完，聊天都跟着一帧一帧平稳上移。
-            // 上面那个「内容变高也贴着底部」管不到动画中的增高（录屏里 TA 的回复冒出来了，却被挡在输入框下面）。
-            // 只在你正看着最新消息时跟；你往上翻着时不动，那时发消息由下面带动画的滚动把你带回来
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
-                guard follow, atBottom, new > old else { return }
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) { proxy.scrollTo("bottom", anchor: .bottom) }
+            // 最下面一截变了（新的一行冒出来、小点变成文字）：和你发消息时一样，带着动画滚到最新，
+            // 和气泡撑开用同一条曲线（Motion.bubble，不弹），两者同时开始、同时到位，上面的消息平稳上移。
+            // 不能指望「内容变高也贴着底部」：录屏里 TA 的回复一直长在输入框下面，聊天一动不动
+            // TA 的：只在你正看着最新消息时跟，往上翻着时不打扰
+            .onChange(of: tail) {
+                guard follow else { return }
+                withAnimation(Motion.bubble) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: messages.last?.id) {
-                // 自己发消息后回到底部；对方的新消息、打字的小点在跟随时由「内容变高也贴着底部」自己跟上，
-                // 不再额外滚一次（两个动画互相拉扯，看起来会卡一下）
+                // 你自己刚发的（包括 TA 正在输入时插的话）：不管翻到哪儿都回到最新
                 guard messages.last?.role == .user else { return }
                 follow = true
-                // 和气泡撑开用同一条曲线（同样不弹）：滚动和上面让开是同一个动作，不会一快一慢
                 withAnimation(Motion.bubble) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: keyboardShown) { _, shown in
