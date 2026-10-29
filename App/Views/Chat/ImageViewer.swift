@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import Photos
 import PhotosUI
 
 struct ImageViewerItem: Identifiable {
@@ -14,6 +15,8 @@ struct ImageViewer: View {
     @Environment(\.dismiss) private var dismiss
     @State private var page = 0
     @State private var saved = false
+    /// 没能存进相册（没给权限、或者系统存失败）
+    @State private var saveFailed = false
     @State private var dragY: CGFloat = 0
 
     private var fade: Double {
@@ -26,7 +29,7 @@ struct ImageViewer: View {
             Color.black.opacity(fade).ignoresSafeArea()
             TabView(selection: $page) {
                 ForEach(Array(item.attachments.enumerated()), id: \.offset) { index, a in
-                    ZoomableImage(image: cachedImage(a.data, key: a.id.uuidString))
+                    ZoomableImage(image: cachedImage(a.data, key: a.id.uuidString, maxPixel: 3000))
                         .tag(index)
                 }
             }
@@ -44,12 +47,7 @@ struct ImageViewer: View {
                 }
                 .accessibilityLabel("关闭")
                 Spacer()
-                Button {
-                    guard item.attachments.indices.contains(page),
-                          let image = UIImage(data: item.attachments[page].data) else { return }
-                    UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                    withAnimation(Motion.spring) { saved = true }
-                } label: {
+                Button(action: save) {
                     Image(systemName: saved ? "checkmark" : "square.and.arrow.down")
                         .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 40, height: 40).background(.white.opacity(0.15), in: Circle())
@@ -63,7 +61,37 @@ struct ImageViewer: View {
         }
         .onAppear { page = item.index }
         .onChange(of: page) { saved = false }
+        .alert("没有存进相册", isPresented: $saveFailed) {
+            Button("去设置") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("絮语需要相册权限才能保存图片，可以在「设置」里打开。")
+        }
         .statusBarHidden()
+    }
+
+    /// 存进相册：真的存好了才打勾。以前不管有没有权限都直接打勾，其实没存上
+    private func save() {
+        guard item.attachments.indices.contains(page),
+              let image = UIImage(data: item.attachments[page].data) else { return }
+        Task {
+            var status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            if status == .notDetermined { status = await PHPhotoLibrary.requestAuthorization(for: .addOnly) }
+            guard status == .authorized || status == .limited else {
+                saveFailed = true
+                return
+            }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
+                withAnimation(Motion.spring) { saved = true }
+            } catch {
+                saveFailed = true
+            }
+        }
     }
 }
 

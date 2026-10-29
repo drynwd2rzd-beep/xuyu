@@ -200,6 +200,8 @@ struct AlbumGrid: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \AlbumPhoto.createdAt) private var photos: [AlbumPhoto]
     @State private var items: [PhotosPickerItem] = []
+    /// 要移除的那张：先问一句（以前点中小叉就直接没了）
+    @State private var removing: AlbumPhoto?
 
     var body: some View {
         let mine = photos.filter { $0.personaID == personaID }
@@ -212,14 +214,13 @@ struct AlbumGrid: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
                     .overlay(alignment: .topTrailing) {
-                        Button {
-                            withAnimation(Motion.spring) { context.delete(p) }
-                            context.persist()
-                        } label: {
+                        Button { removing = p } label: {
                             Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
                                 .frame(width: 24, height: 24).background(.black.opacity(0.5), in: Circle())
+                                // 看起来还是那个小叉，能点的范围是 44×44
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
-                        .padding(5)
                         .accessibilityLabel("移除这张")
                     }
                     .transition(.scale(scale: 0.85).combined(with: .opacity))
@@ -233,6 +234,13 @@ struct AlbumGrid: View {
                         .strokeBorder(Palette.faint, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             }
             .accessibilityLabel("添加照片")
+        }
+        .confirmationDialog("从相册移除这张照片？", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing) { p in
+            Button("移除", role: .destructive) {
+                withAnimation(Motion.spring) { context.delete(p) }
+                context.persist()
+            }
         }
         .onChange(of: items) { _, picked in
             guard !picked.isEmpty else { return }

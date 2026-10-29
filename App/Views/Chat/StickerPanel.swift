@@ -17,6 +17,8 @@ struct StickerPanel: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showPicker = false
     @State private var naming: Naming?
+    /// 要删的表情包：先问一句再删（以前点了就整组没了）
+    @State private var deleting: String?
     @Namespace private var tabNS
 
     /// 一个分类：最近使用 / 某个图片表情包
@@ -85,6 +87,12 @@ struct StickerPanel: View {
             case .rename(let old):
                 PackNameSheet(title: "重命名", action: "好", name: old) { rename(old, to: $0) }
             }
+        }
+        .confirmationDialog("删除这个表情包？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { p in
+            Button("删除", role: .destructive) { delete(pack: p) }
+        } message: { p in
+            Text("「\(p)」里的 \(stickers.filter { $0.pack == p }.count) 个表情都会删掉。")
         }
     }
 
@@ -155,7 +163,7 @@ struct StickerPanel: View {
             Button(role: .destructive) { clearRecent() } label: { Label("清空最近使用", systemImage: "clock.arrow.circlepath") }
         case .pack(let p):
             Button { naming = .rename(p) } label: { Label("重命名", systemImage: "pencil") }
-            Button(role: .destructive) { delete(pack: p) } label: { Label("删除表情包", systemImage: "trash") }
+            Button(role: .destructive) { deleting = p } label: { Label("删除表情包", systemImage: "trash") }
         }
     }
 

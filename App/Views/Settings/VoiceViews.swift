@@ -158,6 +158,8 @@ struct VoicePicker: View {
     @State private var deleting: Voice.Choice?
     @State private var loadingPreview: String?
     @State private var previews: [String: Data] = [:]
+    /// 试听没成功的原因
+    @State private var previewFailure: String?
 
     init(persona: Persona, onPick: ((Voice.Choice) -> Void)? = nil) {
         _persona = Bindable(persona)
@@ -253,6 +255,11 @@ struct VoicePicker: View {
             Button("删除", role: .destructive) { delete(v) }
         } message: { _ in
             Text("删除后找不回来，用这个声音的角色也会没有声音。")
+        }
+        .alert("没能试听", isPresented: Binding(get: { previewFailure != nil }, set: { if !$0 { previewFailure = nil } })) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(previewFailure ?? "")
         }
     }
 
@@ -364,25 +371,35 @@ struct VoicePicker: View {
     /// 试听：ElevenLabs 下载自带的样音；没有样音的用这个声音现念一句（会用一点点额度）
     private func previewButton(_ v: Voice.Choice) -> some View {
         Button {
-            if let data = previews[v.id] { return player.toggle(v.id, data: data) }
+            if let data = previews[v.id] {
+                if !player.toggle(v.id, data: data) { previewFailure = String(localized: "这段声音放不出来。") }
+                return
+            }
             loadingPreview = v.id
             Task {
-                let data: Data?
-                if let url = v.preview {
-                    data = try? await URLSession.shared.data(from: url).0
-                } else {
-                    let sample = Persona(name: "")
-                    sample.voiceProvider = service.rawValue
-                    sample.voiceModel = persona.voiceProvider == service.rawValue ? persona.voiceModel : ""
-                    sample.voiceID = v.id
-                    sample.language = persona.language
-                    data = try? await Voice.speak(persona.language == "ko" ? "안녕, 오늘 하루 어땠어?" : "你好呀，今天过得怎么样？", for: sample)
-                }
-                if let data {
+                defer { loadingPreview = nil }
+                do {
+                    let data: Data
+                    if let url = v.preview {
+                        data = try await URLSession.shared.data(from: url).0
+                    } else {
+                        let sample = Persona(name: "")
+                        sample.voiceProvider = service.rawValue
+                        sample.voiceModel = persona.voiceProvider == service.rawValue ? persona.voiceModel : ""
+                        sample.voiceID = v.id
+                        sample.language = persona.language
+                        data = try await Voice.speak(persona.language == "ko" ? "안녕, 오늘 하루 어땠어?" : "你好呀，今天过得怎么样？", for: sample)
+                    }
+                    // 放不出来的不留着，下次点还会重新取
+                    guard player.toggle(v.id, data: data) else {
+                        previewFailure = String(localized: "这段声音放不出来。")
+                        return
+                    }
                     previews[v.id] = data
-                    player.toggle(v.id, data: data)
+                } catch {
+                    // 以前失败了转一下圈就没了，什么也不说
+                    previewFailure = error.localizedDescription
                 }
-                loadingPreview = nil
             }
         } label: {
             Group {
@@ -918,7 +935,7 @@ struct VoiceTuneSheet: View {
             do {
                 let text = persona.language == "ko" ? "오늘 하루 어땠어? 나는 네 생각 많이 했어." : "今天过得怎么样？我可是一直在想你哦。"
                 let data = try await Voice.speak(text, for: persona)
-                player.toggle("tune-\(persona.id)", data: data)
+                if !player.toggle("tune-\(persona.id)", data: data) { failure = String(localized: "这段声音放不出来。") }
             } catch {
                 failure = error.localizedDescription
             }

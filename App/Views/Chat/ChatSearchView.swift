@@ -19,12 +19,14 @@ struct ChatSearchView: View {
 
     private var recents: [String] { recentRaw.split(separator: "\n").map(String.init) }
 
-    private var messages: [Message] { convo.visibleMessages() }
+    /// 撤回的不算：撤回了的话不该还能搜出来
+    private var messages: [Message] { convo.visibleMessages().filter { !$0.recalled } }
 
     private var textHits: [Message] {
         let q = query.trimmed
         let base: [Message] = switch filter {
-        case .all: messages.filter { $0.kind == .text || $0.kind == .note }
+        // 图片的配文、语音转出来的文字、文件附带的话也能搜到
+        case .all: messages.filter { [.text, .note, .images, .voice, .file].contains($0.kind) && !$0.content.isEmpty }
         case .note: messages.filter { $0.kind == .note }
         default: []
         }
@@ -129,6 +131,16 @@ struct ChatSearchView: View {
         }
     }
 
+    /// 不是普通文字时，名字后面标一下是哪种（图片配文、语音转的文字……）
+    private func kindTag(_ m: Message) -> String {
+        switch m.kind {
+        case .images: String(localized: " · 图片")
+        case .voice: String(localized: " · 语音")
+        case .file: String(localized: " · 文件")
+        default: ""
+        }
+    }
+
     private var messagesSection: some View {
         VStack(alignment: .leading, spacing: Space.tight) {
             SectionLabel(text: "消息 · \(textHits.count) 条")
@@ -142,7 +154,7 @@ struct ChatSearchView: View {
                             if m.role == .user { UserAvatar(size: 30) } else { AvatarView(persona: m.personaID.flatMap { personaMap[$0] }, size: 30) }
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack {
-                                    Text(m.role == .user ? "你" : (m.personaID.flatMap { personaMap[$0]?.name } ?? "AI"))
+                                    Text((m.role == .user ? "你" : (m.personaID.flatMap { personaMap[$0]?.name } ?? "AI")) + kindTag(m))
                                     Spacer()
                                     Text(m.createdAt.listStamp)
                                 }

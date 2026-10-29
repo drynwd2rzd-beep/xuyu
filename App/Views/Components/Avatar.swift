@@ -1,13 +1,31 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
-private let avatarCache = NSCache<NSString, UIImage>()
+/// 解码好的图片：有总量上限（按像素占的内存算），超了系统自动清掉最久没用的。以前没有上限，图片多了会越占越多
+private let avatarCache: NSCache<NSString, UIImage> = {
+    let cache = NSCache<NSString, UIImage>()
+    cache.totalCostLimit = 60 * 1024 * 1024
+    return cache
+}()
 
-func cachedImage(_ data: Data, key: String) -> UIImage? {
-    let k = "\(key)-\(data.count)" as NSString
+/// 按需要的大小解码：最长边不超过 maxPixel 像素（聊天里看 1200 足够清楚；点开看大图时用更大的）。
+/// 以前按原图解码，一张手机照片就要几十 MB 内存
+func cachedImage(_ data: Data, key: String, maxPixel: Int = 1200) -> UIImage? {
+    let k = "\(key)-\(data.count)-\(maxPixel)" as NSString
     if let hit = avatarCache.object(forKey: k) { return hit }
-    guard let image = UIImage(data: data) else { return nil }
-    avatarCache.setObject(image, forKey: k)
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+    ]
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        return UIImage(data: data)
+    }
+    let image = UIImage(cgImage: cg)
+    avatarCache.setObject(image, forKey: k, cost: cg.bytesPerRow * cg.height)
     return image
 }
 

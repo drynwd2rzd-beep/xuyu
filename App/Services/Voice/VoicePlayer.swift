@@ -16,14 +16,15 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var durations: [String: TimeInterval] = [:]
 
-    func toggle(_ id: String, data: Data) {
-        if playing == id { return stop() }
+    /// 返回 false：这段声音放不出来（文件坏了、格式不对）
+    @discardableResult
+    func toggle(_ id: String, data: Data) -> Bool {
+        if playing == id { stop(); return true }
         halt()
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try? AVAudioSession.sharedInstance().setActive(true)
-        guard let player = try? AVAudioPlayer(data: data) else { return }
+        guard let player = try? AVAudioPlayer(data: data), player.play() else { return false }
         player.delegate = self
-        player.play()
         self.player = player
         playing = id
         progress = 0
@@ -34,6 +35,7 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
                 self.progress = p.currentTime / p.duration
             }
         }
+        return true
     }
 
     /// 停下，并把声音还给别的 App：你在听的音乐接着放（以前播完一直占着，音乐停了就不回来）
