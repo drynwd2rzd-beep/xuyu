@@ -170,6 +170,13 @@ enum Motion {
     static let bubble = Animation.spring(duration: 0.42, bounce: 0)
     /// 气泡本身放大显现的那一下（新消息、小点变成文字）：同样的时长，带一点弹性
     static let bubblePop = Animation.spring(duration: 0.42, bounce: 0.2)
+
+    // 等动画走完再做下一步（ARCH-5）：能用 onDismiss 回调的地方用回调，用不了的（推出去的页面退回、聊天层散开）才等这两个
+
+    /// 页面退回、sheet 收起、聊天层散开要的时间：走完再删数据、再弹下一个（删了还在显示的东西会闪一下或变成空白页）
+    static let dismissSettle = Duration.milliseconds(450)
+    /// 长按菜单收起要的时间：收起后再展开别的，两个动画不撞在一起
+    static let menuSettle = Duration.milliseconds(380)
 }
 
 struct CardStyle: ViewModifier {

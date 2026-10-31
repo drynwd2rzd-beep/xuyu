@@ -201,7 +201,7 @@ struct Composer: View {
             HStack(spacing: Space.tight) {
                 ForEach(Array(staged.enumerated()), id: \.offset) { index, item in
                     ZStack(alignment: .topTrailing) {
-                        if item.kind == "image" {
+                        if item.kind == .image {
                             Group {
                                 if let image = UIImage(data: item.data) {
                                     Image(uiImage: image).resizable().scaledToFill()
@@ -401,7 +401,7 @@ struct Composer: View {
             return
         }
         // 照片和文件可以和文字一起发，一次发出（照片、文件都有时会自动分成两条）
-        let hasImages = staged.contains { $0.kind == "image" }
+        let hasImages = staged.contains { $0.kind == .image }
         let items = staged
         withAnimation(Motion.spring) { staged = [] }
         onSend(text, hasImages ? .images : .file, items)
@@ -412,7 +412,7 @@ struct Composer: View {
         let images = datas.compactMap { ImageUtil.downscale($0) }
         guard !images.isEmpty else { return }
         let start = staged.count
-        let items = images.enumerated().map { OutgoingAttachment(kind: "image", name: "photo-\(start + $0.offset + 1).jpg", data: $0.element) }
+        let items = images.enumerated().map { OutgoingAttachment(kind: .image, name: "photo-\(start + $0.offset + 1).jpg", data: $0.element) }
         withAnimation(Motion.spring) { staged += items.prefix(max(0, 9 - staged.count)) }
         focused = true
     }
@@ -464,7 +464,7 @@ struct Composer: View {
     private func sendSticker(_ sticker: Sticker) {
         sticker.lastUsedAt = .now
         sendTick += 1
-        onSend("", .sticker, [OutgoingAttachment(kind: "image", name: "sticker.png", data: sticker.data)])
+        onSend("", .sticker, [OutgoingAttachment(kind: .image, name: "sticker.png", data: sticker.data)])
     }
 
     private func sendFile(_ url: URL) {
@@ -474,7 +474,7 @@ struct Composer: View {
             alert = "读取文件失败。"
             return
         }
-        guard data.count <= 20 * 1024 * 1024 else {
+        guard data.count <= Limits.Files.attachment else {
             alert = "文件太大了（最多 20MB）。"
             return
         }
@@ -488,7 +488,7 @@ struct Composer: View {
             return
         }
         // 文件也先放进待发区，可以再配一句话一起发
-        withAnimation(Motion.spring) { staged.append(OutgoingAttachment(kind: "file", name: url.lastPathComponent, data: data)) }
+        withAnimation(Motion.spring) { staged.append(OutgoingAttachment(kind: .file, name: url.lastPathComponent, data: data)) }
         focused = true
     }
 }

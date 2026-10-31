@@ -55,15 +55,11 @@ enum Memory {
         """
         let request = RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
                                    system: "你是一个细心的记录者，只负责整理聊天里值得长期记住的事。", prompt: prompt)
-        guard let text = try? await relay.complete(request), !text.trimmed.isEmpty else { return }
-        convo.memory = String(text.trimmed.prefix(1500))
+        // 整理的这段时间里被停下（清空聊天、删角色）：不写回（CONC-3）
+        guard let text = await relay.attempt(request, "记忆整理"), !text.trimmed.isEmpty,
+              !Task.isCancelled, !convo.isDeleted else { return }
+        convo.memory = String(text.trimmed.prefix(Limits.Prompt.memory))
         convo.memoryUntil = last.createdAt
         context.persist()
-    }
-
-    /// 清空聊天记录时，记忆也一起重来
-    static func reset(_ convo: Conversation) {
-        convo.memory = ""
-        convo.memoryUntil = .distantPast
     }
 }

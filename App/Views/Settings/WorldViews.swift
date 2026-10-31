@@ -131,7 +131,7 @@ struct WorldView: View {
 
     private func name(_ id: UUID?) -> String {
         guard let id else { return String(localized: "你") }
-        return personas.first { $0.id == id }?.name ?? "TA"
+        return personas.first { $0.id == id }?.name ?? String(localized: "已删除的角色")
     }
 
     /// 这周世界里发生的事：深色卡片，点进去看全部和快到的日子

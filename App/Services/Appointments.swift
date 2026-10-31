@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 
 /// 你和 TA 的约定：「晚上找我」「半小时后提醒我」「每天 22:30 催我睡觉」
 struct Appointment: Codable, Identifiable, Equatable {
@@ -18,20 +19,37 @@ struct Appointment: Codable, Identifiable, Equatable {
     var writtenAt: Date?
 }
 
+extension Appointment {
+    /// 手写解码：以后加字段时，旧数据里没有那一项用默认值，不会整份约定都读不出来（DATA-6）
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(personaID: try c.decode(UUID.self, forKey: .personaID),
+                  conversationID: try c.decode(UUID.self, forKey: .conversationID),
+                  what: try c.decode(String.self, forKey: .what),
+                  at: try c.decode(Date.self, forKey: .at))
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? id
+        daily = try c.decodeIfPresent(Bool.self, forKey: .daily) ?? daily
+        messageID = try c.decodeIfPresent(UUID.self, forKey: .messageID)
+        writtenAt = try c.decodeIfPresent(Date.self, forKey: .writtenAt)
+    }
+}
+
 /// TA 答应你的事，到点真的来：TA 回复时带一个看不见的【约定:时间|事情】，
 /// App 提前写好那条消息、排在约定的时间，到点出现在聊天里并发通知（App 关着也能收到）
 @MainActor
 enum Appointments {
     // MARK: - 存取（存在本机设置里，会跟着备份走）
 
+    /// 读坏了不会清空：原来的内容挪到「appointments.broken」留底（Storage.decodeDefault）
     static var all: [Appointment] {
-        get {
-            guard let raw = UserDefaults.standard.string(forKey: Prefs.appointments), let data = raw.data(using: .utf8) else { return [] }
-            return (try? JSONDecoder().decode([Appointment].self, from: data)) ?? []
-        }
+        get { Storage.decodeDefault([Appointment].self, key: Prefs.appointments) ?? [] }
         set {
-            let data = (try? JSONEncoder().encode(newValue)) ?? Data()
-            UserDefaults.standard.set(String(decoding: data, as: UTF8.self), forKey: Prefs.appointments)
+            do {
+                let data = try JSONEncoder().encode(newValue)
+                UserDefaults.standard.set(String(decoding: data, as: UTF8.self), forKey: Prefs.appointments)
+            } catch {
+                Log.store.error("约定没能保存：\(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -108,6 +126,16 @@ enum Appointments {
         all.removeAll { $0.id == appointment.id }
     }
 
+    /// 清空聊天、删群、删角色时：这个聊天里的约定全部撤掉（排好的消息由 Cleanup 一起删）
+    static func removeAll(in convoID: UUID) {
+        all.removeAll { $0.conversationID == convoID }
+    }
+
+    /// 删角色时：TA 在所有聊天里的约定
+    static func removeAll(by personaID: UUID) {
+        all.removeAll { $0.personaID == personaID }
+    }
+
     // MARK: - 维护：App 打开时、每隔一会儿检查一次
 
     static func refresh(context: ModelContext, relay: RelayClient) async {
@@ -126,7 +154,7 @@ enum Appointments {
                 await write(a.id, context: context, relay: relay)
             } else if let written = a.writtenAt, let convo = message?.conversation,
                       let last = convo.lastVisible(at: now), last.createdAt > written,
-                      a.at.timeIntervalSince(now) > 120, a.at.timeIntervalSince(now) < 6 * 3600 {
+                      a.at.timeIntervalSince(now) > 120, a.at.timeIntervalSince(now) < Limits.Timing.appointmentRewrite {
                 // 写好之后你们又聊过了：快到点时按新的聊天重写，接得上刚才的话
                 await write(a.id, context: context, relay: relay)
             }
@@ -145,22 +173,16 @@ enum Appointments {
         let prompt = """
         \(memory.isEmpty ? "" : "你记得的关于\(user)的事：\n\(memory)\n\n")下面是你们最近的聊天记录：
 
-        \(PromptBuilder.transcript(Array(convo.visibleMessages().suffix(20)), names: names))
+        \(PromptBuilder.transcript(Array(convo.visibleMessages().suffix(Limits.Prompt.recentChat)), names: names))
 
         你答应过\(user)：\(Fmt.full.string(from: a.at)) 来\(a.what)。现在就是那个时间，写你这时要发给 TA 的那条消息：说到做到，自然、口语化，接得上你们聊过的事，一两句话。只输出消息内容。
         """
-        guard let text = try? await relay.complete(Companion.lightRequest(persona, prompt)), !text.trimmed.isEmpty,
-              all.contains(where: { $0.id == id }) else { return }
+        guard let text = await relay.attempt(Companion.lightRequest(persona, prompt), "约定"), !text.trimmed.isEmpty,
+              all.contains(where: { $0.id == id }), !convo.isDeleted else { return }
         if let old = a.messageID { dropMessage(old, context: context) }
         let body = ReplyText.markers(in: text).body.trimmed
         guard !body.isEmpty else { return }
-        let message = Message(role: .assistant, content: body, personaID: persona.id)
-        message.isProactive = true
-        message.createdAt = a.at
-        convo.add(message, context: context)
-        context.persist()
-        let title = convo.isGroup ? "\(convo.title.isEmpty ? "群聊" : convo.title) · \(persona.name)" : persona.name
-        Reminders.scheduleProactive(messageID: message.id, conversationID: convo.id, title: title, body: body, at: a.at)
+        let message = PlannedMessages.plan(body, by: persona, in: convo, at: a.at, marker: .appointment, context: context)
         a.messageID = message.id
         a.writtenAt = .now
         update(a)
@@ -176,7 +198,7 @@ enum Appointments {
     private static func dropMessage(_ id: UUID, context: ModelContext) {
         Reminders.cancelProactive(messageID: id)
         guard let m = try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.id == id })).first, m.createdAt > .now else { return }
-        context.delete(m)
+        PlannedMessages.cancel(m, context: context)
         context.persist()
     }
 }

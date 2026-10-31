@@ -18,7 +18,7 @@ struct TodoEditor: View {
                         dismiss()
                         let target = item
                         Task {
-                            try? await Task.sleep(for: .milliseconds(350))
+                            try? await Task.sleep(for: Motion.dismissSettle)
                             context.delete(target)
                             context.persist()
                         }

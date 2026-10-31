@@ -106,7 +106,9 @@ struct DiaryWidget: View {
 
     var body: some View {
         let entry = entries.first { $0.author == .ai && !$0.text.isEmpty && $0.text != "……" }
-        let name = entry?.personaID.flatMap { id in personas.first { $0.id == id }?.name } ?? personas.first?.name ?? "Claude"
+        // 作者已经删了：写「已删除的角色」，不署别人的名字
+        let name = entry?.personaID.map { id in personas.first { $0.id == id }?.name ?? String(localized: "已删除的角色") }
+            ?? personas.first?.name ?? "Claude"
         VStack(alignment: .leading, spacing: Space.tight) {
             HStack(spacing: Space.tight) {
                 Text("\(name) 的日记").font(Typo.serif(17, .medium)).foregroundStyle(Palette.ink)

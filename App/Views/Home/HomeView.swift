@@ -125,7 +125,7 @@ struct HomeView: View {
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    withAnimation(Motion.spring) { WidgetPhotoStore.save(data) }
+                    withAnimation(Motion.spring) { ImageFileStore.widgetPhoto.save(data) }
                 }
                 photoItem = nil
             }
@@ -321,9 +321,9 @@ struct HomeView: View {
         }
         showGallery = false
         // 刚加上照片组件、还没有照片时，直接让你选一张
-        if widget == .photo, WidgetPhotoStore.image == nil {
+        if widget == .photo, ImageFileStore.widgetPhoto.image == nil {
             Task {
-                try? await Task.sleep(for: .milliseconds(450))
+                try? await Task.sleep(for: Motion.dismissSettle)
                 pickPhoto = true
             }
         }

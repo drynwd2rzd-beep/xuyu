@@ -5,6 +5,12 @@ import Security
 enum Keychain {
     private static let service = "app.xuyu.apikeys"
 
+    /// 钥匙串里各项的账户名（语音服务的密钥见 VoiceProvider.keyAccount）
+    enum Account {
+        /// 和电脑中继的配对码
+        static let relayCode = "relayCode"
+    }
+
     private static func baseQuery(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,

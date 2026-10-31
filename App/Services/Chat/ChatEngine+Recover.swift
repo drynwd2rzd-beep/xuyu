@@ -9,7 +9,9 @@ extension ChatEngine {
         guard !recovering, let relay else { return }
         recovering = true
         defer { recovering = false }
-        let all = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.statusRaw == "streaming" }))) ?? []
+        // 谓词里不能直接用枚举：先取到局部常量
+        let streaming = MessageStatus.streaming.rawValue
+        let all = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.statusRaw == streaming }))) ?? []
         let orphans = all.filter { !$0.relayID.isEmpty && buffers[$0.id] == nil }
         let groups = Dictionary(grouping: orphans, by: \.relayID)
         for (relayID, stuck) in groups {

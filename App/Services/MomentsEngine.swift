@@ -34,7 +34,7 @@ final class MomentsEngine {
         let key = "\(moment.id.uuidString)|\(comment.id.uuidString)|\(persona.id.uuidString)"
         let prompt = MomentPrompt.reply(as: persona, to: comment, on: moment, context: context)
         // 没能回（电脑没连上、出错了）：记下来，连上以后补回（以前就这么没下文了）
-        guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)) else {
+        guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "回动态评论") else {
             pending.insert(key)
             return
         }
@@ -133,8 +133,8 @@ enum MomentsPlanner {
         let photos = context.album(of: persona.id)
         let voice = Voice.enabled(for: persona)
         let prompt = MomentPrompt.post(for: persona, at: deliver, photos: photos, voice: voice, context: context)
-        guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)),
-              let post = MomentText.parse(raw) else { return }
+        guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "发动态"),
+              let post = MomentText.parse(raw), !persona.isDeleted else { return }
         let moment = Moment(personaID: persona.id, text: post.text, mood: post.mood, createdAt: deliver)
         if let n = post.photo, photos.indices.contains(n - 1) { moment.photoIDs = [photos[n - 1].id] }
         if voice, let spoken = post.spoken { moment.voice = try? await Voice.speak(spoken, for: persona) }
@@ -152,7 +152,7 @@ enum MomentsPlanner {
         var commented: [MomentComment] = []
         for persona in picks {
             let prompt = MomentPrompt.react(as: persona, to: moment, context: context)
-            guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)) else { continue }
+            guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "动态点赞评论"), !moment.isDeleted else { continue }
             let reaction = MomentText.parseReaction(raw)
             if reaction.like && !moment.likedBy.contains(persona.id) { moment.likedBy.append(persona.id) }
             guard let text = reaction.comment else { continue }
@@ -164,7 +164,7 @@ enum MomentsPlanner {
         // TA 自己的动态下有人评论：有时回一句
         if let author = moment.personaID.flatMap({ context.persona($0) }), let first = commented.first, Bool.random() {
             let prompt = MomentPrompt.reply(as: author, to: first, on: moment, context: context)
-            if let raw = try? await relay.complete(Companion.lightRequest(author, prompt)) {
+            if let raw = await relay.attempt(Companion.lightRequest(author, prompt), "回动态评论") {
                 let text = MomentText.clean(raw)
                 if !text.isEmpty {
                     let reply = MomentComment(personaID: author.id, text: text, replyTo: first.personaID,
@@ -183,8 +183,8 @@ enum MomentsPlanner {
             guard let id = photo.personaID, let persona = context.persona(id),
                   let small = ImageUtil.downscale(photo.data, maxSide: 768, quality: 0.7) else { continue }
             var request = Companion.lightRequest(persona, "用一句话（十个字左右）说说这张照片里是什么，只输出这句话。")
-            request.attachments = [RelayAttachment(kind: "image", name: "photo.jpg", data: small.base64EncodedString())]
-            if let text = try? await relay.complete(request) { photo.caption = MomentText.clean(text) }
+            request.attachments = [RelayAttachment(kind: AttachmentKind.image.rawValue, name: "photo.jpg", data: small.base64EncodedString())]
+            if let text = await relay.attempt(request, "相册描述") { photo.caption = MomentText.clean(text) }
         }
         context.persist()
     }
@@ -216,7 +216,7 @@ enum MomentPrompt {
         let recent = context.visibleMoments(by: persona.id).prefix(5).map { "- \(when($0.createdAt))：\($0.text)" }
         let memory = convo.memory.trimmed
         let album = photos.enumerated().map { "\($0.offset + 1). \($0.element.caption.isEmpty ? "（一张照片）" : $0.element.caption)" }
-        let lang = persona.language == "ko" ? "用韩语" : "用中文"
+        let lang = persona.lang == .ko ? "用韩语" : "用中文"
         return """
         \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")你们最近的聊天：
         \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(history, names: [persona.id: persona.name]))

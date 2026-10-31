@@ -27,7 +27,7 @@ final class Persona {
     var proactiveFreq: Int = 1
     /// 你没回 TA 的消息时，TA 多久后来追问：0 不追问 · 1 20 分钟～1 小时 · 2 1～3 小时 · 3 3～6 小时
     var followUp: Int = 1
-    /// 发语音用哪家：elevenlabs · minimax
+    /// 发语音用哪家：elevenlabs · minimax（用 provider 读写，见 Voice.swift）
     var voiceProvider: String = "elevenlabs"
     /// 这个角色用的语音模型（空 = 这家的默认模型）
     var voiceModel: String = ""
@@ -71,6 +71,17 @@ final class Persona {
     var initial: String { name.trimmed.first.map(String.init) ?? "?" }
 }
 
+extension Persona {
+    /// 聊天、发语音用的语言（存的是 language 字符串，兜底中文）
+    var lang: PersonaLanguage {
+        get { PersonaLanguage(rawValue: language) ?? .zh }
+        set { language = newValue.rawValue }
+    }
+}
+
+/// 角色用哪种语言聊天、发语音
+enum PersonaLanguage: String { case zh, ko }
+
 @Model
 final class Conversation {
     var id: UUID = UUID()
@@ -86,7 +97,7 @@ final class Conversation {
     var memory: String = ""
     /// 这个时间（含）之前的消息已经总结进记忆，不再逐条发送
     var memoryUntil: Date = Date.distantPast
-    /// 群聊自动讨论的轮数：1 = 每人回一次；更多轮时大家会接着彼此的话说
+    /// 群聊自动讨论的轮数：1 = 每人回一次；更多轮时大家会接着彼此的话说；occasionalRounds（-1）= 偶尔。用 discuss 读
     var discussRounds: Int = 1
     @Relationship(deleteRule: .cascade, inverse: \Message.conversation) var messages: [Message]? = []
 
@@ -127,6 +138,21 @@ final class Conversation {
         if isGroup { return members.isEmpty ? "群聊" : members.map(\.name).joined(separator: "、") }
         return members.first?.name ?? "已删除的角色"
     }
+}
+
+extension Conversation {
+    /// discussRounds 里表示「偶尔」的那个数
+    static let occasionalRounds = -1
+
+    /// 群聊自动讨论：固定几轮，还是「偶尔」（有时聊上两三轮、有时各回一句）
+    var discuss: DiscussMode {
+        discussRounds == Self.occasionalRounds ? .occasional : .rounds(max(1, discussRounds))
+    }
+}
+
+enum DiscussMode: Equatable {
+    case rounds(Int)
+    case occasional
 }
 
 enum MessageRole: String { case user, assistant }
@@ -187,24 +213,29 @@ final class Message {
     }
 }
 
+/// 附件的种类（存的是 Attachment.kindRaw 字符串，不能改）
+enum AttachmentKind: String { case image, file, audio }
+
 @Model
 final class Attachment {
     var id: UUID = UUID()
-    /// image · file
+    /// AttachmentKind 的原始值：image · file · audio（TA 发的语音）
     var kindRaw: String = "image"
     var fileName: String = ""
     var order: Int = 0
     @Attribute(.externalStorage) var data: Data = Data()
     var message: Message?
 
-    init(kind: String, fileName: String, data: Data, order: Int) {
-        self.kindRaw = kind
+    init(kind: AttachmentKind, fileName: String, data: Data, order: Int) {
+        self.kindRaw = kind.rawValue
         self.fileName = fileName
         self.data = data
         self.order = order
     }
 
-    var isImage: Bool { kindRaw == "image" }
+    /// 认不出的旧种类按文件处理
+    var kind: AttachmentKind { AttachmentKind(rawValue: kindRaw) ?? .file }
+    var isImage: Bool { kind == .image }
 }
 
 @Model

@@ -7,7 +7,7 @@ enum MiniMax {
 
     /// 国内版和国际版是两个平台，密钥不通用。国内版换过网址：先用新的，连不上再试旧的
     static var hosts: [String] {
-        UserDefaults.standard.string(forKey: Prefs.minimaxRegion) == "global"
+        MiniMaxRegion.current == .global
             ? ["https://api.minimax.io"]
             : ["https://api.minimax.cn", "https://api.minimaxi.com"]
     }
@@ -72,7 +72,7 @@ enum MiniMax {
             "text": text,
             "stream": false,
             "audio_setting": ["sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1],
-            "language_boost": style.languageBoost.isEmpty ? (persona.language == "ko" ? "Korean" : "Chinese") : style.languageBoost,
+            "language_boost": style.languageBoost.isEmpty ? (persona.lang == .ko ? "Korean" : "Chinese") : style.languageBoost,
         ]
         // 混合声音：主声音和别的声音按比重混在一起（这时 voice_id 留空）
         let mixes = style.mixes.prefix(3).filter { $0.weight > 0 }

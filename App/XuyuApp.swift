@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import os
 
 @main
 struct XuyuApp: App {
@@ -23,18 +24,32 @@ struct XuyuApp: App {
     private static func openStore() -> ModelContainer {
         let schema = Schema(Schema1.models)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: DemoMode.isOn)
-        if let container = try? ModelContainer(for: schema, configurations: [config]) { return container }
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            Log.store.fault("数据库打不开，先把旧库挪走：\(error.localizedDescription, privacy: .public)")
+        }
         let store = config.url
         let dir = store.deletingLastPathComponent()
-        let backup = dir.appendingPathComponent("数据库备份-\(Int(Date.now.timeIntervalSince1970))", isDirectory: true)
-        try? FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
-        for suffix in ["", "-shm", "-wal"] {
-            let file = URL(fileURLWithPath: store.path + suffix)
-            try? FileManager.default.moveItem(at: file, to: backup.appendingPathComponent(file.lastPathComponent))
+        let backup = dir.appendingPathComponent("\(Storage.rescuePrefix)\(Int(Date.now.timeIntervalSince1970))", isDirectory: true)
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+            for suffix in ["", "-shm", "-wal"] {
+                let file = URL(fileURLWithPath: store.path + suffix)
+                guard fm.fileExists(atPath: file.path) else { continue }
+                try fm.moveItem(at: file, to: backup.appendingPathComponent(file.lastPathComponent))
+            }
+        } catch {
+            Log.store.fault("旧库没能挪走：\(error.localizedDescription, privacy: .public)")
         }
         UserDefaults.standard.set(backup.path, forKey: Prefs.lastStoreRescue)
-        if let container = try? ModelContainer(for: schema, configurations: [config]) { return container }
-        // 实在不行就先用内存里的临时库，至少能打开
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            Log.store.fault("挪走旧库后还是打不开，先用临时库：\(error.localizedDescription, privacy: .public)")
+        }
+        // 实在不行就先用内存里的临时库，至少能打开。内存库不碰磁盘，不会失败
         return try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
     }
 
@@ -65,7 +80,7 @@ struct XuyuApp: App {
                 .task {
                     // App 一直开着时，每 10 分钟看看有没有该做的事（比如过了 8 点该写日记了）
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(600))
+                        try? await Task.sleep(for: Limits.Timing.refresh)
                         guard !DemoMode.isOn, scenePhase == .active else { continue }
                         await Companion.refresh(context: container.mainContext, relay: relay)
                     }

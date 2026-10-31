@@ -63,8 +63,8 @@ struct ChatView: View {
     }
 
     private func scheme(for paper: (index: Int, owner: UUID?)) -> ColorScheme {
-        if paper.index == 2 { return .dark }
-        if paper.index == 3, let light = WallpaperStore.luminance(for: paper.owner) {
+        if paper.index == WallpaperStore.Choice.night.rawValue { return .dark }
+        if paper.index == WallpaperStore.Choice.photo.rawValue, let light = WallpaperStore.luminance(for: paper.owner) {
             if light > 0.62 { return .light }
             if light < 0.38 { return .dark }
         }
@@ -479,9 +479,8 @@ struct ChatView: View {
                 withAnimation(Motion.spring) {
                     draft = m.content
                     quoting = m.quote.isEmpty ? nil : m.quote
-                    context.delete(m)
+                    Cleanup.deleteMessages([m], context: context)
                 }
-                context.persist()
                 engine.reconsider(convo, members: members, context: context)
                 inputFocused = true
                 pinBottom += 1
@@ -565,12 +564,9 @@ struct ChatView: View {
     }
 
     private func deleteMessages(_ ids: Set<UUID>) {
-        withAnimation(Motion.spring) {
-            for m in convo.messages ?? [] where ids.contains(m.id) && engine.buffers[m.id] == nil {
-                context.delete(m)
-            }
-            context.persist()
-        }
+        // 正在打字的那条不删（还在写）；删掉的消息上的心声、视频卡片、通话内容、待发通知一起清（Cleanup）
+        let doomed = (convo.messages ?? []).filter { ids.contains($0.id) && engine.buffers[$0.id] == nil }
+        withAnimation(Motion.spring) { Cleanup.deleteMessages(doomed, context: context) }
     }
 
     private func flash(_ text: String) {

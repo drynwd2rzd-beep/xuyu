@@ -38,9 +38,9 @@ private struct TouchRows: View {
     @AppStorage private var thoughts: Bool
 
     init(persona: Persona) {
-        _pace = AppStorage(wrappedValue: true, HumanTouch.paceKey(persona.id))
-        _mood = AppStorage(wrappedValue: 1, HumanTouch.moodKey(persona.id))
-        _thoughts = AppStorage(wrappedValue: false, HumanTouch.thoughtsKey(persona.id))
+        _pace = AppStorage(wrappedValue: true, Prefs.human(.pace, persona.id))
+        _mood = AppStorage(wrappedValue: 1, Prefs.human(.mood, persona.id))
+        _thoughts = AppStorage(wrappedValue: false, Prefs.human(.thoughts, persona.id))
     }
 
     var body: some View {
@@ -67,7 +67,7 @@ struct VideoShareRow: View {
     @AppStorage private var videos: Bool
 
     init(persona: Persona) {
-        _videos = AppStorage(wrappedValue: true, HumanTouch.videosKey(persona.id))
+        _videos = AppStorage(wrappedValue: true, Prefs.human(.videos, persona.id))
     }
 
     var body: some View {
@@ -118,7 +118,7 @@ private struct PersonaVoiceGroup: View {
                 }
                 Hairline()
                 SettingRow(title: "语音语言") {
-                    Segmented(items: [("zh", "中文"), ("ko", "한국어")], selection: $persona.language)
+                    Segmented(items: [(PersonaLanguage.zh.rawValue, "中文"), (PersonaLanguage.ko.rawValue, "한국어")], selection: $persona.language)
                         .fixedSize()
                 }
                 .transition(.opacity)

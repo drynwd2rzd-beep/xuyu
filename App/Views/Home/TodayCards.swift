@@ -208,7 +208,11 @@ struct TaDiaryCard: View {
         return Calendar.current.isDateInToday(day) ? nil : ai.first
     }
     private var writer: Persona? { personas.first { $0.id.uuidString == writerID } ?? personas.first }
-    private var author: Persona? { entry?.personaID.flatMap { id in personas.first { $0.id == id } } ?? writer }
+    /// 写这篇的人。记着作者、但作者已经删了：不署别人的名字，也不显示 Reply（以前会退回成现在写日记的人）
+    private var author: Persona? {
+        guard let id = entry?.personaID else { return writer }
+        return personas.first { $0.id == id }
+    }
     private var writing: Bool { DiaryState.shared.writing.contains(day.startOfDay) }
 
     var body: some View {

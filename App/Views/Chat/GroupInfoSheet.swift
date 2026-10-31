@@ -31,23 +31,6 @@ struct MemoryEditor: View {
     }
 }
 
-/// 删除群聊 / 清空单聊
-enum ConversationRemover {
-    @MainActor
-    static func remove(_ convo: Conversation, context: ModelContext, engine: ChatEngine) {
-        engine.stop(convo)
-        Companion.cancelPlannedMessages(in: convo, context: context)
-        if convo.isGroup {
-            WallpaperStore.remove(for: convo.id)
-            context.delete(convo)
-        } else {
-            for m in convo.messages ?? [] { context.delete(m) }
-            Memory.reset(convo)
-        }
-        context.persist()
-    }
-}
-
 struct GroupInfoSheet: View {
     @Bindable var convo: Conversation
     @Environment(\.modelContext) private var context
@@ -97,7 +80,7 @@ struct GroupInfoSheet: View {
                     VStack(alignment: .leading, spacing: Space.tight) {
                         SectionLabel(text: "自动讨论")
                         VStack(alignment: .leading, spacing: Space.tight) {
-                            Segmented(items: [(1, "不讨论"), (-1, "偶尔"), (2, "2 轮"), (3, "3 轮")], selection: $convo.discussRounds)
+                            Segmented(items: [(1, "不讨论"), (Conversation.occasionalRounds, "偶尔"), (2, "2 轮"), (3, "3 轮")], selection: $convo.discussRounds)
                             Text("你说一句后，大家会接着彼此的话聊几轮；「偶尔」是有时聊上两三轮、有时各回一句。你随时插话就会停下来听你说。")
                                 .font(.system(size: Typo.secondary))
                                 .foregroundStyle(Palette.inkSoft)
@@ -153,22 +136,22 @@ struct GroupInfoSheet: View {
             }
             .confirmationDialog("清空这个群聊的记录？", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("清空", role: .destructive) {
-                    for m in convo.messages ?? [] { context.delete(m) }
-                    Memory.reset(convo)
-                    context.persist()
+                    let target = convo
+                    Task { await Cleanup.clearChat(target, context: context, engine: engine) }
                 }
             } message: {
-                Text("成员会保留，聊天记录和记忆删除后无法恢复。")
+                Text("成员会保留，记录删除后无法恢复。")
             }
             .confirmationDialog("删除这个群聊？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("删除", role: .destructive) {
                     dismiss()
-                    // 先退出聊天页，再删数据，避免页面还在显示已删除的对话
+                    // 先退出聊天页，再删数据，避免页面还在显示已删除的对话（NAV-4）
                     router.closeChat()
                     let target = convo
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(450))
-                        ConversationRemover.remove(target, context: context, engine: engine)
+                    Task {
+                        // sheet 收起和聊天层散开同时进行，聊天层没有回调可等：等它走完
+                        try? await Task.sleep(for: Motion.dismissSettle)
+                        await Cleanup.deleteGroup(target, context: context, engine: engine)
                     }
                 }
             } message: {

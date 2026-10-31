@@ -60,7 +60,7 @@ enum ElevenLabs {
             ] as [String: Any],
         ]
         // 指定说哪种话（多语言 v2 不支持这一项）
-        if !model.contains("multilingual_v2") { json["language_code"] = persona.language == "ko" ? "ko" : "zh" }
+        if !model.contains("multilingual_v2") { json["language_code"] = persona.lang.rawValue }
         req.httpBody = try JSONSerialization.data(withJSONObject: json)
         let (data, response) = try await URLSession.shared.data(for: req)
         try check(response, data)

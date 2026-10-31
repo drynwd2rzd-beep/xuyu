@@ -304,6 +304,8 @@ struct BackupView: View {
             do {
                 try await Backup.restore(data, context: context)
                 return "已恢复"
+            } catch let error as Backup.Incomplete {
+                return error.errorDescription ?? ""
             } catch {
                 return "这个文件不是有效的絮语备份"
             }

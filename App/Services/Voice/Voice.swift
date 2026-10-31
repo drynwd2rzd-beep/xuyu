@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 /// 语音服务：ElevenLabs 和 MiniMax 两家。每个角色自己选用哪家、哪个模型、哪个声音。
 /// 密钥只存在这台手机的钥匙串里，App 直接和语音服务通信（不经过电脑）
@@ -37,10 +38,26 @@ enum VoiceProvider: String, CaseIterable, Identifiable {
         case .elevenlabs:
             return URL(string: "https://elevenlabs.io/app/subscription")!
         case .minimax:
-            let global = UserDefaults.standard.string(forKey: Prefs.minimaxRegion) == "global"
-            return URL(string: global ? "https://platform.minimax.io/user-center/payment/balance"
-                                      : "https://platform.minimaxi.com/user-center/payment/balance")!
+            return URL(string: MiniMaxRegion.current == .global ? "https://platform.minimax.io/user-center/payment/balance"
+                                                                : "https://platform.minimaxi.com/user-center/payment/balance")!
         }
+    }
+}
+
+/// MiniMax 用国内版还是国际版（存在 Prefs.minimaxRegion，存的字符串不能改）
+enum MiniMaxRegion: String {
+    case cn, global
+
+    static var current: MiniMaxRegion {
+        MiniMaxRegion(rawValue: UserDefaults.standard.string(forKey: Prefs.minimaxRegion) ?? "") ?? .cn
+    }
+}
+
+extension Persona {
+    /// 发语音用哪家（存的是 voiceProvider 字符串，兜底 ElevenLabs）
+    var provider: VoiceProvider {
+        get { VoiceProvider(rawValue: voiceProvider) ?? .elevenlabs }
+        set { voiceProvider = newValue.rawValue }
     }
 }
 
@@ -89,7 +106,7 @@ enum Voice {
 
     /// 角色用的那家；还没选声音、那家又没填密钥时，用填了密钥的那家
     static func provider(of persona: Persona) -> VoiceProvider {
-        let chosen = VoiceProvider(rawValue: persona.voiceProvider) ?? .elevenlabs
+        let chosen = persona.provider
         if isConfigured(chosen) || !persona.voiceID.isEmpty { return chosen }
         return configured.first ?? chosen
     }
@@ -249,18 +266,20 @@ enum Voice {
 
 /// 自己给声音起的名字，存在这台手机上（会跟着备份走）
 enum VoiceNames {
+    /// 读坏了不会清空：原来的内容留底在「voiceNames.broken」，下次改名字也不会把其余名字冲掉（Storage.decodeDefault）
     static var all: [String: String] {
-        guard let json = UserDefaults.standard.string(forKey: Prefs.voiceNames), let data = json.data(using: .utf8),
-              let map = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
-        return map
+        Storage.decodeDefault([String: String].self, key: Prefs.voiceNames) ?? [:]
     }
 
     static func set(_ name: String?, for id: String) {
         var map = all
         let clean = name?.trimmed ?? ""
         map[id] = clean.isEmpty ? nil : clean
-        let json = (try? JSONEncoder().encode(map)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-        UserDefaults.standard.set(json, forKey: Prefs.voiceNames)
+        do {
+            UserDefaults.standard.set(String(decoding: try JSONEncoder().encode(map), as: UTF8.self), forKey: Prefs.voiceNames)
+        } catch {
+            Log.voice.error("声音名字没能保存：\(error.localizedDescription, privacy: .public)")
+        }
     }
 }
 

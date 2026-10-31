@@ -11,7 +11,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.defaultCodexModel) private var codexModel = ""
     @AppStorage(Prefs.defaultClaudeEffort) private var claudeEffort = ""
     @AppStorage(Prefs.defaultCodexEffort) private var codexEffort = ""
-    @AppStorage(MyAvatarStore.stampKey) private var avatarStamp = 0.0
+    @AppStorage(Prefs.myAvatarStamp) private var avatarStamp = 0.0
     @State private var avatarItem: PhotosPickerItem?
     @State private var modelEngine: Engine?
 
@@ -87,7 +87,7 @@ struct SettingsView: View {
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    withAnimation(Motion.spring) { MyAvatarStore.save(data) }
+                    withAnimation(Motion.spring) { ImageFileStore.myAvatar.save(data) }
                 }
                 avatarItem = nil
             }
@@ -111,6 +111,9 @@ struct SettingsView: View {
         } message: {
             Text("这一步做了就回不去了。")
         }
+        .alert("没能全部删除，请再试一次。", isPresented: $resetFailed) {
+            Button("好", role: .cancel) {}
+        }
         .sensoryFeedback(.success, trigger: resetDone)
     }
 
@@ -120,6 +123,7 @@ struct SettingsView: View {
     @State private var finalCheck = false
     @State private var resetting = false
     @State private var resetDone = 0
+    @State private var resetFailed = false
 
     enum ResetKind: Identifiable {
         case settings, personas, everything
@@ -167,10 +171,17 @@ struct SettingsView: View {
     private func reset(_ kind: ResetKind) {
         resetting = true
         Task {
-            switch kind {
-            case .settings: Reset.settings()
-            case .personas: await Reset.personas(context: context, engine: engine)
-            case .everything: await Reset.everything(context: context, engine: engine, relay: relay)
+            do {
+                switch kind {
+                case .settings: Reset.settings()
+                case .personas: try await Reset.personas(context: context, engine: engine)
+                case .everything: try await Reset.everything(context: context, engine: engine, relay: relay)
+                }
+            } catch {
+                // 没删成：数据原样留着，告诉你再试一次（不假装完成）
+                resetting = false
+                resetFailed = true
+                return
             }
             resetting = false
             resetDone += 1
@@ -208,8 +219,8 @@ struct SettingsView: View {
             .buttonStyle(ScaleButtonStyle())
             .accessibilityLabel("更换我的头像")
             .contextMenu {
-                if MyAvatarStore.image != nil {
-                    Button(role: .destructive) { withAnimation(Motion.spring) { MyAvatarStore.clear() } } label: {
+                if ImageFileStore.myAvatar.image != nil {
+                    Button(role: .destructive) { withAnimation(Motion.spring) { ImageFileStore.myAvatar.clear() } } label: {
                         Label("移除头像", systemImage: "trash")
                     }
                 }
@@ -453,8 +464,8 @@ struct QuietHoursSheet: View {
 
 /// 真实天气：开关，下面一行是 TA 现在知道的天气；城市留空就跟着定位
 struct WeatherRows: View {
-    @AppStorage(Weather.enabledKey) private var on = true
-    @AppStorage(Weather.cityKey) private var city = ""
+    @AppStorage(Prefs.weatherEnabled) private var on = true
+    @AppStorage(Prefs.weatherCity) private var city = ""
     @State private var line = Weather.shortLine
 
     var body: some View {

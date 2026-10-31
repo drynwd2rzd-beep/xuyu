@@ -154,7 +154,7 @@ final class LogicTests: XCTestCase {
         // 每个角色自己选服务和模型；没选模型用这家的默认，每个模型都有说明
         let karina = Persona(name: "Karina")
         XCTAssertEqual(Voice.provider(of: karina), .elevenlabs)
-        karina.voiceProvider = "minimax"
+        karina.provider = .minimax
         XCTAssertEqual(Voice.provider(of: karina), .minimax)
         XCTAssertEqual(VoiceProvider.minimax.defaultModel, "speech-2.8-hd")
         for model in ["eleven_v4", "eleven_multilingual_v2", "speech-2.8-hd", "speech-02-turbo"] {
@@ -165,7 +165,7 @@ final class LogicTests: XCTestCase {
     func testVoiceLanguageOnlyChangesVoice() {
         // 角色的语言只管语音：中文界面下，打字不会被要求说韩语
         let karina = Persona(name: "Karina")
-        karina.language = "ko"
+        karina.lang = .ko
         if !Fmt.ui.identifier.hasPrefix("ko") {
             XCTAssertFalse(PromptBuilder.system(for: karina, convo: nil, members: [karina]).contains("打字说韩语"))
         }
@@ -337,7 +337,7 @@ final class LogicTests: XCTestCase {
         context.insert(convo)
         let now = Date.now
         let photo = message(.user, "看", at: now.addingTimeInterval(-10), in: convo, context: context)
-        let image = Attachment(kind: "image", fileName: "a.jpg", data: Data([1, 2, 3]), order: 0)
+        let image = Attachment(kind: .image, fileName: "a.jpg", data: Data([1, 2, 3]), order: 0)
         image.message = photo
         context.insert(image)
         _ = message(.assistant, "好看", at: now, persona: a, in: convo, context: context)
@@ -377,48 +377,5 @@ final class LogicTests: XCTestCase {
         XCTAssertFalse(Prefs.isQuiet(day.addingTimeInterval(12 * 3600)))
     }
 
-    // MARK: - 备份再恢复，内容一样
-
-    func testBackupRoundTrip() async throws {
-        let source = try makeContext()
-        let persona = Persona(name: "TA", systemPrompt: "温柔")
-        persona.followUp = 2
-        source.insert(persona)
-        let convo = Conversation(isGroup: false, memberIDs: [persona.id])
-        convo.memory = "喜欢火锅"
-        source.insert(convo)
-        let now = Date.now
-        let asked = message(.user, "吃火锅吗", at: now.addingTimeInterval(-5), in: convo, context: source)
-        asked.readAt = now
-        let answer = message(.assistant, "好呀", at: now, persona: persona, in: convo, context: source)
-        answer.quote = "你：吃火锅吗"
-        answer.quoteID = asked.id
-        source.insert(TodoItem(title: "买菜"))
-        source.insert(DiaryEntry(day: now.startOfDay, author: .me, text: "今天很开心", mood: "开心"))
-        source.insert(Sticker(pack: "猫猫", data: Data([7])))
-        try source.save()
-        // 每个角色的真人感设置也一起备份
-        let moodKey = HumanTouch.moodKey(persona.id)
-        UserDefaults.standard.set(2, forKey: moodKey)
-
-        let data = try Backup.export(context: source)
-        UserDefaults.standard.removeObject(forKey: moodKey)
-        let target = try makeContext()
-        try await Backup.restore(data, context: target)
-
-        let personas = try target.fetch(FetchDescriptor<Persona>())
-        XCTAssertEqual(personas.map(\.name), ["TA"])
-        XCTAssertEqual(personas.first?.followUp, 2)
-        let convos = try target.fetch(FetchDescriptor<Conversation>())
-        XCTAssertEqual(convos.first?.memory, "喜欢火锅")
-        let messages = convos.first?.visibleMessages() ?? []
-        XCTAssertEqual(messages.map(\.content), ["吃火锅吗", "好呀"])
-        XCTAssertNotNil(messages.first?.readAt)
-        XCTAssertEqual(messages.last?.quoteID, asked.id)
-        XCTAssertEqual(try target.fetchCount(FetchDescriptor<TodoItem>()), 1)
-        XCTAssertEqual(try target.fetchCount(FetchDescriptor<DiaryEntry>()), 1)
-        XCTAssertEqual(try target.fetch(FetchDescriptor<Sticker>()).first?.pack, "猫猫")
-        XCTAssertEqual(UserDefaults.standard.integer(forKey: moodKey), 2)
-        UserDefaults.standard.removeObject(forKey: moodKey)
-    }
+    // 备份再恢复的测试在 StorageTests
 }

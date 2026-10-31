@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// App 里所有存在本机的设置项都在这里登记，别处只用这里的名字，不直接写字符串
+/// App 里所有存在本机的设置项都在这里登记，别处只用这里的名字，不直接写字符串。
+/// 每个键还要在下面的登记表 registry 里写一行：什么类型、进不进备份、哪一档重置会清掉它（DATA-7）
 enum Prefs {
     // MARK: 我
     static let nickname = "nickname"
@@ -74,9 +75,148 @@ enum Prefs {
     /// 你评论了动态、TA 当时没能回（电脑没连上）：连上以后补回
     static let momentPendingReplies = "momentPendingReplies"
 
+    // MARK: 天气（见 Weather）
+    /// 打开「真实天气」（默认开）
+    static let weatherEnabled = "weather.enabled"
+    /// 自己填的城市（留空就用定位）
+    static let weatherCity = "weather.city"
+    /// 取到的天气：写进提示词的那段、设置里显示的一行、取的时间
+    static let weatherSummary = "weather.summary"
+    static let weatherPlace = "weather.place"
+    static let weatherFetchedAt = "weather.fetchedAt"
+
+    // MARK: 视频分享
+    /// 上次有角色分享视频的时间：一天最多一次
+    static let videoLastShare = "video.lastShare"
+
     // MARK: 截图用的示例模式（启动参数 -demo YES -demoScreen chat）
     static let demo = "demo"
     static let demoScreen = "demoScreen"
+
+    // MARK: - 按对象生成的键
+
+    /// 每个角色自己的设置和小记录（按角色 ID 生成键名，见 HumanTouch）。删角色时全部清掉，「删除所有人设」按前缀清
+    enum Human: String, CaseIterable {
+        /// 真人节奏（Bool，默认开）
+        case pace
+        /// 小情绪（Int：0 不要、1 一点点、2 明显，默认 1）
+        case mood
+        /// 内心想法（Bool，默认关）
+        case thoughts
+        /// 刷视频分享（Bool，默认开）
+        case videos
+        /// TA 对你的称呼、闹别扭（JSON）
+        case relation
+        /// 已经在聊天里发过的相册照片（字符串数组）
+        case sentPhotos
+    }
+
+    static let humanPrefix = "human."
+
+    static func human(_ key: Human, _ id: UUID) -> String { "\(humanPrefix)\(key.rawValue).\(id.uuidString)" }
+
+    /// 聊天背景的键都以 wallpaper 开头：对话自己的选择（-1 跟随全局）、照片的明暗和模糊。「还原所有设置」按前缀清
+    static let wallpaperPrefix = "wallpaper"
+
+    static func wallpaperOf(_ owner: UUID) -> String { "wallpaper.\(owner.uuidString)" }
+    static func wallpaperDimOf(_ owner: UUID?) -> String { owner.map { "wallpaperDim.\($0.uuidString)" } ?? "wallpaperDim" }
+    static func wallpaperBlurOf(_ owner: UUID?) -> String { owner.map { "wallpaperBlur.\($0.uuidString)" } ?? "wallpaperBlur" }
+
+    // MARK: - 登记表（DATA-7）
+
+    /// 存的是什么类型：备份里的设置都存成文字，恢复时按它还原（不能看着像数字就存成数字，称呼填「520」也是文字）
+    enum Kind { case string, int, double, bool }
+
+    /// 三档重置里哪几档会清掉它；「恢复出厂设置」什么都清，不用写
+    struct Clears: OptionSet {
+        let rawValue: Int
+        /// 还原所有设置
+        static let settings = Clears(rawValue: 1)
+        /// 删除所有人设
+        static let personas = Clears(rawValue: 2)
+    }
+
+    struct Entry {
+        let key: String
+        let kind: Kind
+        /// 跟着备份走
+        let backup: Bool
+        let clears: Clears
+
+        /// 把备份里的文字按类型还原；对不上类型的不恢复
+        func value(from text: String) -> Any? {
+            switch kind {
+            case .string: return text
+            case .int: return Int(text)
+            case .double: return Double(text)
+            case .bool:
+                // 以前的备份里布尔值写成「1」「0」
+                if ["1", "true"].contains(text) { return true }
+                if ["0", "false"].contains(text) { return false }
+                return nil
+            }
+        }
+    }
+
+    /// 每个固定的键一行。新加键时必须加在这里（测试会检查 Prefs 里每个键都登记了）
+    static let registry: [Entry] = [
+        Entry(key: nickname, kind: .string, backup: true, clears: []),
+        Entry(key: defaultClaudeModel, kind: .string, backup: true, clears: .settings),
+        Entry(key: defaultCodexModel, kind: .string, backup: true, clears: .settings),
+        Entry(key: defaultClaudeEffort, kind: .string, backup: true, clears: .settings),
+        Entry(key: defaultCodexEffort, kind: .string, backup: true, clears: .settings),
+        Entry(key: showEngineLogo, kind: .bool, backup: true, clears: .settings),
+        Entry(key: appearance, kind: .int, backup: true, clears: .settings),
+        Entry(key: wallpaper, kind: .int, backup: true, clears: .settings),
+        Entry(key: wallpaperStamp, kind: .double, backup: false, clears: []),
+        Entry(key: myAvatarStamp, kind: .double, backup: false, clears: []),
+        Entry(key: widgetPhotoStamp, kind: .double, backup: false, clears: []),
+        Entry(key: homeWidgets, kind: .string, backup: true, clears: .settings),
+        Entry(key: momentsSeenAt, kind: .double, backup: false, clears: .personas),
+        Entry(key: momentsWidgetAdded, kind: .bool, backup: false, clears: .settings),
+        Entry(key: keyboardHeight, kind: .double, backup: false, clears: .settings),
+        Entry(key: stickerPackOrder, kind: .string, backup: true, clears: []),
+        Entry(key: recentSearches, kind: .string, backup: false, clears: []),
+        Entry(key: appointments, kind: .string, backup: true, clears: .personas),
+        Entry(key: followUpSettled, kind: .string, backup: false, clears: .personas),
+        Entry(key: minimaxRegion, kind: .string, backup: true, clears: .settings),
+        Entry(key: voiceNames, kind: .string, backup: true, clears: []),
+        Entry(key: diaryWriter, kind: .string, backup: true, clears: [.settings, .personas]),
+        Entry(key: whisperDay, kind: .string, backup: false, clears: .personas),
+        Entry(key: whisperText, kind: .string, backup: false, clears: .personas),
+        Entry(key: whisperAuthor, kind: .string, backup: false, clears: .personas),
+        Entry(key: inAppBanner, kind: .bool, backup: true, clears: .settings),
+        Entry(key: todoReminders, kind: .bool, backup: true, clears: .settings),
+        Entry(key: diaryReminder, kind: .bool, backup: true, clears: .settings),
+        Entry(key: quietStart, kind: .int, backup: true, clears: .settings),
+        Entry(key: quietEnd, kind: .int, backup: true, clears: .settings),
+        Entry(key: appLock, kind: .bool, backup: false, clears: .settings),
+        Entry(key: workAuth, kind: .bool, backup: false, clears: .settings),
+        Entry(key: relayAddress, kind: .string, backup: false, clears: []),
+        Entry(key: relayAddressAway, kind: .string, backup: false, clears: []),
+        Entry(key: lastBackupAt, kind: .double, backup: false, clears: []),
+        Entry(key: autoBackupToPC, kind: .bool, backup: false, clears: .settings),
+        Entry(key: backupFailedAt, kind: .double, backup: false, clears: []),
+        Entry(key: backupFailReason, kind: .string, backup: false, clears: []),
+        Entry(key: lastStoreRescue, kind: .string, backup: false, clears: []),
+        Entry(key: momentPendingReplies, kind: .string, backup: false, clears: .personas),
+        Entry(key: weatherEnabled, kind: .bool, backup: true, clears: .settings),
+        Entry(key: weatherCity, kind: .string, backup: true, clears: .settings),
+        Entry(key: weatherSummary, kind: .string, backup: false, clears: .settings),
+        Entry(key: weatherPlace, kind: .string, backup: false, clears: .settings),
+        Entry(key: weatherFetchedAt, kind: .double, backup: false, clears: .settings),
+        Entry(key: videoLastShare, kind: .double, backup: false, clears: []),
+        Entry(key: demo, kind: .bool, backup: false, clears: []),
+        Entry(key: demoScreen, kind: .string, backup: false, clears: []),
+    ]
+
+    /// 跟着备份走的设置
+    static var backedUp: [Entry] { registry.filter(\.backup) }
+
+    /// 这一档重置要清掉的键（按前缀清的另算：还原设置清 wallpaper…，删除所有人设清 human.…）
+    static func keys(clearedBy level: Clears) -> [String] {
+        registry.filter { $0.clears.contains(level) }.map(\.key)
+    }
 
     // MARK: - 读取
 

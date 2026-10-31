@@ -72,7 +72,7 @@ enum DemoMotion {
         }
         guard let data = image.jpegData(compressionQuality: 0.9) else { return }
         WallpaperStore.save(data)
-        UserDefaults.standard.set(10.0, forKey: WallpaperStore.blurKey(nil))
-        UserDefaults.standard.set(3, forKey: Prefs.wallpaper)
+        UserDefaults.standard.set(10.0, forKey: Prefs.wallpaperBlurOf(nil))
+        UserDefaults.standard.set(WallpaperStore.Choice.photo.rawValue, forKey: Prefs.wallpaper)
     }
 }

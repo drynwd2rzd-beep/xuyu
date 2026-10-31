@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import os
 
 /// 保存失败时的提示。以前保存出错会被悄悄吞掉（比如手机存储满了），界面看着正常、东西其实没存上；
 /// 现在屏幕最上面会出现一句提示，几秒后自己收起，连着出错也只提示一次
@@ -28,6 +29,7 @@ extension ModelContext {
         do {
             try save()
         } catch {
+            Log.store.error("保存失败：\(error.localizedDescription, privacy: .public)")
             Task { @MainActor in SaveAlert.shared.report() }
         }
     }

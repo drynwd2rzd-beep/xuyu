@@ -95,8 +95,8 @@ final class RelayClient {
     }
 
     var code: String {
-        get { Keychain.get("relayCode") ?? "" }
-        set { Keychain.set(newValue.trimmed.uppercased(), for: "relayCode") }
+        get { Keychain.get(Keychain.Account.relayCode) ?? "" }
+        set { Keychain.set(newValue.trimmed.uppercased(), for: Keychain.Account.relayCode) }
     }
 
     var isConnected: Bool { state == .connected }
@@ -246,7 +246,7 @@ final class RelayClient {
         // 正在进行的回复先不判失败：电脑上还在继续生成，重新连上后会接着收。90 秒还连不上才算失败。
         orphanTimeout?.cancel()
         orphanTimeout = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(90))
+            try? await Task.sleep(for: Limits.Timing.orphanReply)
             guard !Task.isCancelled, let self, self.state != .connected else { return }
             self.failStreams(RelayError.unreachable)
         }

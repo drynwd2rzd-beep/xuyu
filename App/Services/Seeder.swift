@@ -8,7 +8,9 @@ enum Seeder {
             DemoData.populate(context)
             return
         }
-        let streaming = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.statusRaw == "streaming" }))) ?? []
+        // 谓词里不能直接用枚举：先取到局部常量
+        let streamingRaw = MessageStatus.streaming.rawValue
+        let streaming = (try? context.fetch(FetchDescriptor<Message>(predicate: #Predicate { $0.statusRaw == streamingRaw }))) ?? []
         for m in streaming {
             // 有回复编号的先留着，连上电脑后去取回完整内容（ChatEngine.recover）
             if !m.relayID.isEmpty { continue }

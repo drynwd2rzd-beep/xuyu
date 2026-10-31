@@ -19,13 +19,13 @@ private struct VoiceKeyGroup: View {
     @State private var key = ""
     @State private var configured = false
     @State private var status: String?
-    @AppStorage(Prefs.minimaxRegion) private var region = "cn"
+    @AppStorage(Prefs.minimaxRegion) private var region = MiniMaxRegion.cn.rawValue
 
     var body: some View {
         SettingsGroup(title: provider.label) {
             if provider == .minimax {
                 SettingRow(title: "平台") {
-                    Segmented(items: [("cn", "国内版"), ("global", "国际版")], selection: $region)
+                    Segmented(items: [(MiniMaxRegion.cn.rawValue, "国内版"), (MiniMaxRegion.global.rawValue, "国际版")], selection: $region)
                         .fixedSize()
                 }
                 Hairline()
@@ -313,8 +313,8 @@ struct VoicePicker: View {
 
     /// 换成这个声音；换了服务就把模型和混合声音清掉（两家不通用）
     private func choose(id: String, name: String) {
-        if persona.voiceProvider != service.rawValue {
-            persona.voiceProvider = service.rawValue
+        if persona.provider != service {
+            persona.provider = service
             persona.voiceModel = ""
             persona.style.mixes = []
         }
@@ -384,11 +384,11 @@ struct VoicePicker: View {
                         data = try await URLSession.shared.data(from: url).0
                     } else {
                         let sample = Persona(name: "")
-                        sample.voiceProvider = service.rawValue
-                        sample.voiceModel = persona.voiceProvider == service.rawValue ? persona.voiceModel : ""
+                        sample.provider = service
+                        sample.voiceModel = persona.provider == service ? persona.voiceModel : ""
                         sample.voiceID = v.id
                         sample.language = persona.language
-                        data = try await Voice.speak(persona.language == "ko" ? "안녕, 오늘 하루 어땠어?" : "你好呀，今天过得怎么样？", for: sample)
+                        data = try await Voice.speak(persona.lang == .ko ? "안녕, 오늘 하루 어땠어?" : "你好呀，今天过得怎么样？", for: sample)
                     }
                     // 放不出来的不留着，下次点还会重新取
                     guard player.toggle(v.id, data: data) else {
@@ -457,7 +457,7 @@ struct VoiceCloneSheet: View {
     // 压缩后会短零点几秒：留一点余量，卡在 10 秒正好会被 MiniMax 当成太短（2037）
     private var ready: Bool { !name.trimmed.isEmpty && total >= 10.5 && working == nil }
     private var defaultSample: String {
-        persona.language == "ko" ? "안녕, 이제 이 목소리로 말할게." : "你好呀，以后我就用这个声音跟你说话啦。"
+        persona.lang == .ko ? "안녕, 이제 이 목소리로 말할게." : "你好呀，以后我就用这个声音跟你说话啦。"
     }
 
     var body: some View {
@@ -620,8 +620,8 @@ struct VoiceCloneSheet: View {
                 working = "正在复刻…"
                 let id = try await Voice.clone(request, on: provider)
                 // 换成新声音，用它念一句（MiniMax 这一句算第一次使用，声音就会一直保留）
-                if persona.voiceProvider != provider.rawValue {
-                    persona.voiceProvider = provider.rawValue
+                if persona.provider != provider {
+                    persona.provider = provider
                     persona.voiceModel = ""
                     persona.style.mixes = []
                 }
@@ -934,7 +934,7 @@ struct VoiceTuneSheet: View {
         Task {
             defer { previewing = false }
             do {
-                let text = persona.language == "ko" ? "오늘 하루 어땠어? 나는 네 생각 많이 했어." : "今天过得怎么样？我可是一直在想你哦。"
+                let text = persona.lang == .ko ? "오늘 하루 어땠어? 나는 네 생각 많이 했어." : "今天过得怎么样？我可是一直在想你哦。"
                 let data = try await Voice.speak(text, for: persona)
                 if !player.toggle("tune-\(persona.id)", data: data) { failure = String(localized: "这段声音放不出来。") }
             } catch {

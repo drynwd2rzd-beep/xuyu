@@ -61,21 +61,27 @@ final class Books {
     private(set) var shelf: [Book] = []
     private(set) var states: [UUID: State] = [:]
 
-    private static var root: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("books", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+    /// 每本书的文件夹名（都在 books/ 下面）
+    private static func folders() -> [String] {
+        // 列不出来就当书架是空的（还没导入过书时这个文件夹本来就不存在）
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: Storage.url(.books).path)) ?? []
+        return names.filter { UUID(uuidString: $0) != nil }
     }
 
+    private static func path(_ folder: String, _ file: String) -> String { "\(Storage.File.books.rawValue)/\(folder)/\(file)" }
+
     private init() {
-        let fm = FileManager.default
-        for dir in (try? fm.contentsOfDirectory(at: Self.root, includingPropertiesForKeys: nil)) ?? [] {
-            guard let data = try? Data(contentsOf: dir.appendingPathComponent("book.json")),
-                  let book = try? JSONDecoder().decode(Book.self, from: data) else { continue }
+        reload()
+    }
+
+    /// 从文件读（打开时、恢复出厂后）。某本书的文件读坏了：那本先不上书架（坏文件已改名留底）
+    func reload() {
+        shelf = []
+        states = [:]
+        for folder in Self.folders() {
+            guard let book = Storage.read(Book.self, from: Self.path(folder, "book.json")) else { continue }
             shelf.append(book)
-            if let s = (try? Data(contentsOf: dir.appendingPathComponent("state.json"))).flatMap({ try? JSONDecoder().decode(State.self, from: $0) }) {
-                states[book.id] = s
-            }
+            if let s = Storage.read(State.self, from: Self.path(folder, "state.json")) { states[book.id] = s }
         }
         shelf.sort { $0.addedAt > $1.addedAt }
     }
@@ -86,31 +92,35 @@ final class Books {
         var s = state(id)
         change(&s)
         states[id] = s
-        if let data = try? JSONEncoder().encode(s) {
-            try? data.write(to: Self.root.appendingPathComponent(id.uuidString).appendingPathComponent("state.json"), options: .atomic)
-        }
+        Storage.write(s, to: Self.path(id.uuidString, "state.json"))
     }
 
     func remove(_ id: UUID) {
         shelf.removeAll { $0.id == id }
         states[id] = nil
-        try? FileManager.default.removeItem(at: Self.root.appendingPathComponent(id.uuidString))
+        Storage.remove(Self.path(id.uuidString, ""))
+    }
+
+    /// 角色被删了：和 TA 一起读的书改成没有伴读（进度、划线留着）
+    func forget(personaID id: UUID) {
+        for (book, s) in states where s.persona == id { update(book) { $0.persona = nil } }
     }
 
     func removeAll() {
         shelf = []
         states = [:]
-        try? FileManager.default.removeItem(at: Self.root)
+        Storage.remove(.books)
     }
 
     // MARK: - 导入
 
     enum ImportError: LocalizedError {
-        case unreadable, empty
+        case unreadable, empty, unwritable
         var errorDescription: String? {
             switch self {
             case .unreadable: String(localized: "这本书打不开（有加密保护的书打不开）。")
             case .empty: String(localized: "这本书里没读出文字。")
+            case .unwritable: String(localized: "没能存下这本书，手机存储可能已满。")
             }
         }
     }
@@ -142,9 +152,7 @@ final class Books {
         }
         book.chapters = book.chapters.map { Chapter(title: $0.title, text: $0.text.trimmed) }.filter { !$0.text.isEmpty }
         guard !book.chapters.isEmpty else { throw ImportError.empty }
-        let dir = Self.root.appendingPathComponent(book.id.uuidString)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try JSONEncoder().encode(book).write(to: dir.appendingPathComponent("book.json"), options: .atomic)
+        guard Storage.write(book, to: Self.path(book.id.uuidString, "book.json")) else { throw ImportError.unwritable }
         shelf.insert(book, at: 0)
         // 从备份恢复过这本书的进度：重新导入时接上
         adoptRestored()
@@ -163,38 +171,33 @@ final class Books {
 
     /// 从本机文件读（备份在后台线程做）
     static func savedStates() -> [Saved] {
-        let fm = FileManager.default
-        var list: [Saved] = []
-        for dir in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
-            guard let state = (try? Data(contentsOf: dir.appendingPathComponent("state.json"))).flatMap({ try? JSONDecoder().decode(State.self, from: $0) }),
-                  let book = (try? Data(contentsOf: dir.appendingPathComponent("book.json"))).flatMap({ try? JSONDecoder().decode(Book.self, from: $0) })
-            else { continue }
-            list.append(Saved(title: book.title, author: book.author, chapters: book.chapters.count, state: state))
+        folders().compactMap { folder in
+            guard let state = Storage.read(State.self, from: path(folder, "state.json")),
+                  let book = Storage.read(Book.self, from: path(folder, "book.json")) else { return nil }
+            return Saved(title: book.title, author: book.author, chapters: book.chapters.count, state: state)
         }
-        return list
     }
 
-    private static var restoredURL: URL { root.appendingPathComponent("restored.json") }
+    private static let restoredPath = "\(Storage.File.books.rawValue)/restored.json"
 
     /// 从备份恢复：书架上已经有的同一本书（书名和章数都一样）马上接上进度；还没导入的先记着，导入时再接
     func restore(_ saved: [Saved]) {
-        if let data = try? JSONEncoder().encode(saved) { try? data.write(to: Self.restoredURL, options: .atomic) }
+        Storage.write(saved, to: Self.restoredPath)
         adoptRestored()
         publish()
     }
 
     private func adoptRestored() {
-        guard let data = try? Data(contentsOf: Self.restoredURL),
-              var pending = try? JSONDecoder().decode([Saved].self, from: data), !pending.isEmpty else { return }
+        guard var pending = Storage.read([Saved].self, from: Self.restoredPath), !pending.isEmpty else { return }
         for book in shelf {
             guard let i = pending.firstIndex(where: { $0.title == book.title && $0.chapters == book.chapters.count }) else { continue }
             let restored = pending.remove(at: i).state
             update(book.id) { $0 = restored }
         }
         if pending.isEmpty {
-            try? FileManager.default.removeItem(at: Self.restoredURL)
-        } else if let data = try? JSONEncoder().encode(pending) {
-            try? data.write(to: Self.restoredURL, options: .atomic)
+            Storage.remove(Self.restoredPath)
+        } else {
+            Storage.write(pending, to: Self.restoredPath)
         }
     }
 

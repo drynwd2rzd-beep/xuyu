@@ -37,7 +37,7 @@ enum DemoData {
         """, reasoning: "想放松，又有一个明确的任务。把整理笔记放在精力好的下午，控制时长，其余留白。", persona: claude, at: ago(8))
         let photos = add(context, chat, .user, "", kind: .images, at: ago(3))
         for (i, hex) in [0xE8D7B0, 0xC9D6DE, 0xD3DCCB].enumerated() {
-            let a = Attachment(kind: "image", fileName: "IMG_\(4120 + i).jpg", data: placeholder(hex: UInt32(hex), symbol: i), order: i)
+            let a = Attachment(kind: .image, fileName: "IMG_\(4120 + i).jpg", data: placeholder(hex: UInt32(hex), symbol: i), order: i)
             a.message = photos
             context.insert(a)
         }

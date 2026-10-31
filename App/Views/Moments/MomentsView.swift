@@ -223,7 +223,8 @@ struct MomentCard: View {
     @State private var burst = false
 
     private var author: Persona? { moment.personaID.flatMap { people[$0] } }
-    private var name: String { author?.name ?? PromptBuilder.userName }
+    /// 你发的用你的称呼；作者是查不到的角色（已经删了）时写「已删除的角色」，不能退回成你的名字
+    private var name: String { moment.isMine ? PromptBuilder.userName : author?.name ?? String(localized: "已删除的角色") }
 
     var body: some View {
         let comments = moment.visibleComments(at: now)
@@ -328,8 +329,8 @@ struct MomentCard: View {
 
     private func commentRow(_ c: MomentComment) -> some View {
         let who = c.personaID.flatMap { people[$0] }
-        let whoName = who?.name ?? PromptBuilder.userName
-        let to = c.replyToMe ? PromptBuilder.userName : c.replyTo.flatMap { people[$0]?.name }
+        let whoName = c.personaID == nil ? PromptBuilder.userName : who?.name ?? String(localized: "已删除的角色")
+        let to = c.replyToMe ? PromptBuilder.userName : c.replyTo.map { people[$0]?.name ?? String(localized: "已删除的角色") }
         return Button { if c.personaID != nil { onComment(c) } } label: {
             HStack(alignment: .top, spacing: 9) {
                 if c.personaID == nil { UserAvatar(size: 24) } else { AvatarView(persona: who, size: 24) }

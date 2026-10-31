@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import os
 
 /// 让 TA 更像真人：会忙、会晚点回、想起来再补一句、打字会犹豫、长短跟着心情变、有小情绪、关系慢慢变、
 /// 记得你说过要做的事、会分享自己拍的照片。每个角色在设置里有「真人节奏」开关和「小情绪」三档。
@@ -8,31 +9,26 @@ import SwiftData
 enum HumanTouch {
     // MARK: - 每个角色的开关
 
-    static func paceKey(_ id: UUID) -> String { "human.pace.\(id.uuidString)" }
-    static func moodKey(_ id: UUID) -> String { "human.mood.\(id.uuidString)" }
-    static func thoughtsKey(_ id: UUID) -> String { "human.thoughts.\(id.uuidString)" }
-    static func videosKey(_ id: UUID) -> String { "human.videos.\(id.uuidString)" }
+    // 键名都在 Prefs.human 登记；删角色时 Cleanup 按 Prefs.Human.allCases 全部清掉
 
     /// 刷视频分享给你（B 站、抖音热搜）：默认开
     static func shareVideos(_ persona: Persona) -> Bool {
-        UserDefaults.standard.object(forKey: videosKey(persona.id)) as? Bool ?? true
+        UserDefaults.standard.object(forKey: Prefs.human(.videos, persona.id)) as? Bool ?? true
     }
 
     /// 内心想法（心声）：默认关
     static func thoughts(_ persona: Persona) -> Bool {
-        UserDefaults.standard.object(forKey: thoughtsKey(persona.id)) as? Bool ?? false
+        UserDefaults.standard.object(forKey: Prefs.human(.thoughts, persona.id)) as? Bool ?? false
     }
-    private static func relationKey(_ id: UUID) -> String { "human.relation.\(id.uuidString)" }
-    private static func sentPhotosKey(_ id: UUID) -> String { "human.sentPhotos.\(id.uuidString)" }
 
     /// 真人节奏：会忙、会晚点回、会补一句、打字会犹豫。默认开
     static func pace(_ persona: Persona) -> Bool {
-        UserDefaults.standard.object(forKey: paceKey(persona.id)) as? Bool ?? true
+        UserDefaults.standard.object(forKey: Prefs.human(.pace, persona.id)) as? Bool ?? true
     }
 
     /// 小情绪：0 不要、1 一点点（默认）、2 明显
     static func moodLevel(_ persona: Persona) -> Int {
-        UserDefaults.standard.object(forKey: moodKey(persona.id)) as? Int ?? 1
+        UserDefaults.standard.object(forKey: Prefs.human(.mood, persona.id)) as? Int ?? 1
     }
 
     // MARK: - 关系
@@ -45,14 +41,17 @@ enum HumanTouch {
         var sulkSince: Date?
     }
 
+    /// 读坏了不会清空：原来的内容留底在「键名.broken」（Storage.decodeDefault）
     static func relation(_ persona: Persona) -> Relation {
-        guard let data = UserDefaults.standard.data(forKey: relationKey(persona.id)),
-              let r = try? JSONDecoder().decode(Relation.self, from: data) else { return Relation() }
-        return r
+        Storage.decodeDefault(Relation.self, key: Prefs.human(.relation, persona.id)) ?? Relation()
     }
 
     static func save(_ relation: Relation, for persona: Persona) {
-        if let data = try? JSONEncoder().encode(relation) { UserDefaults.standard.set(data, forKey: relationKey(persona.id)) }
+        do {
+            UserDefaults.standard.set(try JSONEncoder().encode(relation), forKey: Prefs.human(.relation, persona.id))
+        } catch {
+            Log.store.error("关系没能保存：\(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// TA 回复里的【称呼:…】【闹别扭】【和好】
@@ -184,7 +183,7 @@ enum HumanTouch {
     // MARK: - 分享照片
 
     private static func sentPhotos(_ persona: Persona) -> [String] {
-        UserDefaults.standard.stringArray(forKey: sentPhotosKey(persona.id)) ?? []
+        UserDefaults.standard.stringArray(forKey: Prefs.human(.sentPhotos, persona.id)) ?? []
     }
 
     /// TA 相册里还没在聊天里发过的照片（有说明的），最多 6 张
@@ -202,8 +201,8 @@ enum HumanTouch {
     static func takePhoto(_ number: Int, persona: Persona, context: ModelContext) -> AlbumPhoto? {
         guard let menu = photoMenu[persona.id], menu.indices.contains(number - 1),
               let photo = context.photo(menu[number - 1]) else { return nil }
-        let list = (sentPhotos(persona) + [photo.id.uuidString]).suffix(200)
-        UserDefaults.standard.set(Array(list), forKey: sentPhotosKey(persona.id))
+        let list = (sentPhotos(persona) + [photo.id.uuidString]).suffix(Limits.Store.sentPhotos)
+        UserDefaults.standard.set(Array(list), forKey: Prefs.human(.sentPhotos, persona.id))
         return photo
     }
 
@@ -293,28 +292,19 @@ enum HumanTouch {
 
         （其实你刚才\(late.reason)，\(late.read ? "看到了消息但没空回" : "没看到消息")。这条回复要到 \(Fmt.time24.string(from: late.deliver)) 才发出去，离 TA 发消息已经过了\(gap)。像真人一样自然地带一句为什么现在才回（比如「刚在开会」「刚醒」），不用郑重道歉，然后接着回 TA 的话。）
         """
-        guard let raw = try? await relay.complete(request), !Task.isCancelled else { return false }
+        guard let raw = await relay.attempt(request, "晚回"), !Task.isCancelled, !convo.isDeleted else { return false }
         let parts = ReplyText.paragraphs(raw, whole: false).map { ReplyText.markers(in: $0).body.trimmed }.filter { !$0.isEmpty }
         guard !parts.isEmpty else { return false }
         var at = late.deliver
+        // 晚回的消息用记号认出来：你又发了消息时，按同一个时间重新写
+        let marker: PlannedMessages.Marker = late.read ? .lateRead : .lateUnread
         for (index, text) in parts.enumerated() {
             if index > 0 { at = at.addingTimeInterval(Double.random(in: 3...9)) }
-            let m = Message(role: .assistant, content: text, personaID: persona.id)
-            m.isProactive = true
-            m.relayID = late.read ? lateRead : lateUnread
-            m.createdAt = at
-            convo.add(m, context: context)
-            if index == 0 {
-                Reminders.scheduleProactive(messageID: m.id, conversationID: convo.id, title: persona.name, body: text, at: at)
-            }
+            // 分成几条时只有第一条到点响
+            PlannedMessages.plan(text, by: persona, in: convo, at: at, marker: marker, notify: index == 0, context: context)
         }
-        context.persist()
         return true
     }
-
-    /// 晚回的消息用这两个记号认出来（你又发了消息时，按同一个时间重新写）
-    static let lateRead = "late-read"
-    static let lateUnread = "late-unread"
 
     // MARK: - 想起来再补一句
 
@@ -340,23 +330,17 @@ enum HumanTouch {
         let prompt = """
         下面是你们最近的聊天记录：
 
-        \(PromptBuilder.transcript(Array(visible.suffix(16)), names: names))
+        \(PromptBuilder.transcript(Array(visible.suffix(Limits.Prompt.shortChat)), names: names))
 
         \(task)
         否则只写一两句，口语化，可以用「对了」「刚想起来」这类开头，但不一定。只输出消息内容。
         """
-        guard let text = try? await relay.complete(Companion.lightRequest(persona, prompt)),
+        guard let text = await relay.attempt(Companion.lightRequest(persona, prompt), "补一句"),
               !text.trimmed.isEmpty, !text.contains("不补充") else { return }
-        // 想的这段时间里你又说话了：不补了
-        guard convo.visibleMessages().last?.id == last.id else { return }
+        // 想的这段时间里被停下了（清空聊天、删角色），或者你又说话了：不补了（CONC-3）
+        guard !Task.isCancelled, !convo.isDeleted, convo.visibleMessages().last?.id == last.id else { return }
         let body = ReplyText.markers(in: text).body.trimmed
         guard !body.isEmpty else { return }
-        let m = Message(role: .assistant, content: body, personaID: persona.id)
-        m.isProactive = true
-        m.relayID = "afterthought"
-        m.createdAt = deliver
-        convo.add(m, context: context)
-        context.persist()
-        Reminders.scheduleProactive(messageID: m.id, conversationID: convo.id, title: persona.name, body: body, at: deliver)
+        PlannedMessages.plan(body, by: persona, in: convo, at: deliver, marker: .afterthought, context: context)
     }
 }

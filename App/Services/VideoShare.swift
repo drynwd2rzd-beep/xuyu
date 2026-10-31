@@ -5,10 +5,9 @@ import UIKit
 
 /// 刷视频分享：TA 刷 B 站（公开的热门接口，不用登录）挑一个视频分享给你；看抖音热搜分享一个话题；
 /// 你粘贴抖音分享链接给 TA，聊天里显示成视频卡片。TA 看不到画面，靠标题、简介、标签、封面聊。
-/// 卡片信息存在本机一个小文件里（消息 ID → 卡片），不改数据库
-@Observable
-final class VideoCards {
-    static let shared = VideoCards()
+/// 卡片信息存在本机一个小文件里（消息 ID → 卡片），不改数据库；删消息时一起删
+enum VideoCards {
+    static let shared = KeyedFileStore<Card>(.videoCards)
 
     struct Card: Codable, Hashable {
         enum Source: String, Codable { case bilibili, douyin, douyinHot }
@@ -20,34 +19,9 @@ final class VideoCards {
         var url: String
     }
 
-    private(set) var byMessage: [UUID: Card] = [:]
-    @ObservationIgnored private let file: URL
-
-    private init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        file = dir.appendingPathComponent("video-cards.json")
-        reload()
-    }
-
-    /// 从文件读（打开时、从备份恢复后）
-    func reload() {
-        byMessage = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([UUID: Card].self, from: $0) } ?? [:]
-    }
-
-    func card(_ id: UUID) -> Card? { byMessage[id] }
-
-    func set(_ card: Card, for id: UUID) {
-        byMessage[id] = card
-        if let data = try? JSONEncoder().encode(byMessage) { try? data.write(to: file, options: .atomic) }
-    }
-
-    func clear() {
-        byMessage = [:]
-        try? FileManager.default.removeItem(at: file)
-    }
-
     // MARK: - 你发来的抖音分享
 
+    // 写死的正则字面量，不会失败（测试里第一次用到就会暴露）
     private static let douyinLink = try! Regex("https?://v\\.douyin\\.com/[A-Za-z0-9_\\-]+/?")
 
     /// 抖音「复制链接」出来的那段字：「3.52 复制打开抖音，看看【某某的作品】文案 #话题 https://v.douyin.com/xxx/」
@@ -67,18 +41,16 @@ final class VideoCards {
 
     // MARK: - TA 刷到的
 
-    private static let lastShareKey = "video.lastShare"
-
     /// 每天最多一次：某位开了「刷视频分享」的角色，挑一个 B 站热门视频或一个抖音热搜，配一句话，排在今天晚些时候发来
     @MainActor
     static func maybeShare(context: ModelContext, relay: RelayClient) async {
         // 免打扰时段不刷（刷到了也别半夜发来）
         guard relay.isConnected, !DemoMode.isOn, !Prefs.isQuiet(.now), !Prefs.isQuiet(.now.addingTimeInterval(600)) else { return }
-        let last = UserDefaults.standard.double(forKey: lastShareKey)
-        guard Date.now.timeIntervalSince1970 - last > 20 * 3600, Double.random(in: 0..<1) < 0.6 else { return }
+        let last = UserDefaults.standard.double(forKey: Prefs.videoLastShare)
+        guard Date.now.timeIntervalSince1970 - last > Limits.Timing.videoShare, Double.random(in: 0..<1) < 0.6 else { return }
         let personas = context.allPersonas().filter { !$0.canWork && HumanTouch.shareVideos($0) }
         guard let persona = personas.randomElement() else { return }
-        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: lastShareKey)
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: Prefs.videoLastShare)
         let useHot = Double.random(in: 0..<1) < 0.3
         let options: [Card] = useHot ? await douyinHot() : await bilibiliPopular()
         guard !options.isEmpty else { return }
@@ -93,7 +65,7 @@ final class VideoCards {
         都没意思就只输出：不分享
         否则只输出 JSON：{"index":编号,"text":"你说的那句话"}
         """
-        guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)), !raw.contains("不分享"),
+        guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "视频分享"), !raw.contains("不分享"),
               let start = raw.firstIndex(of: "{"), let end = raw.lastIndex(of: "}"),
               let data = String(raw[start...end]).data(using: .utf8),
               let pick = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -111,14 +83,8 @@ final class VideoCards {
         if Prefs.isQuiet(deliver) { deliver = Date.now.addingTimeInterval(600) }
         // TA 这会儿在睡觉：等醒了再「刷到」
         deliver = World.awake(deliver, for: persona.id)
-        let m = Message(role: .assistant, content: text, personaID: persona.id)
-        m.isProactive = true
-        m.relayID = "video"
-        m.createdAt = deliver
-        convo.add(m, context: context)
-        context.persist()
+        let m = PlannedMessages.plan(text, by: persona, in: convo, at: deliver, marker: .video, context: context)
         VideoCards.shared.set(card, for: m.id)
-        Reminders.scheduleProactive(messageID: m.id, conversationID: convo.id, title: persona.name, body: text, at: deliver)
     }
 
     private struct BiliPopular: Decodable {
@@ -173,4 +139,9 @@ final class VideoCards {
             UIApplication.shared.open(web)
         }
     }
+}
+
+extension KeyedFileStore where Value == VideoCards.Card {
+    /// 这条消息上的视频卡片
+    func card(_ id: UUID) -> VideoCards.Card? { value(id) }
 }

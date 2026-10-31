@@ -45,18 +45,13 @@ final class ListenTogether {
 
     var isOn: Bool { persona != nil }
 
-    private static var historyURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return dir.appendingPathComponent("listened.json")
-    }
-
     private init() {
         reloadHistory()
     }
 
     /// 从文件读（打开时、从备份恢复后）
     func reloadHistory() {
-        history = (try? Data(contentsOf: Self.historyURL)).flatMap { try? JSONDecoder().decode([Song].self, from: $0) } ?? []
+        history = Storage.read([Song].self, from: .listened) ?? []
     }
 
     // MARK: - 开始 / 结束
@@ -88,6 +83,11 @@ final class ListenTogether {
             }
         }
         return nil
+    }
+
+    /// 角色被删了：正和 TA 一起听就停下（静音保活、换歌回调都停）
+    func stop(ifWith id: UUID) {
+        if persona == id { stop() }
     }
 
     func stop() {
@@ -147,8 +147,8 @@ final class ListenTogether {
         song.at = .now
         history.removeAll { $0.id == song.id }
         history.insert(song, at: 0)
-        history = Array(history.prefix(200))
-        if let data = try? JSONEncoder().encode(history) { try? data.write(to: Self.historyURL, options: .atomic) }
+        history = Array(history.prefix(Limits.Store.listened))
+        Storage.write(history, to: .listened)
         maybeComment(on: song)
     }
 
@@ -176,7 +176,7 @@ final class ListenTogether {
     /// 换歌时偶尔说一句（不是每首都说，至少隔 6 分钟）：在聊天里发出来，絮语在后台时弹通知
     private func maybeComment(on song: Song) {
         guard let id = persona, let context, let relay, relay.isConnected,
-              Date.now.timeIntervalSince(lastComment) > 360, Double.random(in: 0..<1) < 0.35,
+              Date.now.timeIntervalSince(lastComment) > Limits.Timing.listenComment, Double.random(in: 0..<1) < 0.35,
               let persona = context.persona(id) else { return }
         lastComment = .now
         Task {
@@ -184,7 +184,7 @@ final class ListenTogether {
             你和\(PromptBuilder.userName)正在一起听歌（你听不到声音，但知道在放哪首）。现在开始放《\(song.title)》\(song.artist.isEmpty ? "" : " - \(song.artist)")。
             像一起听歌的朋友那样随口说一句：可以说你对这首歌的印象、它让你想起什么、或者问 TA 喜不喜欢。一句话，口语化，不要用书名号以外的引号。只输出这一句。
             """
-            guard let text = try? await relay.complete(Companion.lightRequest(persona, prompt)),
+            guard let text = await relay.attempt(Companion.lightRequest(persona, prompt), "一起听插话"),
                   !text.trimmed.isEmpty, self.persona == id else { return }
             let convo = context.chat(for: persona)
             // TA 正在打字回你：这句就不插了，不然会把那段回复从中间隔开

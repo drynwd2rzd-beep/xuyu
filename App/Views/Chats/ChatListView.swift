@@ -93,7 +93,13 @@ struct ChatListView: View {
                             isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
                             titleVisibility: .visible, presenting: pendingRemoval) { convo in
             Button(convo.isGroup ? "删除" : "清空", role: .destructive) {
-                withAnimation(Motion.spring) { ConversationRemover.remove(convo, context: context, engine: engine) }
+                Task {
+                    if convo.isGroup {
+                        await Cleanup.deleteGroup(convo, context: context, engine: engine)
+                    } else {
+                        await Cleanup.clearChat(convo, context: context, engine: engine)
+                    }
+                }
             }
         } message: { convo in
             Text(convo.isGroup ? "群聊和里面的记录都会删除，无法恢复。" : "角色会保留，记录删除后无法恢复。")

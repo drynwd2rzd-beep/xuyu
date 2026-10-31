@@ -323,7 +323,7 @@ struct MessageRow: View {
             Button {
                 // 等长按菜单完全收起再展开，两个动画不会撞在一起
                 Task {
-                    try? await Task.sleep(for: .milliseconds(380))
+                    try? await Task.sleep(for: Motion.menuSettle)
                     withAnimation(Motion.spring) { transcript.toggle() }
                 }
             } label: {
@@ -339,7 +339,7 @@ struct MessageRow: View {
                 Button {
                     // 等长按菜单收起再收起翻译，两个动画不撞在一起
                     Task {
-                        try? await Task.sleep(for: .milliseconds(380))
+                        try? await Task.sleep(for: Motion.menuSettle)
                         engine.hideTranslation(message, context: context)
                     }
                 } label: { Label("收起翻译", systemImage: "character.bubble") }

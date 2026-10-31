@@ -326,7 +326,7 @@ struct StickerPanel: View {
         addingTo = name
         Task {
             // 等起名字的卡片收下去再打开相册
-            try? await Task.sleep(for: .milliseconds(450))
+            try? await Task.sleep(for: Motion.dismissSettle)
             showPicker = true
         }
     }

@@ -65,24 +65,19 @@ enum World {
         var lastTurn: Date?
     }
 
-    private static var url: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("world.json")
-    }
-
     nonisolated(unsafe) private static var cache: State?
 
+    /// 读坏了不会清空：坏文件改名留底（Storage），这里从空的世界继续
     static var state: State {
         get {
             if let cache { return cache }
-            let loaded = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(State.self, from: $0) } ?? State()
+            let loaded = Storage.read(State.self, from: .world) ?? State()
             cache = loaded
             return loaded
         }
         set {
             cache = newValue
-            if let data = try? JSONEncoder().encode(newValue) { try? data.write(to: url, options: .atomic) }
+            Storage.write(newValue, to: .world)
             NotificationCenter.default.post(name: changed, object: nil)
         }
     }
@@ -97,8 +92,28 @@ enum World {
 
     /// 恢复出厂设置时清掉
     static func clear() {
-        try? FileManager.default.removeItem(at: url)
+        Storage.remove(.world)
         cache = State()
+    }
+
+    /// 角色被删了：和 TA 有关的关系、TA 的生活一起删，世界大事里不再算上 TA
+    static func forget(personaID id: UUID) {
+        var s = state
+        s.relations.removeAll { $0.a == id || $0.b == id }
+        s.lives[id] = nil
+        for i in s.events.indices { s.events[i].who.removeAll { $0 == id } }
+        guard s != state else { return }
+        state = s
+    }
+
+    /// 删除所有人设：每个人的生活、关系、世界大事都清掉；你写的世界和「你是谁」留着
+    static func forgetEveryone() {
+        var s = state
+        s.lives = [:]
+        s.relations = []
+        s.events = []
+        s.lastTurn = nil
+        state = s
     }
 
     static func life(_ id: UUID) -> Life { state.lives[id] ?? Life() }
@@ -256,7 +271,7 @@ enum World {
         再写 0～2 件今天世界里发生的、大家都会知道的小事（可以是两个人物之间的，也可以和\(PromptBuilder.userName)有关），没有就不写。
         只输出 JSON，不要别的字：{"people":[{"name":"名字","mood":"两个字","plan":[{"time":"09:30","what":"做什么"}]}],"events":[{"text":"发生了什么","who":["名字"]}]}
         """
-        guard let raw = try? await relay.complete(Companion.lightRequest(writer, prompt)),
+        guard let raw = await relay.attempt(Companion.lightRequest(writer, prompt), "世界安排"),
               let json = raw.firstIndex(of: "{").flatMap({ start in raw.lastIndex(of: "}").map { String(raw[start...$0]) } }),
               let data = json.data(using: .utf8),
               let turn = try? JSONDecoder().decode(Turn.self, from: data) else { return }
@@ -274,7 +289,7 @@ enum World {
                 let who = (e.who ?? []).compactMap { n in personas.first { $0.name == n }?.id }
                 s.events.append(Event(day: today, text: e.text.trimmed, who: who))
             }
-            s.events = Array(s.events.suffix(60))
+            s.events = Array(s.events.suffix(Limits.Store.worldEvents))
         }
         s.lastTurn = today
         state = s
@@ -331,5 +346,70 @@ enum World {
             }
         }
         return list.sorted { $0.day < $1.day }
+    }
+}
+
+// MARK: - 读旧文件
+
+// 合成的解码不认属性默认值：以后给这些结构加字段，旧的 world.json 里没有那一项就会整份读不出来。
+// 这里手写解码，缺的项用默认值（DATA-6）
+
+extension World.Relation {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(text: try c.decodeIfPresent(String.self, forKey: .text) ?? "")
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? id
+        a = try c.decodeIfPresent(UUID.self, forKey: .a)
+        b = try c.decodeIfPresent(UUID.self, forKey: .b)
+    }
+}
+
+extension World.Rhythm {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sleep = try c.decodeIfPresent(Double.self, forKey: .sleep) ?? sleep
+        wake = try c.decodeIfPresent(Double.self, forKey: .wake) ?? wake
+        busyFrom = try c.decodeIfPresent(Double.self, forKey: .busyFrom) ?? busyFrom
+        busyTo = try c.decodeIfPresent(Double.self, forKey: .busyTo) ?? busyTo
+        weekendFree = try c.decodeIfPresent(Bool.self, forKey: .weekendFree) ?? weekendFree
+    }
+}
+
+extension World.Life {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? role
+        rhythm = try c.decodeIfPresent(World.Rhythm.self, forKey: .rhythm) ?? rhythm
+        realRhythm = try c.decodeIfPresent(Bool.self, forKey: .realRhythm) ?? realRhythm
+        planDay = try c.decodeIfPresent(Date.self, forKey: .planDay)
+        plan = try c.decodeIfPresent([World.PlanItem].self, forKey: .plan) ?? plan
+        mood = try c.decodeIfPresent(String.self, forKey: .mood) ?? mood
+    }
+}
+
+extension World.Event {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(day: try c.decode(Date.self, forKey: .day), text: try c.decode(String.self, forKey: .text))
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? id
+        who = try c.decodeIfPresent([UUID].self, forKey: .who) ?? who
+    }
+}
+
+extension World.State {
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        world = try c.decodeIfPresent(String.self, forKey: .world) ?? world
+        you = try c.decodeIfPresent(String.self, forKey: .you) ?? you
+        relations = try c.decodeIfPresent([World.Relation].self, forKey: .relations) ?? relations
+        lives = try c.decodeIfPresent([UUID: World.Life].self, forKey: .lives) ?? lives
+        events = try c.decodeIfPresent([World.Event].self, forKey: .events) ?? events
+        lifeOn = try c.decodeIfPresent(Bool.self, forKey: .lifeOn) ?? lifeOn
+        moodCarry = try c.decodeIfPresent(Bool.self, forKey: .moodCarry) ?? moodCarry
+        eventsOn = try c.decodeIfPresent(Bool.self, forKey: .eventsOn) ?? eventsOn
+        lastTurn = try c.decodeIfPresent(Date.self, forKey: .lastTurn)
     }
 }

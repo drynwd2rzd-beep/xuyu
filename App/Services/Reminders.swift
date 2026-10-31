@@ -37,7 +37,7 @@ enum Reminders {
 
     /// 待办只提前排这么久以内要响的：iOS 最多只留 64 条还没响的本地通知，排得太远会把近处的挤掉（被系统悄悄丢掉）。
     /// 更远的等快到了再排（每次打开 App 都会补排一遍）
-    private static let horizon: TimeInterval = 14 * 24 * 3600
+    private static let horizon = Limits.Timing.todoHorizon
 
     /// 打开 App 时：把所有没做完的待办重新排一遍，两周内要响的补上
     @MainActor
@@ -104,6 +104,22 @@ enum Reminders {
     }
 
     static func cancelProactive(messageID: UUID) {
-        center.removePendingNotificationRequests(withIdentifiers: ["proactive-" + messageID.uuidString])
+        cancelProactive(messageIDs: [messageID])
+    }
+
+    static func cancelProactive(messageIDs: [UUID]) {
+        guard !messageIDs.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: messageIDs.map { "proactive-" + $0.uuidString })
+    }
+
+    /// 清空、删掉的聊天：已经弹出来的通知也清掉，点了不会进到空的聊天或空白页
+    static func removeDelivered(conversations ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        let targets = Set(ids.map(\.uuidString))
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { list in
+            let gone = list.filter { targets.contains($0.request.content.userInfo["conversation"] as? String ?? "") }
+            center.removeDeliveredNotifications(withIdentifiers: gone.map(\.request.identifier))
+        }
     }
 }

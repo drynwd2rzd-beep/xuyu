@@ -6,41 +6,33 @@ import CoreLocation
 /// 或者用你在设置里填的城市。发给 TA 的只有「哪个城市、什么天气」
 @MainActor
 enum Weather {
-    /// 打开「真实天气」（默认开；没给定位、也没填城市时就什么都不说）
-    nonisolated static let enabledKey = "weather.enabled"
-    /// 自己填的城市（留空就用定位）
-    static let cityKey = "weather.city"
-    nonisolated private static let summaryKey = "weather.summary"
-    private static let placeKey = "weather.place"
-    nonisolated private static let fetchedKey = "weather.fetchedAt"
-
-    nonisolated static var enabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
+    nonisolated static var enabled: Bool { UserDefaults.standard.object(forKey: Prefs.weatherEnabled) as? Bool ?? true }
 
     /// 写进提示词的那段（太旧了就不用：超过 3 小时的天气不准了）
     nonisolated static var summary: String? {
         let d = UserDefaults.standard
-        guard enabled, let text = d.string(forKey: summaryKey), !text.isEmpty,
-              Date.now.timeIntervalSince1970 - d.double(forKey: fetchedKey) < 3 * 3600 else { return nil }
+        guard enabled, let text = d.string(forKey: Prefs.weatherSummary), !text.isEmpty,
+              Date.now.timeIntervalSince1970 - d.double(forKey: Prefs.weatherFetchedAt) < Limits.Timing.weatherStale else { return nil }
         return text
     }
 
     /// 设置里显示的一行：「首尔 · 小雨 14°」
-    static var shortLine: String? { UserDefaults.standard.string(forKey: placeKey) }
+    static var shortLine: String? { UserDefaults.standard.string(forKey: Prefs.weatherPlace) }
 
     private static var refreshing = false
 
     /// App 打开、回到前台时调用：一小时内取过就不再取
     static func refreshIfNeeded(force: Bool = false) async {
         guard enabled, !DemoMode.isOn, !refreshing else { return }
-        let last = UserDefaults.standard.double(forKey: fetchedKey)
-        guard force || Date.now.timeIntervalSince1970 - last > 3600 else { return }
+        let last = UserDefaults.standard.double(forKey: Prefs.weatherFetchedAt)
+        guard force || Date.now.timeIntervalSince1970 - last > Limits.Timing.weatherRefresh else { return }
         refreshing = true
         defer { refreshing = false }
         guard let place = await locate(), let report = await fetch(place) else { return }
         let d = UserDefaults.standard
-        d.set(report.summary, forKey: summaryKey)
-        d.set(report.short, forKey: placeKey)
-        d.set(Date.now.timeIntervalSince1970, forKey: fetchedKey)
+        d.set(report.summary, forKey: Prefs.weatherSummary)
+        d.set(report.short, forKey: Prefs.weatherPlace)
+        d.set(Date.now.timeIntervalSince1970, forKey: Prefs.weatherFetchedAt)
     }
 
     // MARK: - 在哪儿
@@ -53,7 +45,7 @@ enum Weather {
 
     /// 填了城市就查这个城市；没填就用手机定位（第一次会问你允不允许）
     private static func locate() async -> Place? {
-        let city = (UserDefaults.standard.string(forKey: cityKey) ?? "").trimmed
+        let city = (UserDefaults.standard.string(forKey: Prefs.weatherCity) ?? "").trimmed
         if !city.isEmpty { return await geocode(city) }
         guard let location = await LocationOnce.shared.current() else { return nil }
         let mark = (try? await CLGeocoder().reverseGeocodeLocation(location))?.first

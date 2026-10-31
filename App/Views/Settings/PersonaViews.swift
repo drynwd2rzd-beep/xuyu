@@ -332,15 +332,15 @@ struct PersonaEditor: View {
         .confirmationDialog("清空和 \(persona.name) 的聊天记录？", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("清空", role: .destructive) {
                 let convo = context.chat(for: persona)
-                for m in convo.messages ?? [] { context.delete(m) }
-                Memory.reset(convo)
-                context.persist()
+                Task { await Cleanup.clearChat(convo, context: context, engine: engine) }
             }
+        } message: {
+            Text("角色会保留，记录删除后无法恢复。")
         }
         .confirmationDialog("删除「\(persona.name)」？", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("删除", role: .destructive, action: deletePersona)
         } message: {
-            Text("和 TA 的单聊记录会一起删除。")
+            Text("和 TA 的聊天、记忆、动态、相册和日记都会一起删除。")
         }
     }
 
@@ -409,37 +409,17 @@ struct PersonaEditor: View {
         .frame(height: Space.row)
     }
 
+    /// 先退出正在显示 TA 的页面（编辑页；从 TA 的聊天里点进来的，连聊天一起退出），等退完再删（NAV-4）。
+    /// 删什么、按什么顺序删，见 Cleanup.deletePersona
     private func deletePersona() {
         let id = persona.id
-        // TA 和你的约定：撤掉到点要发的消息
-        for a in Appointments.all where a.personaID == id { Appointments.remove(a, context: context) }
-        let convos = ((try? context.fetch(FetchDescriptor<Conversation>())) ?? []).filter { $0.memberIDs.contains(id) }
-        var singles: [Conversation] = []
-        for c in convos {
-            // TA 正在回：先停下，不然还会往删掉的聊天里写
-            if !c.isGroup || engine.typing[c.id] == id { engine.stop(c) }
-            // TA 提前排好的主动消息、追问：撤掉通知，不然删了以后还会弹出来
-            for m in c.plannedMessages() where m.personaID == id {
-                Reminders.cancelProactive(messageID: m.id)
-                context.delete(m)
-            }
-            if c.isGroup {
-                c.memberIDs.removeAll { $0 == id }
-            } else {
-                singles.append(c)
-            }
-        }
+        if let open = router.chat, context.conversation(open)?.memberIDs == [id] { router.closeChat() }
         dismiss()
         let target = persona
         Task {
-            // 等页面退回去、停下的回复收好尾，再删 TA 和你们的单聊
-            try? await Task.sleep(for: .milliseconds(350))
-            for c in singles {
-                WallpaperStore.remove(for: c.id)
-                context.delete(c)
-            }
-            context.delete(target)
-            context.persist()
+            // 页面退回、聊天层散开都没有回调可等：等它们走完
+            try? await Task.sleep(for: Motion.dismissSettle)
+            await Cleanup.deletePersona(target, context: context, engine: engine)
         }
     }
 }

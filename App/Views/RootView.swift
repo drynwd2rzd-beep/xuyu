@@ -71,7 +71,7 @@ struct RootView: View {
     /// 从聊天等页面回来时，确认键盘状态是真实的（避免底栏一直藏着）
     private func settleKeyboard() {
         Task {
-            try? await Task.sleep(for: .milliseconds(400))
+            try? await Task.sleep(for: Motion.dismissSettle)
             let up = UIApplication.shared.connectedScenes
                 .compactMap { ($0 as? UIWindowScene)?.keyWindow }
                 .first?.firstResponderIsTextInput ?? false

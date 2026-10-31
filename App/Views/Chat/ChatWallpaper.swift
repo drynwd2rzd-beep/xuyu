@@ -6,42 +6,46 @@ import CoreImage
 
 /// 聊天背景：全局一张，每个对话也可以单独设一张（owner 为对话 id）
 enum WallpaperStore {
-    /// 每个对话自己的背景选择；-1 表示跟随全局
-    static func key(_ owner: UUID) -> String { "wallpaper.\(owner.uuidString)" }
+    /// 背景选的是哪一个：存的是它的数字（Prefs.wallpaper、Prefs.wallpaperOf），数字不能改（DATA-5）
+    enum Choice: Int {
+        /// 对话自己不设，跟随全局
+        case follow = -1
+        case paper, mist, night, photo
+    }
+
     /// 照片每次更换都会改这个值，让界面重新读图
     static let stampKey = Prefs.wallpaperStamp
 
-    static func url(_ owner: UUID?) -> URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent(owner.map { "wallpaper-\($0.uuidString).jpg" } ?? "wallpaper.jpg")
+    /// 照片文件名：全局一张，每个对话一张（都以 Storage.wallpaperPrefix 开头）
+    private static func fileName(_ owner: UUID?) -> String {
+        owner.map { "\(Storage.wallpaperPrefix)-\($0.uuidString).jpg" } ?? "\(Storage.wallpaperPrefix).jpg"
     }
 
+    static func url(_ owner: UUID?) -> URL { Storage.url(fileName(owner)) }
+
+    /// 写不进去时 Storage 已经提示过「没能保存」，原来的背景照旧
     static func save(_ data: Data, for owner: UUID? = nil) {
-        guard let jpeg = ImageUtil.downscale(data, maxSide: 2000, quality: 0.85) else { return }
-        try? jpeg.write(to: url(owner), options: .atomic)
+        guard let jpeg = ImageUtil.downscale(data, maxSide: 2000, quality: 0.85), Storage.writeData(jpeg, to: fileName(owner)) else { return }
         cache[owner] = nil
         brightness[owner] = nil
         blurCache.removeAll()
         UserDefaults.standard.set(Date.now.timeIntervalSince1970, forKey: stampKey)
     }
 
-    /// 对话被删除时一并清掉
+    /// 对话被删除时一并清掉：照片、选择、明暗和模糊
     static func remove(for owner: UUID) {
-        try? FileManager.default.removeItem(at: url(owner))
+        Storage.remove(fileName(owner))
         cache[owner] = nil
         brightness[owner] = nil
         blurCache.removeAll()
-        UserDefaults.standard.removeObject(forKey: key(owner))
+        for key in [Prefs.wallpaperOf(owner), Prefs.wallpaperDimOf(owner), Prefs.wallpaperBlurOf(owner)] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     /// 还原设置 / 恢复出厂时：选过的背景照片（全局的和每个对话的）全部删掉
     static func removeAllPhotos() {
-        let dir = url(nil).deletingLastPathComponent()
-        for file in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        where file.lastPathComponent.hasPrefix("wallpaper") {
-            try? FileManager.default.removeItem(at: file)
-        }
+        for name in Storage.names(prefix: Storage.wallpaperPrefix) { Storage.remove(name) }
         cache.removeAll()
         brightness.removeAll()
         blurCache.removeAll()
@@ -49,18 +53,16 @@ enum WallpaperStore {
     }
 
     /// 照片背景的明暗（-0.6 更暗 … 0.6 更亮）和模糊（0…24），每个背景各存一份
-    static func dimKey(_ owner: UUID?) -> String { owner.map { "wallpaperDim.\($0.uuidString)" } ?? "wallpaperDim" }
-    static func blurKey(_ owner: UUID?) -> String { owner.map { "wallpaperBlur.\($0.uuidString)" } ?? "wallpaperBlur" }
     static let defaultDim = 0.15
 
     static func adjustments(for owner: UUID?) -> (dim: Double, blur: Double) {
         let d = UserDefaults.standard
-        return (d.object(forKey: dimKey(owner)) as? Double ?? defaultDim, d.double(forKey: blurKey(owner)))
+        return (d.object(forKey: Prefs.wallpaperDimOf(owner)) as? Double ?? defaultDim, d.double(forKey: Prefs.wallpaperBlurOf(owner)))
     }
 
     /// 对话自己设了背景就用自己的，否则跟随全局
     static func resolve(for convoID: UUID, global: Int) -> (index: Int, owner: UUID?) {
-        let own = UserDefaults.standard.object(forKey: key(convoID)) as? Int ?? -1
+        let own = UserDefaults.standard.object(forKey: Prefs.wallpaperOf(convoID)) as? Int ?? Choice.follow.rawValue
         return own >= 0 ? (own, convoID) : (global, nil)
     }
 
@@ -234,7 +236,7 @@ struct ChatWallpaper: View {
 
     var body: some View {
         Group {
-            if index == 3, let image = WallpaperStore.blurred(for: owner, radius: WallpaperStore.adjustments(for: owner).blur) {
+            if index == WallpaperStore.Choice.photo.rawValue, let image = WallpaperStore.blurred(for: owner, radius: WallpaperStore.adjustments(for: owner).blur) {
                 let adjust = WallpaperStore.adjustments(for: owner)
                 Color.clear.overlay {
                     Image(uiImage: image)
@@ -244,7 +246,7 @@ struct ChatWallpaper: View {
                 .clipped()
                 .overlay(adjust.dim >= 0 ? Color.white.opacity(adjust.dim) : Color.black.opacity(-adjust.dim))
             } else {
-                Self.swatches[min(max(index, 0), 2)].1
+                Self.swatches[min(max(index, WallpaperStore.Choice.paper.rawValue), WallpaperStore.Choice.night.rawValue)].1
             }
         }
         .ignoresSafeArea(edges: edgeToEdge ? .all : [])
@@ -263,15 +265,15 @@ struct WallpaperPicker: View {
     init(owner: UUID?) {
         self.owner = owner
         if let owner {
-            _selection = AppStorage(wrappedValue: -1, WallpaperStore.key(owner))
+            _selection = AppStorage(wrappedValue: WallpaperStore.Choice.follow.rawValue, Prefs.wallpaperOf(owner))
         } else {
             _selection = AppStorage(wrappedValue: 0, Prefs.wallpaper)
         }
-        _dim = AppStorage(wrappedValue: WallpaperStore.defaultDim, WallpaperStore.dimKey(owner))
-        _blur = AppStorage(wrappedValue: 0, WallpaperStore.blurKey(owner))
+        _dim = AppStorage(wrappedValue: WallpaperStore.defaultDim, Prefs.wallpaperDimOf(owner))
+        _blur = AppStorage(wrappedValue: 0, Prefs.wallpaperBlurOf(owner))
     }
 
-    private var hasPhoto: Bool { selection == 3 && WallpaperStore.image(for: owner) != nil }
+    private var hasPhoto: Bool { selection == WallpaperStore.Choice.photo.rawValue && WallpaperStore.image(for: owner) != nil }
 
     var body: some View {
         VStack(spacing: Space.section) {
@@ -305,7 +307,7 @@ struct WallpaperPicker: View {
     private var swatches: some View {
         HStack(spacing: 10) {
             if owner != nil {
-                pick(-1, "跟随") {
+                pick(WallpaperStore.Choice.follow.rawValue, "跟随") {
                     ZStack {
                         Palette.paper
                         Image(systemName: "circle.lefthalf.filled").font(.system(size: 17)).foregroundStyle(Palette.inkSoft)
@@ -316,8 +318,8 @@ struct WallpaperPicker: View {
                 pick(i, ChatWallpaper.swatches[i].0) { ChatWallpaper.swatches[i].1 }
             }
             PhotosPicker(selection: $item, matching: .images) {
-                swatch(3, "照片") {
-                    if selection == 3, let image = WallpaperStore.image(for: owner) {
+                swatch(WallpaperStore.Choice.photo.rawValue, "照片") {
+                    if selection == WallpaperStore.Choice.photo.rawValue, let image = WallpaperStore.image(for: owner) {
                         // 小预览也跟着明暗、模糊实时变化
                         Color.clear.overlay {
                             Image(uiImage: image).resizable().scaledToFill().blur(radius: blur / 4, opaque: true)
@@ -344,7 +346,7 @@ struct WallpaperPicker: View {
             Task {
                 if let data = try? await picked.loadTransferable(type: Data.self) {
                     WallpaperStore.save(data, for: owner)
-                    withAnimation(Motion.spring) { selection = 3 }
+                    withAnimation(Motion.spring) { selection = WallpaperStore.Choice.photo.rawValue }
                 }
                 item = nil
             }

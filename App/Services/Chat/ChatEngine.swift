@@ -24,7 +24,7 @@ struct PendingApproval: Equatable {
 }
 
 struct OutgoingAttachment {
-    var kind: String
+    var kind: AttachmentKind
     var name: String
     var data: Data
 }
@@ -61,6 +61,8 @@ final class ChatEngine {
     @ObservationIgnored private var latePlans: [UUID: HumanTouch.Late] = [:]
     @ObservationIgnored private var lateTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var lateReasons: [UUID: String] = [:]
+    /// 回拍、记忆整理、补一句这些小任务（对话 ID → 任务），见 keep
+    @ObservationIgnored private var sideTasks: [UUID: [UUID: Task<Void, Never>]] = [:]
     /// 电脑没连上时排队的提示：每次打开 App 只说一次
     @ObservationIgnored private var queuedNoticeShown = false
     @ObservationIgnored private(set) weak var relay: RelayClient?
@@ -80,8 +82,8 @@ final class ChatEngine {
     /// 你说了一次话。照片和文件一起发时分成两条（照片带着文字一条、文件一条），但只算一次，按这句话决定谁来回
     func send(_ text: String, kind: MessageKind = .text, attachments: [OutgoingAttachment] = [], quote: String = "", quoteID: UUID? = nil,
               in convo: Conversation, members: [Persona], context: ModelContext) {
-        let images = attachments.filter { $0.kind == "image" }
-        let files = attachments.filter { $0.kind != "image" }
+        let images = attachments.filter { $0.kind == .image }
+        let files = attachments.filter { $0.kind != .image }
         let parts: [(kind: MessageKind, text: String, items: [OutgoingAttachment])] =
             kind != .sticker && !images.isEmpty && !files.isEmpty
                 ? [(.images, text, images), (.file, "", files)]
@@ -108,9 +110,9 @@ final class ChatEngine {
         convo.updatedAt = .now
         convo.lastReadAt = .now
         // TA 正在忙、晚回的那几条已经排好了：你又说了话，按同一个时间重新写（把你新说的也回了），TA 不会因为你多发几条就突然有空
-        let waiting = convo.plannedMessages().filter { $0.relayID == HumanTouch.lateRead || $0.relayID == HumanTouch.lateUnread }
+        let waiting = convo.plannedMessages().filter { PlannedMessages.marker(of: $0)?.isLate == true }
         let carriedLate = latePlans[convo.id] ?? waiting.min(by: { $0.createdAt < $1.createdAt }).map {
-            HumanTouch.Late(deliver: $0.createdAt, reason: lateReasons[convo.id] ?? "在忙", read: $0.relayID == HumanTouch.lateRead)
+            HumanTouch.Late(deliver: $0.createdAt, reason: lateReasons[convo.id] ?? "在忙", read: PlannedMessages.marker(of: $0) == .lateRead)
         }
         // 正在写的那次晚回停下、清干净（下面要么按同一个时间重写，要么照常马上回），后台时间也还回去
         if lateTasks[convo.id] != nil || latePlans[convo.id] != nil {
@@ -119,7 +121,7 @@ final class ChatEngine {
             latePlans[convo.id] = nil
             releaseBackground(convo.id)
         }
-        Companion.cancelPlannedMessages(in: convo, context: context)
+        PlannedMessages.cancelForYourTurn(in: convo, context: context)
         context.persist()
         var responders = Self.responders(for: text, convo: convo, members: members)
         // 群里没 @ 谁：不是每个人都回，有人潜水
@@ -203,8 +205,7 @@ final class ChatEngine {
             let said = convo.visibleMessages().filter { $0.status != .streaming }
             guard let last = said.last, last.role == .user, !last.recalled, last.readAt == nil, last.createdAt > since else { continue }
             // 晚回已经排好了：到点照常来
-            guard !convo.plannedMessages().contains(where: { $0.relayID == HumanTouch.lateRead || $0.relayID == HumanTouch.lateUnread })
-            else { continue }
+            guard !convo.plannedMessages().contains(where: { PlannedMessages.marker(of: $0)?.isLate == true }) else { continue }
             let members = convo.memberIDs.compactMap { id in personas.first { $0.id == id } }
             guard !members.isEmpty else { continue }
             let unanswered = said.reversed().prefix { $0.role == .user }.filter { !$0.recalled }
@@ -231,18 +232,20 @@ final class ChatEngine {
         convo.lastReadAt = .now
         // TA 正在忙、晚点回的那几条已经排好了：拍一拍不会让 TA 突然有空，只留下这一行，TA 到点再回
         let lateWaiting = latePlans[convo.id] != nil
-            || convo.plannedMessages().contains { $0.relayID == HumanTouch.lateRead || $0.relayID == HumanTouch.lateUnread }
+            || convo.plannedMessages().contains { PlannedMessages.marker(of: $0)?.isLate == true }
         if lateWaiting {
             context.persist()
             return
         }
-        Companion.cancelPlannedMessages(in: convo, context: context)
+        PlannedMessages.cancelForYourTurn(in: convo, context: context)
         context.persist()
         // 电脑没连上：先留着这一下，连上后 TA 再回
         guard !busy.contains(convo.id), relay?.isConnected ?? false else { return }
         if Double.random(in: 0..<1) < 0.35 {
-            Task { [weak self] in
+            keep(convo.id) { [weak self] in
+                // 被停下（清空聊天、删角色）就不回拍了
                 try? await Task.sleep(for: .seconds(Double.random(in: 1.2...2.6)))
+                guard !Task.isCancelled else { return }
                 self?.patBack(persona, in: convo, context: context, after: .now)
             }
         } else {
@@ -299,9 +302,39 @@ final class ChatEngine {
         withAnimation(Motion.bubble) { buffer.approval = nil }
     }
 
+    /// 你点了「停止」：不再等你的新消息，正在写的这段停下（已经说出的留着）
     func stop(_ convo: Conversation) {
         pending[convo.id] = nil
         tasks[convo.id]?.cancel()
+    }
+
+    /// 清空聊天、删除、重置之前：这个对话里正在做和排着要做的一切都停下——回复、晚回、回拍、记忆整理、补一句。
+    /// 等正在写的回复真正收好尾才返回，之后再删数据，就不会有人往删掉的聊天里写（CONC-9）
+    func halt(_ convoID: UUID) async {
+        pending[convoID] = nil
+        let reply = tasks[convoID]
+        reply?.cancel()
+        lateTasks.removeValue(forKey: convoID)?.cancel()
+        latePlans[convoID] = nil
+        lateReasons[convoID] = nil
+        let side = sideTasks.removeValue(forKey: convoID).map { Array($0.values) } ?? []
+        side.forEach { $0.cancel() }
+        await reply?.value
+        for task in side { await task.value }
+        carried[convoID] = nil
+        replacing[convoID] = nil
+        notices[convoID] = nil
+        redoFailed.remove(convoID)
+        releaseBackground(convoID)
+    }
+
+    /// 跟着某个对话、活得比一次调用久的小任务（回拍、记忆整理、补一句）：存起来，halt 时一起停（CONC-3）
+    private func keep(_ convoID: UUID, _ work: @escaping @MainActor () async -> Void) {
+        let id = UUID()
+        sideTasks[convoID, default: [:]][id] = Task { [weak self] in
+            await work()
+            self?.sideTasks[convoID]?[id] = nil
+        }
     }
 
     /// 群聊：@ 了谁就只让谁回复；@所有人 或没有 @ 时所有成员依次回复
@@ -327,9 +360,10 @@ final class ChatEngine {
         // 群聊可以设置自动讨论几轮：第一轮按 @ 回复，之后大家接着彼此的话说
         // 「偶尔」：大多数时候各回一次，有时会接着聊上两三轮，像真的群聊一样不固定
         let occasional = Double.random(in: 0..<1)
-        let rounds = !convo.isGroup ? 1
-            : convo.discussRounds < 0 ? (occasional < 0.6 ? 1 : occasional < 0.88 ? 2 : 3)
-            : max(1, convo.discussRounds)
+        let rounds = switch convo.isGroup ? convo.discuss : .rounds(1) {
+        case .occasional: occasional < 0.6 ? 1 : occasional < 0.88 ? 2 : 3
+        case .rounds(let n): n
+        }
         tasks[convoID] = Task { [weak self] in
             // 像真人一样，看到消息后过一小会儿才开始回（每次不一样）；这期间你又发了，就一起看、一起回
             if react {
@@ -377,12 +411,14 @@ final class ChatEngine {
             }
             self.dropCarried(convoID, context: context)
             self.releaseBackground(convoID)
+            // 被停下了（清空聊天、删除）：不再整理记忆、不补一句
+            guard !Task.isCancelled else { return }
             // 聊得够多了，就在后台把更早的部分整理进长期记忆
             if let relay = self.relay {
-                Task { await Memory.updateIfNeeded(convo, members: members, context: context, relay: relay) }
+                self.keep(convoID) { await Memory.updateIfNeeded(convo, members: members, context: context, relay: relay) }
                 // 偶尔过几分钟又想起来补一句（单聊）
                 if !convo.isGroup, let persona = responders.first {
-                    Task { await HumanTouch.maybeAfterthought(persona: persona, convo: convo, context: context, relay: relay) }
+                    self.keep(convoID) { await HumanTouch.maybeAfterthought(persona: persona, convo: convo, context: context, relay: relay) }
                 }
             }
         }
@@ -535,7 +571,7 @@ final class ChatEngine {
 
         func attach(_ audio: Data, to m: Message) {
             m.kindRaw = MessageKind.voice.rawValue
-            let a = Attachment(kind: "audio", fileName: "voice.mp3", data: audio, order: 0)
+            let a = Attachment(kind: .audio, fileName: "voice.mp3", data: audio, order: 0)
             a.message = m
             context.insert(a)
             // 开了「自动翻译语音」：语音一发出就在下面翻好
@@ -589,7 +625,7 @@ final class ChatEngine {
                 }
                 (message, buffer) = newBubble(persona, in: convo, context: context, label: request.model, relayID: relayID)
                 buffer.hold = true
-                if let leftThought { Thoughts.shared.set(leftThought, for: message.id) }
+                if let leftThought { Cleanup.saveThought(leftThought, for: message.id, context: context) }
                 buffer.text = rest
                 context.persist()
             }
@@ -735,7 +771,7 @@ final class ChatEngine {
         if let song = markers.song, !song.isEmpty { ListenTogether.shared.request(song) }
         // 心声：开了「内心想法」才留着，显示在这条气泡上方
         if let thought = markers.thought, !thought.isEmpty, HumanTouch.thoughts(persona) {
-            Thoughts.shared.set(String(thought.prefix(120)), for: message.id)
+            Cleanup.saveThought(String(thought.prefix(Limits.Prompt.thought)), for: message.id, context: context)
         }
         // TA 拍了拍你：跟在这句后面一行小字
         if markers.pat { patBack(persona, in: convo, context: context, after: message.createdAt) }
@@ -748,7 +784,7 @@ final class ChatEngine {
         if let number = markers.photo, let photo = HumanTouch.takePhoto(number, persona: persona, context: context) {
             let picture = Message(role: .assistant, kind: .images, content: "", personaID: persona.id)
             picture.createdAt = max(.now, message.createdAt).addingTimeInterval(0.000005)
-            let a = Attachment(kind: "image", fileName: "photo.jpg", data: photo.data, order: 0)
+            let a = Attachment(kind: .image, fileName: "photo.jpg", data: photo.data, order: 0)
             withAnimation(Motion.bubble) {
                 convo.add(picture, context: context)
                 a.message = picture
@@ -761,7 +797,7 @@ final class ChatEngine {
             guard let pick = stickers.filter({ $0.pack == pack }).randomElement() else { continue }
             let sticker = Message(role: .assistant, kind: .sticker, content: "", personaID: persona.id)
             sticker.createdAt = max(.now, message.createdAt).addingTimeInterval(0.00001)
-            let a = Attachment(kind: "image", fileName: "sticker.png", data: pick.data, order: 0)
+            let a = Attachment(kind: .image, fileName: "sticker.png", data: pick.data, order: 0)
             withAnimation(Motion.bubble) {
                 convo.add(sticker, context: context)
                 a.message = sticker
@@ -777,7 +813,7 @@ final class ChatEngine {
         let ext = (name as NSString).pathExtension.lowercased()
         let isImage = ["jpg", "jpeg", "png", "heic", "gif", "webp"].contains(ext)
         let m = Message(role: .assistant, kind: isImage ? .images : .file, content: "", personaID: persona.id)
-        let a = Attachment(kind: isImage ? "image" : "file", fileName: name, data: data, order: 0)
+        let a = Attachment(kind: isImage ? .image : .file, fileName: name, data: data, order: 0)
         withAnimation(Motion.bubble) {
             convo.add(m, context: context)
             a.message = m
@@ -788,7 +824,7 @@ final class ChatEngine {
 
     /// 回复好了：在别的页面时顶部滑下提示；App 在后台时发系统通知
     private func notify(convo: Conversation, persona: Persona, text: String) {
-        let title = convo.isGroup ? "\(convo.title.isEmpty ? "群聊" : convo.title) · \(persona.name)" : persona.name
+        let title = PlannedMessages.title(persona, in: convo)
         if UIApplication.shared.applicationState != .active {
             Reminders.notifyReply(conversationID: convo.id, title: title, body: text)
             return
