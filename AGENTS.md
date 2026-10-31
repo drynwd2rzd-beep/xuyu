@@ -4,4 +4,4 @@
 
 - 回复用户一律用中文。
 - 本机没有 Swift 编译器，编译和测试靠 GitHub Actions（见规范 SHIP-1）。
-- 交接记录在 `D:i聊天appHANDOFF.md`（只记絮语，见规范 SHIP-8）。
+- 交接记录在 `D:\ai聊天app\HANDOFF.md`（只记絮语，见规范 SHIP-8）。
