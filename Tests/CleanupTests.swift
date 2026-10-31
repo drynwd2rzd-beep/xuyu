@@ -47,7 +47,7 @@ final class CleanupTests: XCTestCase {
         context.insert(convo)
         let said = say("好呀", by: persona, in: convo, context: context)
         // 排好、还没到点的那条也要撤掉
-        _ = say("在干嘛呀", by: persona, in: convo, at: .now.addingTimeInterval(3600), context: context)
+        say("在干嘛呀", by: persona, in: convo, at: .now.addingTimeInterval(3600), context: context).isProactive = true
         try context.save()
         Thoughts.shared.set("其实有点想你", for: said.id)
 
@@ -73,7 +73,8 @@ final class CleanupTests: XCTestCase {
         context.insert(alone)
         let said = say("你好", by: gone, in: single, context: context)
         _ = say("大家好", by: gone, in: group, context: context)
-        _ = say("晚点见", by: gone, in: group, at: .now.addingTimeInterval(3600), context: context)
+        // TA 提前排好、还没到点的那条（计划消息都标着 isProactive）
+        say("晚点见", by: gone, in: group, at: .now.addingTimeInterval(3600), context: context).isProactive = true
         context.insert(AlbumPhoto(personaID: gone.id, data: Data([1])))
         context.insert(AlbumPhoto(personaID: nil, data: Data([2])))
         let theirs = Moment(personaID: gone.id, text: "桂花开了")
