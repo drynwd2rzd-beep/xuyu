@@ -116,6 +116,15 @@ enum Appearance: Int, CaseIterable {
         }
     }
 
+    /// 同样的选择给 UIKit 窗口用（锁屏在单独的窗口里，不会继承 SwiftUI 的设置）
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: .unspecified
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
     var label: String {
         switch self {
         case .system: "跟随系统"

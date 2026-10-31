@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Network
 import Observation
 
@@ -33,6 +34,15 @@ final class RelayClient {
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
     @ObservationIgnored private var lastPath = ""
     @ObservationIgnored private var onWiFi = true
+    // MARK: 对暗号（RelayPairing）
+    /// 这条连接已经和中继互相对上暗号：之前什么都不发，也不认中继发来的别的消息
+    @ObservationIgnored private var verified = false
+    /// 这条连接收到过中继的 hello（没收到就被关掉，说明电脑上还是旧版中继）
+    @ObservationIgnored private var sawHello = false
+    @ObservationIgnored private var serverNonce = ""
+    @ObservationIgnored private var clientNonce = ""
+    /// 配对码拉伸出的钥匙：算一次要几十毫秒，按配对码记住
+    @ObservationIgnored private var pairKey: (code: String, key: SymmetricKey)?
 
     init() {
         // Wi-Fi ↔ 流量切换时，旧连接多半已经失效，但系统要很久才报错；这里一发现网络变了就立刻重连
@@ -139,7 +149,7 @@ final class RelayClient {
     private func connect() {
         let list = candidates
         if candidateIndex >= list.count { candidateIndex = 0 }
-        guard !list.isEmpty, let url = Self.url(address: list[candidateIndex], code: code) else {
+        guard !list.isEmpty, !code.trimmed.isEmpty, let url = Self.url(address: list[candidateIndex]) else {
             state = .notConfigured
             return
         }
@@ -149,9 +159,11 @@ final class RelayClient {
         let task = session.webSocketTask(with: url)
         task.maximumMessageSize = 64 * 1024 * 1024
         self.task = task
+        verified = false
+        sawHello = false
         task.resume()
         receive(on: task)
-        sendJSON(["type": "status", "id": "hello"])
+        // 先等中继的 hello，对上暗号以后再要状态（answerHello、checkWelcome）
         // 出门线路可能要绕中转服务器，延迟高，多等一会儿
         let patience: Double = usingAway ? 15 : 6
         Task { [weak self] in
@@ -170,17 +182,16 @@ final class RelayClient {
         state = candidates.isEmpty ? .notConfigured : .failed("已断开")
     }
 
-    static func url(address: String, code: String) -> URL? {
+    /// 中继的地址。配对码不放进网址（以前放在这里，同一个网络里的人能看到），改成连上后对暗号
+    static func url(address: String) -> URL? {
         var host = address.trimmed
-        guard !host.isEmpty, !code.trimmed.isEmpty else { return nil }
+        guard !host.isEmpty else { return nil }
         for prefix in ["ws://", "wss://", "http://", "https://"] where host.lowercased().hasPrefix(prefix) {
             host = String(host.dropFirst(prefix.count))
         }
         while host.hasSuffix("/") { host.removeLast() }
         if !host.contains(":") { host += ":51888" }
-        var comps = URLComponents(string: "ws://\(host)/ws")
-        comps?.queryItems = [URLQueryItem(name: "token", value: code.trimmed.uppercased())]
-        return comps?.url
+        return URLComponents(string: "ws://\(host)/ws")?.url
     }
 
     private func receive(on task: URLSessionWebSocketTask) {
@@ -198,8 +209,12 @@ final class RelayClient {
                 case .failure(let error):
                     let code = task.closeCode
                     let reason = switch code.rawValue {
+                    // 没等到 hello 就被关掉：是旧版中继在拒绝没带配对码的网址
+                    case 4001 where !self.sawHello: Self.relayTooOld
                     case 4001: "配对码不对"
+                    case 4002: Self.relayTooOld
                     case 4003: "配对码输错太多次，请 15 分钟后再试"
+                    case 4004: "这条线路不安全，中继没有接受"
                     default: Self.describe(error)
                     }
                     self.fail(task, reason: reason)
@@ -237,8 +252,8 @@ final class RelayClient {
         }
         waiters.values.forEach { $0.resume(throwing: RelayError.unreachable) }
         waiters = [:]
-        // 配对码错误时不自动重连
-        guard !reason.contains("配对码") else { return }
+        // 配对码错误、中继太旧时不自动重连：重连也一样，要你先处理
+        guard !reason.contains("配对码"), reason != Self.relayTooOld else { return }
         // 还有别的地址（比如出门用的）就马上试下一个
         if candidateIndex + 1 < candidates.count {
             candidateIndex += 1
@@ -273,6 +288,12 @@ final class RelayClient {
         guard let data = text.data(using: .utf8),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let type = obj["type"] as? String else { return }
+        // 对上暗号以前，只认 hello 和 welcome
+        guard verified else {
+            if type == "hello" { answerHello(obj) }
+            if type == "welcome" { checkWelcome(obj) }
+            return
+        }
         let id = obj["id"] as? String ?? ""
         // 备份相关的请求：按 id 交还给等待的地方
         if ["backupSaved", "backups", "backupData", "backupChunkSaved", "backupChunkData"].contains(type) {
@@ -344,10 +365,56 @@ final class RelayClient {
         }
     }
 
+    /// 发给中继。对上暗号以前什么都不发：对方可能是冒充的，而且中继也只认 auth
     private func sendJSON(_ object: Any) {
+        guard verified else { return }
+        send(object)
+    }
+
+    private func send(_ object: Any) {
         guard let task, let data = try? JSONSerialization.data(withJSONObject: object),
               let text = String(data: data, encoding: .utf8) else { return }
         task.send(.string(text)) { _ in }
+    }
+
+    // MARK: - 对暗号
+
+    /// 电脑上还是旧版中继（还在用网址里带配对码的连接方式）
+    static let relayTooOld = "电脑上的中继需要更新：重启一下中继再试"
+
+    /// 中继发来 hello：出一个自己的随机数，连同手机的证明发回去
+    private func answerHello(_ obj: [String: Any]) {
+        guard let task, !sawHello, let nonce = obj["nonce"] as? String, RelayPairing.validNonce(nonce) else { return }
+        sawHello = true
+        let cnonce = RelayPairing.newNonce()
+        serverNonce = nonce
+        clientNonce = cnonce
+        let code = self.code
+        Task { [weak self] in
+            guard let self, let key = await self.pairingKey(for: code), self.task === task else { return }
+            self.send(["type": "auth", "cnonce": cnonce,
+                       "proof": RelayPairing.proof(key: key, role: "app", nonce: nonce, cnonce: cnonce)])
+        }
+    }
+
+    /// 中继回 welcome：核对它的证明。对不上说明对方不知道配对码，不是你的中继，换下一个地址
+    private func checkWelcome(_ obj: [String: Any]) {
+        guard let task else { return }
+        guard let key = pairKey?.key, let proof = obj["proof"] as? String,
+              RelayPairing.same(proof, RelayPairing.proof(key: key, role: "relay", nonce: serverNonce, cnonce: clientNonce)) else {
+            fail(task, reason: "对方不是你的电脑中继")
+            return
+        }
+        verified = true
+        sendJSON(["type": "status", "id": "hello"])
+    }
+
+    /// 配对码拉伸出的钥匙：第一次在后台算，之后直接用
+    private func pairingKey(for code: String) async -> SymmetricKey? {
+        if let cached = pairKey, cached.code == code { return cached.key }
+        let key = await Task.detached(priority: .userInitiated) { RelayPairing.key(for: code) }.value
+        if let key { pairKey = (code, key) }
+        return key
     }
 
     /// 你对工作模式里那一步的回答

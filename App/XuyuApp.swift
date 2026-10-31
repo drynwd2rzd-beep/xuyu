@@ -45,7 +45,10 @@ struct XuyuApp: App {
                 .environment(engine)
                 .environment(router)
                 .environment(banners)
-                .overlay { if lock.locked { LockScreen(lock: lock) } }
+                .background {
+                    LockWindowPresenter(lock: lock, covering: lock.covering,
+                                        style: Appearance(rawValue: appearance)?.interfaceStyle ?? .unspecified)
+                }
                 .preferredColorScheme(Appearance(rawValue: appearance)?.colorScheme)
                 .onAppear {
                     engine.attach(relay: relay, banners: banners, router: router)
@@ -77,6 +80,10 @@ struct XuyuApp: App {
         .modelContainer(container)
         .onChange(of: scenePhase) { _, phase in
             guard !DemoMode.isOn else { return }
+            // 一离开（上滑、多任务切换器）就先挡住，系统截图里看不到聊天
+            if phase == .inactive {
+                lock.shieldIfNeeded()
+            }
             if phase == .background {
                 lock.lockIfNeeded()
                 // 离开 App 时：把「没回消息会来追问」提前准备好，App 关掉了也能按时收到。
@@ -86,7 +93,8 @@ struct XuyuApp: App {
                 }
             }
             if phase == .active {
-                Task { await lock.unlock() }
+                // 锁着的话自动弹 Face ID 由 AppLock 自己在回到前台时做
+                lock.unshield()
                 relay.wake()
                 Task { await engine.recover(context: container.mainContext) }
                 Task { await Companion.refresh(context: container.mainContext, relay: relay) }

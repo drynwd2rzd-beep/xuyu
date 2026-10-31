@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 
 /// 真实天气：TA 知道你那边现在什么天气、今天会怎样、明天怎样，日落了没有。
-/// 天气来自 Open-Meteo（免费、不用注册、不用密钥），每小时最多取一次；位置用手机定位（只换算成城市和经纬度，不发出去），
+/// 天气来自 Open-Meteo（免费、不用注册、不用密钥），每小时最多取一次；位置用手机定位（只换算成城市；问天气时只发出约 10 公里精度的大概位置，见 coarse），
 /// 或者用你在设置里填的城市。发给 TA 的只有「哪个城市、什么天气」
 @MainActor
 enum Weather {
@@ -104,11 +104,16 @@ enum Weather {
         var daily: Daily
     }
 
+    /// 发出去的坐标只留一位小数（约 10 公里，一个城市的范围）：权限说明答应过「不会发出你的具体位置」（审查 Z-014）
+    nonisolated static func coarse(_ degrees: Double) -> String {
+        String(format: "%.1f", degrees)
+    }
+
     private static func fetch(_ place: Place) async -> (summary: String, short: String)? {
         var c = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         c?.queryItems = [
-            .init(name: "latitude", value: String(place.latitude)),
-            .init(name: "longitude", value: String(place.longitude)),
+            .init(name: "latitude", value: coarse(place.latitude)),
+            .init(name: "longitude", value: coarse(place.longitude)),
             .init(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day"),
             .init(name: "hourly", value: "temperature_2m,precipitation_probability,weather_code"),
             .init(name: "daily", value: "weather_code,temperature_2m_max,temperature_2m_min,sunset,precipitation_probability_max"),

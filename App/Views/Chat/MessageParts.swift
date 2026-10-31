@@ -72,18 +72,18 @@ struct TimedText: View {
 }
 
 /// 工作模式里 AI 想运行命令、打开网页时，挂在 TA 这条消息下面的确认：说清楚要做什么，两个按钮。
-/// 和翻译、转文字那种浅色小卡片同一个样子；点了以后就收起
+/// 和翻译、转文字那种浅色小卡片同一个样子；点了以后就收起。
+/// 要做的事一个字都不截：你点允许的必须是你看得到的全部（太长的命令中继直接拒绝，见 relay/src/gate.js，审查 Z-031）
 struct ApprovalCard: View {
     let text: String
     let onAnswer: (Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(text)
+            Text(verbatim: text)
                 .font(.system(size: 14))
                 .lineSpacing(3)
                 .foregroundStyle(Palette.ink2)
-                .lineLimit(6)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Space.tight) {
                 Spacer(minLength: 0)

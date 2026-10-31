@@ -137,9 +137,13 @@ struct FileCard: View {
 
     private func open() {
         guard let data else { return }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("files", isDirectory: true)
+        // 每次打开放进自己的临时文件夹，名字再清理一遍：旧消息里的名字可能没清理过（FileName）
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("files", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        // 临时文件夹建不了、写不进去时，预览打开是空的；聊天里的文件本身不受影响
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent(name.isEmpty ? "文件" : name)
+        let url = dir.appendingPathComponent(FileName.safe(name))
         try? data.write(to: url, options: .atomic)
         previewURL = url
     }

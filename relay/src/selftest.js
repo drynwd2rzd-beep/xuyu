@@ -1,8 +1,21 @@
-// 本机自检：不经过手机，直接让中继各问一句，确认 Claude Code / Codex 能用
+// 本机自检：先核对和 App 共用的算法，再不经过手机，直接让中继各问一句，确认 Claude Code / Codex 能用
 // 用法：node src/selftest.js [claude|codex] [推理强度，例如 low]
 import { resolveCommand } from './resolve.js';
 import { runEngine } from './engines.js';
 import { loadConfig, paths } from './config.js';
+import { proof, sameProof } from './pairing.js';
+
+// ---- 对暗号：和 App 的 Tests/RelayPairingTests.swift 用同一组数，两边算出来必须一样 ----
+const PAIR_SAMPLE = {
+  code: 'abcd2345 ', nonce: '00'.repeat(16), cnonce: '11'.repeat(16),
+  app: '99aa92a17df70e1b31f2051f2d0aae379bd891c939b2a0a1f577f55d1ba464e0',
+  relay: 'c35829f110732cd591d915b90bef7108703b837932bb9e7c4c9e40ed302c6942',
+};
+const sample = PAIR_SAMPLE;
+const pairOK = sameProof(proof(sample.code, 'app', sample.nonce, sample.cnonce), sample.app)
+  && sameProof(proof(sample.code, 'relay', sample.nonce, sample.cnonce), sample.relay);
+console.log(`对暗号: ${pairOK ? '✓' : '✗ 和 App 算的不一样'}`);
+if (!pairOK) process.exitCode = 1;
 
 const config = loadConfig();
 const args = process.argv.slice(2);

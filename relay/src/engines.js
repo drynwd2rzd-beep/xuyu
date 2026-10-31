@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -8,17 +9,24 @@ import { fileURLToPath } from 'node:url';
  * 运行一次 CLI，把输出转换成统一事件：
  *   onEvent({ type: 'text' | 'reasoning' | 'step', text })
  * work = true 时是「工作模式」：可以在 cwd（工作文件夹）里读写文件、运行命令，每一步都会以 step 事件报告。
+ * 工作模式两家都要过把关钩子（gate.js）；gate.calls() 是这次回复里把关被问过几次，用来发现「工具没经过把关就执行了」。
  * 返回 Promise，完成时 resolve，出错时 reject(Error)。
  */
 export function runEngine({ engine, command, model, effort = '', system, prompt, files, images, cwd, signal, onEvent, work = false, gate = null, readDirs = [] }) {
+  // 工作模式没有把关就不干（审查 Z-002、规范 RELAY-10）
+  if (work && !gate) return Promise.reject(new EngineError('工作模式缺少把关，已停止。'));
+  if (work && engine === 'codex') {
+    const problem = prepareCodexHooks(cwd);
+    if (problem) return Promise.reject(new EngineError(problem));
+  }
   const spec = engine === 'codex'
     ? codexArgs({ model, effort, images, work })
     : claudeArgs({ model, effort, system, allowRead: files.length > 0, work, readDirs });
   const input = engine === 'codex' && system ? `${system}\n\n---\n\n${prompt}` : prompt;
   const parse = engine === 'codex' ? codexParser(onEvent) : claudeParser(onEvent);
-  // Claude 的工作模式：每次用工具前先过把关钩子（gate.js）。它要知道这是哪一次回复、工作文件夹在哪、怎么找到中继
-  const gateEnv = engine === 'claude' && work && gate
-    ? { XUYU_GATE_URL: gate.url, XUYU_GATE_KEY: gate.key, XUYU_JOB: gate.job, XUYU_ROOT: cwd }
+  // 把关钩子要知道这是哪家、哪一次回复、工作文件夹在哪、怎么找到中继
+  const gateEnv = work
+    ? { XUYU_ENGINE: engine, XUYU_GATE_URL: gate.url, XUYU_GATE_KEY: gate.key, XUYU_JOB: gate.job, XUYU_ROOT: cwd }
     : {};
 
   return new Promise((resolve, reject) => {
@@ -55,6 +63,12 @@ export function runEngine({ engine, command, model, effort = '', system, prompt,
       if (!line.startsWith('{')) return;
       try {
         parse.line(JSON.parse(line));
+        // 执行过的工具比把关被问过的次数还多：钩子没起作用，马上停下，不能让 AI 不经把关继续干
+        if (work && parse.toolRuns > gate.calls()) {
+          child.kill();
+          finish(new EngineError('把关没有生效，为了安全已经停下。请重启电脑上的中继再试。'));
+          return;
+        }
         // 回复已经完整了就立刻告诉手机，不用等 CLI 收尾退出（那要好几秒）
         if (parse.complete && parse.gotText) {
           parse.flush?.();
@@ -83,18 +97,41 @@ export function runEngine({ engine, command, model, effort = '', system, prompt,
 
 class EngineError extends Error {}
 
-// 工作模式下 Claude 能用的工具，以及明确不许运行的危险命令
+// 工作模式下 Claude 能用的工具
 const WORK_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'Bash', 'TodoWrite', 'WebSearch', 'WebFetch'];
+// 明显手滑的危险命令：只按开头匹配，换个写法（cmd /c、powershell -c、rm -r -f）就挡不住，
+// 所以它只是顺手的提醒，不是安全边界。真正的把关是 gate.js：每条命令都要你在手机上点允许（审查 Z-480）
 const WORK_DENY = ['Bash(rm -rf:*)', 'Bash(rmdir:*)', 'Bash(del /s:*)', 'Bash(format:*)', 'Bash(shutdown:*)',
   'Bash(Remove-Item -Recurse:*)', 'Bash(reg:*)', 'Bash(diskpart:*)', 'Bash(Stop-Computer:*)', 'Bash(Restart-Computer:*)',
   'Bash(Set-ExecutionPolicy:*)', 'Bash(net user:*)', 'Bash(schtasks:*)', 'Bash(sc :*)', 'Bash(bcdedit:*)', 'Bash(takeown:*)',
   'Bash(icacls:*)', 'Bash(cipher:*)', 'Bash(vssadmin:*)', 'Bash(wmic:*)'];
 
-// 把关钩子：等手机确认最多 10 分钟（钩子默认只等 60 秒）
+// 把关钩子：等手机确认最多 10 分钟（钩子默认只等 60 秒）。
+// 用正在运行中继的这个 node 的完整路径：不靠 PATH 里找 node，找不到时钩子起不来（审查 Z-217）
 const GATE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'gate.js').replace(/\\/g, '/');
-const GATE_SETTINGS = JSON.stringify({
-  hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: `node "${GATE_SCRIPT}"`, timeout: 600 }] }] },
+const GATE_COMMAND = `"${process.execPath.replace(/\\/g, '/')}" "${GATE_SCRIPT}"`;
+const gateHooks = (matcher) => ({
+  hooks: { PreToolUse: [{ matcher, hooks: [{ type: 'command', command: GATE_COMMAND, timeout: 600 }] }] },
 });
+const GATE_SETTINGS = JSON.stringify(gateHooks('*'));
+
+/**
+ * Codex 只从工作文件夹的 .codex/hooks.json 读钩子：每次工作前由中继写好。
+ * 那个文件夹里有别的设置（可能是 AI 或别人放的，会改 Codex 的行为）就先不动手，返回给你看的理由
+ */
+function prepareCodexHooks(cwd) {
+  const dir = path.join(cwd, '.codex');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const others = fs.readdirSync(dir).filter((name) => name.toLowerCase() !== 'hooks.json');
+    if (others.length) return `工作文件夹的 .codex 里有别的设置（${others.join('、')}），为了安全先不动手。请在电脑上看一下，确认没用就删掉。`;
+    // Codex 的匹配写法是正则：「.*」才是所有工具
+    fs.writeFileSync(path.join(dir, 'hooks.json'), JSON.stringify(gateHooks('.*'), null, 2));
+    return '';
+  } catch (e) {
+    return `没能准备好把关：${e.message}`;
+  }
+}
 
 function claudeArgs({ model, effort, system, allowRead, work, readDirs = [] }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
@@ -104,19 +141,19 @@ function claudeArgs({ model, effort, system, allowRead, work, readDirs = [] }) {
   if (system) args.push('--system-prompt', system);
   if (work) {
     // 工作模式：只开放下面这些工具；每次用之前都先过把关钩子（gate.js）：
-    // 工作文件夹外的读写直接拒绝，运行命令和上网先在手机上确认。危险命令的黑名单留着当第二道
-    args.push('--strict-mcp-config', '--permission-mode', 'acceptEdits',
-      '--tools', WORK_TOOLS.join(','), '--allowedTools', ...WORK_TOOLS, '--disallowedTools', ...WORK_DENY,
-      '--settings', GATE_SETTINGS);
+    // 工作文件夹外的读写直接拒绝，运行命令和上网先在手机上确认。
+    // 不预先允许任何工具：只有把关明确放行才做，钩子出了错就停在「要你允许」上，后台没人点就不做（实测）。
+    // 只读你自己的用户设置：工作文件夹里的 .claude 设置不生效，AI 写了也没用（审查 Z-005、Z-217）
+    args.push('--strict-mcp-config', '--setting-sources', 'user',
+      '--tools', WORK_TOOLS.join(','), '--disallowedTools', ...WORK_DENY, '--settings', GATE_SETTINGS);
   } else {
     // 聊天不带任何工具和 MCP：否则每条消息都会附上几万字的工具说明，又慢又耗额度。
     // 有附件时只开 Read，让它看图片/文件。提示词从 stdin 读取
     args.push('--strict-mcp-config', '--tools', allowRead ? 'Read' : '');
-    // 你发来的图片、表情、文件存在 uploads，不在 Claude 的工作文件夹里：读那里默认要先问「允许吗」，
-    // 后台运行没人点允许，就被自动拒绝了——TA 一直看不到你发的图（实测：permission_denied）。这里明确允许只读那个文件夹
+    // 你发来的图片、表情、文件存在 uploads，不在 Claude 的工作文件夹里：把它加成工作文件夹，就能直接读。
+    // 不另加不带路径的 Read 允许规则：那会让它能读电脑上任何文件（实测：只加文件夹，外面的读不到）（审查 Z-216）
     if (allowRead) {
       for (const dir of readDirs) args.push('--add-dir', dir);
-      args.push('--allowedTools', 'Read');
     }
   }
   return args;
@@ -142,7 +179,8 @@ function describeClaudeTool(name, input = {}) {
 }
 
 function claudeParser(onEvent) {
-  const state = { gotText: false, sawDelta: false, error: null };
+  // toolRuns：真正执行成功的工具次数（被拒绝的不算），用来核对把关有没有被问过
+  const state = { gotText: false, sawDelta: false, error: null, toolRuns: 0 };
   state.line = (obj) => {
     if (obj.type === 'stream_event') {
       const ev = obj.event || {};
@@ -178,7 +216,9 @@ function claudeParser(onEvent) {
     } else if (obj.type === 'user') {
       // 工具执行失败时在步骤里标一下
       for (const block of obj.message?.content || []) {
-        if (block.type === 'tool_result' && block.is_error) onEvent({ type: 'step', text: '↳ 这一步没成功，换个办法' });
+        if (block.type !== 'tool_result') continue;
+        if (block.is_error) onEvent({ type: 'step', text: '↳ 这一步没成功，换个办法' });
+        else state.toolRuns += 1;
       }
     } else if (obj.type === 'result') {
       if (obj.is_error || (obj.subtype && obj.subtype !== 'success')) {
@@ -198,6 +238,12 @@ function claudeParser(onEvent) {
 function codexArgs({ model, effort, images, work }) {
   // 工作模式：只能写工作文件夹（Codex 自带的沙盒限制），聊天时只读
   const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', work ? 'workspace-write' : 'read-only'];
+  if (work) {
+    // 每次用工具前过把关钩子（.codex/hooks.json，见 prepareCodexHooks）：
+    // 钩子默认要你在电脑上「信任」过才会运行，不然会被悄悄跳过（实测）；这个钩子是中继自己写的，所以这次运行直接信任它。
+    // 不读你个人的 Codex 设置：里面装的插件（操作电脑界面、浏览器）不经过把关（审查 Z-002）
+    args.push('--dangerously-bypass-hook-trust', '--ignore-user-config');
+  }
   if (model) args.push('-m', model);
   if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
   for (const img of images) args.push('-i', img);
@@ -223,8 +269,12 @@ function describeCodexItem(item) {
 }
 
 function codexParser(onEvent) {
-  const state = { gotText: false, error: null };
+  // toolRuns：开始执行的命令、改文件、外部工具次数（被把关拒绝的根本不会开始），用来核对把关有没有被问过
+  const state = { gotText: false, error: null, toolRuns: 0 };
   state.line = (obj) => {
+    if (obj.type === 'item.started' && ['command_execution', 'file_change', 'mcp_tool_call'].includes(obj.item?.type)) {
+      state.toolRuns += 1;
+    }
     // 新版事件：item.completed / turn.failed / error
     if (obj.type === 'item.completed' || obj.type === 'item.updated') {
       const item = obj.item || {};

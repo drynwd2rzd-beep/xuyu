@@ -9,9 +9,15 @@ import { WebSocketServer } from 'ws';
 import { loadConfig, saveConfig, paths, workPaths } from './config.js';
 import { resolveCommand } from './resolve.js';
 import { runEngine } from './engines.js';
+import { proof, newNonce, validNonce, sameProof } from './pairing.js';
+
+// ---- 兜底：任何没接住的错误只记一行，中继不退出（审查 Z-003、规范 RELAY-9） ----
+process.on('uncaughtException', (e) => console.log(`出错了（中继继续运行）：${e?.message || e}`));
+process.on('unhandledRejection', (e) => console.log(`出错了（中继继续运行）：${e?.message || e}`));
 
 const config = loadConfig();
-const PROTOCOL = 1;
+// 2：连接时先对暗号（pairing.js），配对码不再放在网址里
+const PROTOCOL = 2;
 // 工作模式把关钩子（gate.js）找中继问「用户允不允许」时要带的钥匙：每次启动随机生成，只在本机用
 const GATE_KEY = crypto.randomBytes(16).toString('hex');
 let listeningPort = config.port;
@@ -303,7 +309,8 @@ async function handleRun(ws, msg) {
     send(ws, { type: 'error', id, message: '为了安全，「操作电脑」只能在家里的 Wi-Fi 或 Tailscale 下使用。' });
     return;
   }
-  const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController(), approval: null };
+  // gateCalls：把关钩子这次被问过几次，引擎拿它核对「每个执行过的工具都经过了把关」
+  const job = { id, events: [], final: null, subscribers: new Set([ws]), controller: new AbortController(), approval: null, gateCalls: 0 };
   jobs.set(id, job);
   const controller = job.controller;
   // 你取消了这条回复：还在等的确认按不允许收尾
@@ -332,7 +339,7 @@ async function handleRun(ws, msg) {
       readDirs: work ? [] : [paths.uploads],
       signal: controller.signal,
       work,
-      gate: { url: `http://127.0.0.1:${listeningPort}/gate`, key: GATE_KEY, job: id },
+      gate: { url: `http://127.0.0.1:${listeningPort}/gate`, key: GATE_KEY, job: id, calls: () => job.gateCalls },
       onEvent: (e) => publish(job, { type: e.type, id, text: e.text }),
     });
     if (work) sendOutbox(job, started);
@@ -346,10 +353,12 @@ async function handleRun(ws, msg) {
   }
 }
 
-/** 把关钩子来问：只认本机、带着钥匙的请求；一直等到你在手机上点了（或超时）才回答 */
+/**
+ * 把关钩子来报到：只认本机、带着钥匙的请求。每次都记一笔（引擎靠它发现钩子没起作用）；
+ * 带着 text 的是要问你的，一直等到你在手机上点了（或超时）才回答
+ */
 function handleGate(req, res) {
-  const from = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-  if ((from !== '127.0.0.1' && from !== '::1') || req.headers['x-xuyu-gate'] !== GATE_KEY) {
+  if (!isLocal(req.socket.remoteAddress) || req.headers['x-xuyu-gate'] !== GATE_KEY) {
     res.writeHead(403);
     res.end();
     return;
@@ -364,11 +373,14 @@ function handleGate(req, res) {
     try {
       const { job: id, text } = JSON.parse(body || '{}');
       const job = jobs.get(String(id));
-      if (job && !job.final && !job.controller.signal.aborted) ok = await requestApproval(job, String(text || ''));
+      if (job && !job.final && !job.controller.signal.aborted) {
+        job.gateCalls += 1;
+        ok = text === undefined ? true : await requestApproval(job, String(text));
+        if (text !== undefined) console.log(ok ? '  手机上点了允许' : '  没有允许');
+      }
     } catch {
       ok = false;
     }
-    console.log(ok ? '  手机上点了允许' : '  没有允许');
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok }));
   });
@@ -380,7 +392,8 @@ const server = http.createServer((req, res) => {
     handleGate(req, res);
     return;
   }
-  if (req.url === '/health') {
+  // 只给本机检查「中继是不是已经开着」用；局域网里的设备问不到，不能拿它找出谁的电脑开着中继（审查 Z-481）
+  if (req.url === '/health' && isLocal(req.socket.remoteAddress)) {
     res.writeHead(200, { 'content-type': 'text/plain' });
     res.end('xuyu-relay ok');
     return;
@@ -497,42 +510,98 @@ function readBackup(name) {
   }
 }
 
-// ---- 安全：防止有人反复猜配对码；工作模式只接受可信线路 ----
+// ---- 安全：连接先对暗号、防止有人反复猜配对码；只接受可信线路 ----
+// 关闭码：4001 暗号不对，4002 手机的 App 太旧（还在用旧的连接方式），4003 猜错太多次暂时封住，4004 不是可信线路
+const LOCK_AFTER = 5;
+const LOCK_FOR = 15 * 60 * 1000;
+const AUTH_WAIT = 10 * 1000;
 const failures = new Map();
+
+function plainAddress(ip) {
+  return String(ip || '').replace(/^::ffff:/, '');
+}
+
+function isLocal(ip) {
+  const from = plainAddress(ip);
+  return from === '127.0.0.1' || from === '::1';
+}
 
 /** 家里局域网、Tailscale、本机 */
 function trustedAddress(ip) {
   const [p, q] = String(ip || '').split('.').map(Number);
-  return ip === '127.0.0.1' || ip === '::1' || p === 10 || p === 192 && q === 168 || p === 172 && q >= 16 && q <= 31
+  return isLocal(ip) || p === 10 || p === 192 && q === 168 || p === 172 && q >= 16 && q <= 31
     || p === 100 && q >= 64 && q <= 127;
 }
 
+/** 记一次暗号不对：同一个地址连续错 5 次，封 15 分钟 */
+function recordFailure(from) {
+  const count = (failures.get(from)?.count || 0) + 1;
+  const until = count >= LOCK_AFTER ? Date.now() + LOCK_FOR : 0;
+  failures.set(from, { count: until ? 0 : count, until, at: Date.now() });
+  if (until) console.log(`⚠ ${from} 连续对不上配对码，已暂时拒绝它 15 分钟`);
+}
+
+/** 清掉过期的记录，表不会一直变大 */
+function pruneFailures() {
+  const now = Date.now();
+  for (const [from, record] of failures) {
+    if (record.until < now && now - record.at > LOCK_FOR) failures.delete(from);
+  }
+}
+setInterval(pruneFailures, LOCK_FOR);
+
 wss.on('connection', (ws, req) => {
-  const url = new URL(req.url, 'http://relay');
-  const from = String(req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-  const record = failures.get(from);
-  if (record && record.until > Date.now()) {
+  // 第一件事：连接出错（坏帧、超过大小上限）只断开这一个连接，不让整个中继崩溃（审查 Z-003）
+  ws.on('error', (e) => console.log(`连接出错：${e.message}`));
+  const from = plainAddress(req.socket.remoteAddress);
+  // 公网来的一律不接（审查 Z-004）
+  if (!trustedAddress(from)) {
+    ws.close(4004, 'untrusted');
+    return;
+  }
+  if (failures.get(from)?.until > Date.now()) {
     ws.close(4003, 'locked');
     return;
   }
-  if ((url.searchParams.get('token') || '').toUpperCase() !== config.token) {
-    // 同一个地址连续输错 5 次：封 15 分钟
-    const count = (record?.count || 0) + 1;
-    const until = count >= 5 ? Date.now() + 15 * 60 * 1000 : 0;
-    failures.set(from, { count: until ? 0 : count, until });
-    if (until) console.log(`⚠ ${from} 连续输错配对码，已暂时拒绝它 15 分钟`);
-    ws.close(4001, 'bad token');
-    return;
+  // 先对暗号：对上以前，除了 auth 什么都不认，也什么都不发（pairing.js）
+  const nonce = newNonce();
+  let authed = false;
+  let rejected = false;
+  const authTimer = setTimeout(() => { if (!authed) ws.close(4001, 'no auth'); }, AUTH_WAIT);
+  send(ws, { type: 'hello', protocol: PROTOCOL, nonce });
+
+  function authenticate(msg) {
+    // 已经拒绝了：关闭前又到的消息不再算错
+    if (rejected) return;
+    if (msg.type !== 'auth') {
+      rejected = true;
+      ws.close(4002, 'update app');
+      return;
+    }
+    const cnonce = String(msg.cnonce || '');
+    if (!validNonce(cnonce) || !sameProof(msg.proof, proof(config.token, 'app', nonce, cnonce))) {
+      rejected = true;
+      recordFailure(from);
+      ws.close(4001, 'bad proof');
+      return;
+    }
+    authed = true;
+    clearTimeout(authTimer);
+    failures.delete(from);
+    ws.remoteAddress = from;
+    send(ws, { type: 'welcome', proof: proof(config.token, 'relay', nonce, cnonce) });
+    console.log(`iPhone 已连接（${from}${from.startsWith('100.') ? '，出门线路' : ''}）`);
   }
-  failures.delete(from);
-  ws.remoteAddress = from;
-  console.log(`iPhone 已连接（${from}${from.startsWith('100.') ? '，出门线路' : ''}）`);
 
   ws.on('message', async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
     } catch {
+      return;
+    }
+    if (!authed) {
+      authenticate(msg);
       return;
     }
     switch (msg.type) {
@@ -554,9 +623,9 @@ wss.on('connection', (ws, req) => {
         jobs.get(String(msg.id))?.controller.abort();
         break;
       case 'approval': {
-        // 你在手机上点了「允许 / 不允许」：只认对得上号的那一次
+        // 你在手机上点了「允许 / 不允许」：只认对得上号的那一次，而且要来自正在收这条回复的手机
         const job = [...jobs.values()].find((j) => j.approval?.req === String(msg.req || ''));
-        if (job) settleApproval(job, msg.ok === true);
+        if (job?.subscribers.has(ws)) settleApproval(job, msg.ok === true);
         break;
       }
       case 'backup':
@@ -580,6 +649,8 @@ wss.on('connection', (ws, req) => {
     }
   });
   ws.on('close', () => {
+    clearTimeout(authTimer);
+    if (!authed) return;
     // 不取消正在进行的回复，等手机回来继续收
     for (const job of jobs.values()) job.subscribers.delete(ws);
     console.log('iPhone 已断开');

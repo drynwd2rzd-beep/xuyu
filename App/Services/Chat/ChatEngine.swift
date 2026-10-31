@@ -771,8 +771,9 @@ final class ChatEngine {
         return markers.body
     }
 
-    /// 电脑发回来的文件：图片显示成照片，其他显示成文件卡片
-    func deliver(file name: String, data: Data, from persona: Persona, in convo: Conversation, context: ModelContext) {
+    /// 电脑发回来的文件：图片显示成照片，其他显示成文件卡片。名字先清理成单纯的文件名（FileName）
+    func deliver(file rawName: String, data: Data, from persona: Persona, in convo: Conversation, context: ModelContext) {
+        let name = FileName.safe(rawName)
         let ext = (name as NSString).pathExtension.lowercased()
         let isImage = ["jpg", "jpeg", "png", "heic", "gif", "webp"].contains(ext)
         let m = Message(role: .assistant, kind: isImage ? .images : .file, content: "", personaID: persona.id)
