@@ -1,13 +1,20 @@
 import Foundation
 import os
+import Synchronization
 
 /// 本机小文件的统一存取（DATA-2）：路径、原子写、读坏了怎么办、写不进去怎么办，都只在这里写一遍。
 /// - 读：没有这个文件 → 空；文件坏了（解码失败）→ 改名成「原名.broken」留底、记日志，再从空的继续，下次写入不会盖掉它（DATA-6）
 /// - 写：一律原子写；写不进去（存储满了）→ 记日志，屏幕上方提示「没能保存」
-/// 不放在主线程上：备份在后台读这些文件，拼提示词也不在主线程
+/// 不放在主线程上：备份在后台读这些文件
 enum Storage {
-    /// 根目录：平时是 App 自己的 Application Support；测试换成临时目录，不碰真实数据（SHIP-2）
-    static var root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    /// 根目录：平时是 App 自己的 Application Support；测试换成临时目录，不碰真实数据（SHIP-2）。
+    /// 主线程和后台（备份）都会读它，所以加一把锁（CONC-1）
+    static var root: URL {
+        get { rootLock.withLock { $0 } }
+        set { rootLock.withLock { $0 = newValue } }
+    }
+
+    private static let rootLock = Mutex(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
 
     // MARK: - 登记表（DATA-7）
 

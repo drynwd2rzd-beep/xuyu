@@ -8,7 +8,7 @@ import Observation
 /// 存在本机一个小文件里（消息 ID → 那句话），不改数据库；聊天记录里也带着，TA 记得自己想过什么。
 /// 删消息时一起删；最多留 Limits.Store.thoughts 条，超了删最早的（见 Cleanup.trimThoughts）
 enum Thoughts {
-    static let shared = KeyedFileStore<String>(.thoughts)
+    @MainActor static let shared = KeyedFileStore<String>(.thoughts)
 }
 
 extension KeyedFileStore where Value == String {
@@ -17,10 +17,11 @@ extension KeyedFileStore where Value == String {
 }
 
 /// 心声用的字：苹果自带、按需下载的「手札体」（像手写的小纸条，不占安装包）。还没下好时先用衬线斜体
+@MainActor
 @Observable
 final class ThoughtFont {
     static let shared = ThoughtFont()
-    static let name = "HannotateSC-W5"
+    nonisolated static let name = "HannotateSC-W5"
     private(set) var ready = UIFont(name: ThoughtFont.name, size: 12) != nil
     @ObservationIgnored private var asked = false
 
@@ -33,9 +34,10 @@ final class ThoughtFont {
         guard !ready, !asked else { return }
         asked = true
         let descriptor = CTFontDescriptorCreateWithAttributes([kCTFontNameAttribute: Self.name] as CFDictionary)
-        CTFontDescriptorMatchFontDescriptorsWithProgressHandler([descriptor] as CFArray, nil) { state, _ in
+        // 系统在后台线程回调：回到主线程再改状态（CONC-4：不用 DispatchQueue）
+        CTFontDescriptorMatchFontDescriptorsWithProgressHandler([descriptor] as CFArray, nil) { @Sendable state, _ in
             if state == .didFinish {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     ThoughtFont.shared.ready = UIFont(name: ThoughtFont.name, size: 12) != nil
                 }
             }

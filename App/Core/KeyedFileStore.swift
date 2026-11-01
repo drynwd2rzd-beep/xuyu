@@ -3,7 +3,9 @@ import Observation
 
 /// 按消息 ID 存的小数据（心声、视频卡片、通话内容）：整份放在内存里，改一条就把整份原子写回一个 JSON 文件。
 /// 文件格式就是 `[UUID: Value]` 直接编码，和以前各自写的那几份一样，旧文件照样读得出来。
-/// 删消息、清空聊天、删角色时由 Cleanup 调 remove 一起删掉，不会只增不减（DATA-8）
+/// 删消息、清空聊天、删角色时由 Cleanup 调 remove 一起删掉，不会只增不减（DATA-8）。
+/// 界面观察它，只在主线程上动（备份在后台直接读文件，不经过它）
+@MainActor
 @Observable
 final class KeyedFileStore<Value: Codable> {
     private(set) var values: [UUID: Value] = [:]

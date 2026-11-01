@@ -2,7 +2,9 @@ import Foundation
 
 /// 拼提示词用的底层小零件：你的称呼、聊天记录转成文字、「记忆 + 最近聊天」、天气一行、低强度的一次性请求。
 /// 只读数据模型和设置（加上心声、视频卡片、通话内容这几份小存储），不回头调用拼请求的服务，
-/// 所以 Memory、World、MomentsEngine 这些服务都能放心用它，不会和 PromptBuilder 互相绕圈（审查 Z-273、Z-328）
+/// 所以 Memory、World、MomentsEngine 这些服务都能放心用它，不会和 PromptBuilder 互相绕圈（审查 Z-273、Z-328）。
+/// 在主线程上：要读角色和对话（SwiftData 模型）
+@MainActor
 enum PromptParts {
     // MARK: - 称呼和模型
 

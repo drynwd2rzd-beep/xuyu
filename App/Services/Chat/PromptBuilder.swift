@@ -3,6 +3,7 @@ import SwiftData
 
 /// 拼出发给模型的内容：人设和规则（system）、最近的聊天记录、附件。
 /// 它是「汇总者」：会去读世界观、动态、一起听、记忆窗口这些服务；底层小零件在 `PromptParts`
+@MainActor
 enum PromptBuilder {
     private static var userName: String { PromptParts.userName }
 

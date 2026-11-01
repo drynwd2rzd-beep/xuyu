@@ -7,7 +7,7 @@ import UIKit
 /// 你粘贴抖音分享链接给 TA，聊天里显示成视频卡片。TA 看不到画面，靠标题、简介、标签、封面聊。
 /// 卡片信息存在本机一个小文件里（消息 ID → 卡片），不改数据库；删消息时一起删
 enum VideoCards {
-    static let shared = KeyedFileStore<Card>(.videoCards)
+    @MainActor static let shared = KeyedFileStore<Card>(.videoCards)
 
     struct Card: Codable, Hashable {
         enum Source: String, Codable { case bilibili, douyin, douyinHot }

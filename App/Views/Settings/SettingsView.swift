@@ -41,7 +41,7 @@ struct SettingsView: View {
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    withAnimation(Motion.spring) { ImageFileStore.myAvatar.save(data) }
+                    withAnimation(Motion.spring) { _ = ImageFileStore.myAvatar.save(data) }
                 }
                 avatarItem = nil
             }

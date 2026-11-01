@@ -2,7 +2,7 @@ import Foundation
 
 /// 通话内容：消息 ID → 每一句（中文 + 韩语），存在本机一个小文件里；删消息时一起删
 enum CallLogs {
-    static let shared = KeyedFileStore<[CallSession.Line]>(.calls)
+    @MainActor static let shared = KeyedFileStore<[CallSession.Line]>(.calls)
 
     static func clock(_ seconds: Double) -> String {
         let s = Int(seconds.rounded())

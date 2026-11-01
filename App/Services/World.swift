@@ -3,7 +3,9 @@ import SwiftData
 
 /// 世界观：大家生活的世界、你是谁、彼此的关系、每个角色自己的生活（作息、今天的安排、心情）、世界里发生的事。
 /// 都存在本机一个小文件里（不改数据库）。每天第一次连上电脑时，用一次请求给所有人安排好今天（见 dailyTurn）。
-/// 聊天页不显示这些，只是让 TA 的言行对得上：睡着了晚点回、忙的时候说「刚在采访」、聊起世界里刚发生的事
+/// 聊天页不显示这些，只是让 TA 的言行对得上：睡着了晚点回、忙的时候说「刚在采访」、聊起世界里刚发生的事。
+/// 在主线程上：拼提示词、界面、自动行为都在主线程用它（审查 Z-468）
+@MainActor
 enum World {
     // MARK: - 存的东西
 
@@ -65,7 +67,7 @@ enum World {
         var lastTurn: Date?
     }
 
-    nonisolated(unsafe) private static var cache: State?
+    private static var cache: State?
 
     /// 读坏了不会清空：坏文件改名留底（Storage），这里从空的世界继续
     static var state: State {
@@ -224,10 +226,9 @@ enum World {
 
     // MARK: - 每天给大家安排今天
 
-    private nonisolated(unsafe) static var turning = false
+    private static var turning = false
 
     /// 每天第一次连上电脑时：一次请求，给每个角色排好今天的安排和心情，再写一两件世界里发生的事
-    @MainActor
     static func dailyTurn(context: ModelContext, relay: RelayClient) async {
         var s = state
         guard s.lifeOn, !turning, !DemoMode.isOn, relay.isConnected else { return }

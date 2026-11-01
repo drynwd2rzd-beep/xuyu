@@ -152,8 +152,8 @@ final class ListenTogether {
         maybeComment(on: song)
     }
 
-    /// 拼提示词时用（拼提示词不在主线程）：和谁一起听、那一句。每秒跟着更新
-    nonisolated(unsafe) static var line: (persona: UUID, text: String)?
+    /// 拼提示词时用：和谁一起听、那一句。每秒跟着更新
+    static var line: (persona: UUID, text: String)?
 
     private func publishLine() {
         if let id = persona, let text = promptLine { Self.line = (id, text) } else { Self.line = nil }

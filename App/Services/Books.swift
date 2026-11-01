@@ -3,7 +3,9 @@ import PDFKit
 import Observation
 
 /// 一起读书：导入的书、读到哪、划的线、TA 的批注、在书页上问 TA 的话。
-/// 每本书一个小文件夹（不改数据库）：book.json（书名、各章正文）和 state.json（进度、划线、批注）
+/// 每本书一个小文件夹（不改数据库）：book.json（书名、各章正文）和 state.json（进度、划线、批注）。
+/// 在主线程上；备份在后台只经过 savedStates 读文件（审查 Z-468）
+@MainActor
 @Observable
 final class Books {
     static let shared = Books()
@@ -62,13 +64,13 @@ final class Books {
     private(set) var states: [UUID: State] = [:]
 
     /// 每本书的文件夹名（都在 books/ 下面）
-    private static func folders() -> [String] {
+    nonisolated private static func folders() -> [String] {
         // 列不出来就当书架是空的（还没导入过书时这个文件夹本来就不存在）
         let names = (try? FileManager.default.contentsOfDirectory(atPath: Storage.url(.books).path)) ?? []
         return names.filter { UUID(uuidString: $0) != nil }
     }
 
-    private static func path(_ folder: String, _ file: String) -> String { "\(Storage.File.books.rawValue)/\(folder)/\(file)" }
+    nonisolated private static func path(_ folder: String, _ file: String) -> String { "\(Storage.File.books.rawValue)/\(folder)/\(file)" }
 
     private init() {
         reload()
@@ -169,8 +171,8 @@ final class Books {
         var state: State
     }
 
-    /// 从本机文件读（备份在后台线程做）
-    static func savedStates() -> [Saved] {
+    /// 从本机文件读（备份在后台线程做，不碰书架的内存状态）
+    nonisolated static func savedStates() -> [Saved] {
         folders().compactMap { folder in
             guard let state = Storage.read(State.self, from: path(folder, "state.json")),
                   let book = Storage.read(Book.self, from: path(folder, "book.json")) else { return nil }
@@ -258,8 +260,8 @@ final class Books {
 
     // MARK: - 写进聊天的提示词
 
-    /// 拼提示词时用（不在主线程也能读）：和这位一起读的那本书、各自读到哪
-    nonisolated(unsafe) static var lines: [UUID: String] = [:]
+    /// 拼提示词时用：和这位一起读的那本书、各自读到哪
+    static var lines: [UUID: String] = [:]
 
     func publish() {
         var result: [UUID: String] = [:]

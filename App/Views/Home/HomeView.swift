@@ -125,7 +125,7 @@ struct HomeView: View {
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    withAnimation(Motion.spring) { ImageFileStore.widgetPhoto.save(data) }
+                    withAnimation(Motion.spring) { _ = ImageFileStore.widgetPhoto.save(data) }
                 }
                 photoItem = nil
             }

@@ -5,7 +5,8 @@ import os
 /// 让 TA 更像真人：会忙、会晚点回、想起来再补一句、打字会犹豫、长短跟着心情变、有小情绪、关系慢慢变、
 /// 记得你说过要做的事、会分享自己拍的照片。每个角色在设置里有「真人节奏」开关和「小情绪」三档。
 /// 这些开关和 TA 对你的称呼存在本机（按角色），不进数据库。
-/// 不整个放在主线程上：拼提示词（PromptBuilder）不在主线程，也要能用；只有要联网写回复的两处标在主线程
+/// 在主线程上：读角色（SwiftData 模型）、拼提示词都在主线程
+@MainActor
 enum HumanTouch {
     // MARK: - 每个角色的开关
 
@@ -277,7 +278,6 @@ enum HumanTouch {
     }
 
     /// 晚回的那几条先写好、排在到点的时候出现（App 关着也会到点弹通知），和主动消息、追问一样
-    @MainActor
     static func writeLate(_ late: Late, persona: Persona, convo: Conversation, members: [Persona],
                           context: ModelContext, relay: any RelayTransport) async -> Bool {
         let history = convo.visibleMessages().filter { $0.status != .streaming }
@@ -309,7 +309,6 @@ enum HumanTouch {
     // MARK: - 想起来再补一句
 
     /// 一段回复说完后，偶尔过几分钟又来一条「对了……」。你先开口了就不补
-    @MainActor
     static func maybeAfterthought(persona: Persona, convo: Conversation, context: ModelContext, relay: any RelayTransport) async {
         guard !convo.isGroup, !persona.canWork, pace(persona), !DemoMode.isOn, relay.isConnected else { return }
         let visible = convo.visibleMessages()
