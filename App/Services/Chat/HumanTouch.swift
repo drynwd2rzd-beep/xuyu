@@ -112,7 +112,7 @@ enum HumanTouch {
     static func momentNotes(for persona: Persona, convo: Conversation, members: [Persona], history: [Message]) -> String {
         var lines: [String] = []
         if let mood = todayMood(persona), !mood.isEmpty { lines.append("你今天的心情：\(mood)。") }
-        if Calendar.current.component(.hour, from: .now) < 6 { lines.append("已经很晚了，你有点困，话会少一些、懒一点。") }
+        if Clock.hour() < Limits.Hours.lateNight { lines.append("已经很晚了，你有点困，话会少一些、懒一点。") }
         let r = relation(persona)
         if !r.nickname.isEmpty { lines.append("你现在叫 TA「\(r.nickname)」。") }
         if moodLevel(persona) > 0 {
@@ -241,7 +241,7 @@ enum HumanTouch {
             }
         }
         let cal = Calendar.current
-        let t = Double(cal.component(.hour, from: now)) + Double(cal.component(.minute, from: now)) / 60
+        let t = Clock.hour(now)
         let workday = !cal.isDateInWeekend(now)
         var chance: Double
         var reason: String
@@ -279,7 +279,7 @@ enum HumanTouch {
     /// 晚回的那几条先写好、排在到点的时候出现（App 关着也会到点弹通知），和主动消息、追问一样
     @MainActor
     static func writeLate(_ late: Late, persona: Persona, convo: Conversation, members: [Persona],
-                          context: ModelContext, relay: RelayClient) async -> Bool {
+                          context: ModelContext, relay: any RelayTransport) async -> Bool {
         let history = convo.visibleMessages().filter { $0.status != .streaming }
         var request = PromptBuilder.request(for: persona, convo: convo, members: members, history: history,
                                             diaryNotes: Companion.myDiaryNotes(context: context),
@@ -310,7 +310,7 @@ enum HumanTouch {
 
     /// 一段回复说完后，偶尔过几分钟又来一条「对了……」。你先开口了就不补
     @MainActor
-    static func maybeAfterthought(persona: Persona, convo: Conversation, context: ModelContext, relay: RelayClient) async {
+    static func maybeAfterthought(persona: Persona, convo: Conversation, context: ModelContext, relay: any RelayTransport) async {
         guard !convo.isGroup, !persona.canWork, pace(persona), !DemoMode.isOn, relay.isConnected else { return }
         let visible = convo.visibleMessages()
         guard let last = visible.last, last.role == .assistant, last.status == .done,
@@ -322,20 +322,17 @@ enum HumanTouch {
         guard Double.random(in: 0..<1) < (checkMissed ? 0.6 : 0.12) else { return }
         let deliver = Date.now.addingTimeInterval(Double.random(in: 90...420))
         guard !Prefs.isQuiet(deliver) else { return }
-        let names = [persona.id: persona.name]
         let questions = asked.map { "「\($0.content.prefix(40))」" }.joined(separator: "、")
         let task = checkMissed
             ? "你刚发完上面最后那几条。TA 之前问了你这几个问题：\(questions)。过了几分钟，你回头看了看，发现有没回到的问题，就像真人那样补一句（可以用「刚才你问的那个……」「对了你说的……」开头）。\n都已经回过了、或者补了会显得啰嗦，就只输出：不补充"
             : "你刚发完上面最后那几条。过了几分钟，你又想起来一件相关的小事想补一句：刚才忘了说的、突然想到的细节、或者一个小问题。\n如果没什么值得补的、补了会显得啰嗦，就只输出：不补充"
         let prompt = """
-        下面是你们最近的聊天记录：
-
-        \(PromptBuilder.transcript(Array(visible.suffix(Limits.Prompt.shortChat)), names: names))
+        \(PromptParts.contextBlock(memory: nil, history: visible, recent: Limits.Prompt.shortChat, names: [persona.id: persona.name]))
 
         \(task)
         否则只写一两句，口语化，可以用「对了」「刚想起来」这类开头，但不一定。只输出消息内容。
         """
-        guard let text = await relay.attempt(Companion.lightRequest(persona, prompt), "补一句"),
+        guard let text = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "补一句"),
               !text.trimmed.isEmpty, !text.contains("不补充") else { return }
         // 想的这段时间里被停下了（清空聊天、删角色），或者你又说话了：不补了（CONC-3）
         guard !Task.isCancelled, !convo.isDeleted, convo.visibleMessages().last?.id == last.id else { return }

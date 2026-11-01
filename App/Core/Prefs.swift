@@ -238,10 +238,10 @@ enum Prefs {
         return (s, e)
     }
 
+    /// 这个时刻在不在你设的免打扰里（免打扰按整点设，可以跨过半夜）
     static func isQuiet(_ date: Date) -> Bool {
         let (s, e) = quietHours
-        let h = Calendar.current.component(.hour, from: date)
-        return s > e ? (h >= s || h < e) : (h >= s && h < e)
+        return Clock.within(Clock.hour(date), from: Double(s), to: Double(e))
     }
 }
 

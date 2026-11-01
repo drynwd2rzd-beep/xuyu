@@ -126,17 +126,6 @@ enum World {
 
     // MARK: - 此刻
 
-    /// 现在是几点（小时，带小数）
-    static func hour(_ date: Date = .now) -> Double {
-        let cal = Calendar.current
-        return Double(cal.component(.hour, from: date)) + Double(cal.component(.minute, from: date)) / 60
-    }
-
-    /// 某个时刻落在不在「从 a 到 b」里（可以跨过半夜，比如 1 点睡到 8 点半、23 点睡到 7 点）
-    static func within(_ t: Double, from a: Double, to b: Double) -> Bool {
-        a <= b ? (t >= a && t < b) : (t >= a || t < b)
-    }
-
     enum Status { case asleep, busy, free }
 
     /// TA 这会儿在干嘛：按 TA 的作息
@@ -145,10 +134,10 @@ enum World {
         guard s.lifeOn else { return .free }
         let life = life(id)
         guard life.realRhythm else { return .free }
-        let t = hour(date)
-        if within(t, from: life.rhythm.sleep, to: life.rhythm.wake) { return .asleep }
+        let t = Clock.hour(date)
+        if Clock.within(t, from: life.rhythm.sleep, to: life.rhythm.wake) { return .asleep }
         let weekend = Calendar.current.isDateInWeekend(date)
-        if !(weekend && life.rhythm.weekendFree), within(t, from: life.rhythm.busyFrom, to: life.rhythm.busyTo) { return .busy }
+        if !(weekend && life.rhythm.weekendFree), Clock.within(t, from: life.rhythm.busyFrom, to: life.rhythm.busyTo) { return .busy }
         return .free
     }
 
@@ -156,7 +145,7 @@ enum World {
     static func current(of id: UUID, at date: Date = .now) -> PlanItem? {
         let life = life(id)
         guard let day = life.planDay, Calendar.current.isDate(day, inSameDayAs: date) else { return nil }
-        let t = hour(date)
+        let t = Clock.hour(date)
         return life.plan.last { $0.at <= t }
     }
 
@@ -183,7 +172,7 @@ enum World {
         let s = state
         var lines: [String] = []
         if !s.world.trimmed.isEmpty { lines.append("你们生活的世界：\(s.world.trimmed)") }
-        if !s.you.trimmed.isEmpty { lines.append("\(PromptBuilder.userName)在这个世界里：\(s.you.trimmed)") }
+        if !s.you.trimmed.isEmpty { lines.append("\(PromptParts.userName)在这个世界里：\(s.you.trimmed)") }
         let life = life(persona.id)
         if !life.role.trimmed.isEmpty { lines.append("你在这个世界里：\(life.role.trimmed)") }
         if s.lifeOn, life.realRhythm {
@@ -208,7 +197,7 @@ enum World {
         let life = life(persona.id)
         if let now = current(of: persona.id) { parts.append("你现在在：\(now.what)。") }
         if let day = life.planDay, Calendar.current.isDateInToday(day) {
-            let t = hour()
+            let t = Clock.hour()
             let next = life.plan.filter { $0.at > t }.prefix(3).map { "\(clock($0.at)) \($0.what)" }
             if !next.isEmpty { parts.append("你今天接下来：\(next.joined(separator: "；"))。") }
             if s.moodCarry, !life.mood.isEmpty { parts.append("你今天的心情：\(life.mood)。") }
@@ -230,7 +219,7 @@ enum World {
     }
 
     private static func name(_ id: UUID?, _ names: [UUID: String]) -> String {
-        id.map { names[$0] ?? "TA" } ?? PromptBuilder.userName
+        id.map { names[$0] ?? "TA" } ?? PromptParts.userName
     }
 
     // MARK: - 每天给大家安排今天
@@ -259,7 +248,7 @@ enum World {
         let prompt = """
         你在帮一个温柔的小世界安排今天。
         世界：\(s.world.isEmpty ? "现代都市，大家都是普通人。" : s.world)
-        \(PromptBuilder.userName)：\(s.you.isEmpty ? "（没有写）" : s.you)
+        \(PromptParts.userName)：\(s.you.isEmpty ? "（没有写）" : s.you)
         人物：
         \(people)
         关系：\(relations.isEmpty ? "（没有写）" : relations)
@@ -268,10 +257,10 @@ enum World {
         今天：\(Fmt.day.string(from: .now))。\(weather)
 
         给每个人物安排今天：4～6 件事，按时间先后，符合 TA 的身份和作息，平平常常、有生活气，偶尔有点小起伏；再给一个两个字的心情。
-        再写 0～2 件今天世界里发生的、大家都会知道的小事（可以是两个人物之间的，也可以和\(PromptBuilder.userName)有关），没有就不写。
+        再写 0～2 件今天世界里发生的、大家都会知道的小事（可以是两个人物之间的，也可以和\(PromptParts.userName)有关），没有就不写。
         只输出 JSON，不要别的字：{"people":[{"name":"名字","mood":"两个字","plan":[{"time":"09:30","what":"做什么"}]}],"events":[{"text":"发生了什么","who":["名字"]}]}
         """
-        guard let raw = await relay.attempt(Companion.lightRequest(writer, prompt), "世界安排"),
+        guard let raw = await relay.attempt(PromptBuilder.lightRequest(writer, prompt), "世界安排"),
               let json = raw.firstIndex(of: "{").flatMap({ start in raw.lastIndex(of: "}").map { String(raw[start...$0]) } }),
               let data = json.data(using: .utf8),
               let turn = try? JSONDecoder().decode(Turn.self, from: data) else { return }

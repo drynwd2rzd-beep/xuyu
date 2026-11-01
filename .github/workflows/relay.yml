@@ -1,0 +1,28 @@
+name: 中继
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "relay/**"
+      - ".github/workflows/relay.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 中继测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --omit=dev
+      - name: 语法检查
+        run: for f in src/*.js test/*.js; do node --check "$f"; done
+      - name: 单元测试和协议测试
+        run: npm test

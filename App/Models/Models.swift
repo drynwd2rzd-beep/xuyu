@@ -1,12 +1,6 @@
 import Foundation
 import SwiftData
 
-enum Engine: String, Codable, CaseIterable, Identifiable {
-    case claude, codex
-    var id: String { rawValue }
-    var label: String { self == .claude ? "Claude" : "Codex" }
-}
-
 @Model
 final class Persona {
     var id: UUID = UUID()

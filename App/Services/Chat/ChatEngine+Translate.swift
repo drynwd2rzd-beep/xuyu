@@ -12,13 +12,11 @@ extension ChatEngine {
         guard let persona = message.personaID.flatMap({ context.persona($0) }) ?? context.allPersonas().first else { return }
         withAnimation(Motion.spring) { _ = translating.insert(message.id) }
         defer { withAnimation(Motion.spring) { _ = translating.remove(message.id) } }
-        let request = RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
-                                   system: "你是翻译，只输出译文，不加解释、引号或注音。",
-                                   prompt: """
-                                   把下面这段话翻译出来：原文不是中文就翻成中文；原文已经是中文就翻成韩语。保留原来的语气和口吻，自然口语。
+        let request = PromptParts.lightRequest(persona, """
+                                               把下面这段话翻译出来：原文不是中文就翻成中文；原文已经是中文就翻成韩语。保留原来的语气和口吻，自然口语。
 
-                                   \(text)
-                                   """)
+                                               \(text)
+                                               """, system: "你是翻译，只输出译文，不加解释、引号或注音。")
         guard let result = try? await relay.complete(request), !result.trimmed.isEmpty else { return }
         withAnimation(Motion.spring) { message.translation = result.trimmed }
         context.persist()

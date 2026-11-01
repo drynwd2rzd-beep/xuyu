@@ -20,16 +20,22 @@ final class RelayClient {
     private(set) var status: RelayStatus?
 
     @ObservationIgnored private var task: URLSessionWebSocketTask?
-    @ObservationIgnored private var streams: [String: AsyncThrowingStream<RelayEvent, Error>.Continuation] = [:]
+    // MARK: 给扩展用的（RelayClient+Run、+Backup），别处不要碰
+    /// 正在收的回复：id → 往外吐事件的口子
+    @ObservationIgnored var streams: [String: AsyncThrowingStream<RelayEvent, Error>.Continuation] = [:]
     /// 每条回复已经收到的片段数；断线重连后从这里接着收
-    @ObservationIgnored private var received: [String: Int] = [:]
+    @ObservationIgnored var received: [String: Int] = [:]
+    /// 在等连上的请求（连上、失败或 8 秒到了收尾）
+    @ObservationIgnored var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    /// 正在传的大备份有几份（传的时候心跳暂停检查）
+    @ObservationIgnored var transfers = 0
+    /// 备份相关的请求在等电脑按同一个 id 回复
+    @ObservationIgnored var replies: [String: CheckedContinuation<[String: Any], Never>] = [:]
+    // MARK: 连接
     @ObservationIgnored private var orphanTimeout: Task<Void, Never>?
-    @ObservationIgnored private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     @ObservationIgnored private var retryDelay: Double = 2
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var pingTask: Task<Void, Never>?
-    /// 正在传的大备份有几份（传的时候心跳暂停检查）
-    @ObservationIgnored private var transfers = 0
     @ObservationIgnored private let session = URLSession(configuration: .default)
     @ObservationIgnored private let pathMonitor = NWPathMonitor()
     @ObservationIgnored private var lastPath = ""
@@ -366,7 +372,7 @@ final class RelayClient {
     }
 
     /// 发给中继。对上暗号以前什么都不发：对方可能是冒充的，而且中继也只认 auth
-    private func sendJSON(_ object: Any) {
+    func sendJSON(_ object: Any) {
         guard verified else { return }
         send(object)
     }
@@ -429,182 +435,5 @@ final class RelayClient {
     /// 让电脑开机时自动启动（或不再自动启动）中继；电脑回复新的状态
     func setAutostart(_ on: Bool) {
         sendJSON(["type": "autostart", "id": UUID().uuidString, "on": on])
-    }
-
-    // MARK: - 备份（存到电脑 / 从电脑取回）
-
-    @ObservationIgnored private var replies: [String: CheckedContinuation<[String: Any], Never>] = [:]
-
-    /// 发一个请求，等电脑按同一个 id 回复；等太久就当没回应。大的备份按大小多给时间，出门线路慢也够
-    private func ask(_ payload: [String: Any], wait: Duration = .seconds(60)) async -> [String: Any] {
-        guard isConnected else { return [:] }
-        let id = UUID().uuidString
-        var body = payload
-        body["id"] = id
-        return await withCheckedContinuation { c in
-            replies[id] = c
-            sendJSON(body)
-            Task { @MainActor in
-                try? await Task.sleep(for: wait)
-                self.replies.removeValue(forKey: id)?.resume(returning: [:])
-            }
-        }
-    }
-
-    /// 传备份时等多久：每 MB 多等 15 秒
-    private static func wait(forBytes bytes: Int) -> Duration {
-        .seconds(60 + bytes / (1024 * 1024) * 15)
-    }
-
-    // 大的备份分块传：整个塞进一条消息的话，照片多了以后会超过中继一条消息 64MB 的上限，连接被直接断掉、备份悄悄失败。
-    // 8MB 以下还是一条消息发完（旧版中继也认）；更大的每块 4MB，一块一块等电脑说「收到」再发下一块。
-    // 转成 base64 文字在后台做，不卡界面
-    private static let singleMessageLimit = 8 * 1024 * 1024
-    private static let chunkSize = 4 * 1024 * 1024
-
-    private nonisolated static func base64(_ data: Data) async -> String {
-        await Task.detached(priority: .utility) { data.base64EncodedString() }.value
-    }
-
-    private nonisolated static func unbase64(_ text: String) async -> Data? {
-        await Task.detached(priority: .utility) { Data(base64Encoded: text) }.value
-    }
-
-    func saveBackup(name: String, data: Data) async -> Bool {
-        transfers += 1
-        defer { transfers -= 1 }
-        if data.count <= Self.singleMessageLimit {
-            let encoded = await Self.base64(data)
-            let reply = await ask(["type": "backup", "name": name, "data": encoded], wait: Self.wait(forBytes: data.count))
-            return reply["ok"] as? Bool == true
-        }
-        let total = (data.count + Self.chunkSize - 1) / Self.chunkSize
-        for index in 0..<total {
-            let start = index * Self.chunkSize
-            let piece = data.subdata(in: start..<min(data.count, start + Self.chunkSize))
-            let encoded = await Self.base64(piece)
-            let reply = await ask(["type": "backupChunk", "name": name, "index": index, "total": total, "data": encoded],
-                                  wait: Self.wait(forBytes: piece.count))
-            guard reply["ok"] as? Bool == true else { return false }
-        }
-        return true
-    }
-
-    struct BackupInfo: Identifiable, Hashable {
-        let name: String
-        let size: Int
-        let at: Date
-        var id: String { name }
-    }
-
-    func listBackups() async -> [BackupInfo] {
-        let reply = await ask(["type": "backups"])
-        let list = reply["list"] as? [[String: Any]] ?? []
-        return list.compactMap { item in
-            guard let name = item["name"] as? String else { return nil }
-            return BackupInfo(name: name, size: item["size"] as? Int ?? 0,
-                              at: Date(timeIntervalSince1970: (item["at"] as? Double ?? 0) / 1000))
-        }
-    }
-
-    func fetchBackup(_ backup: BackupInfo) async -> Data? {
-        transfers += 1
-        defer { transfers -= 1 }
-        if backup.size <= Self.singleMessageLimit {
-            let reply = await ask(["type": "fetchBackup", "name": backup.name], wait: Self.wait(forBytes: backup.size))
-            guard let text = reply["data"] as? String else { return nil }
-            return await Self.unbase64(text)
-        }
-        // 大的备份一块一块取回来再拼上；电脑每次告诉我们文件一共多大
-        var result = Data()
-        result.reserveCapacity(backup.size)
-        var size = backup.size
-        while result.count < size {
-            let reply = await ask(["type": "fetchBackupChunk", "name": backup.name, "offset": result.count, "length": Self.chunkSize],
-                                  wait: Self.wait(forBytes: Self.chunkSize))
-            guard let text = reply["data"] as? String, let piece = await Self.unbase64(text), !piece.isEmpty else { return nil }
-            result.append(piece)
-            size = reply["size"] as? Int ?? size
-        }
-        return result
-    }
-
-    private func waitUntilConnected() async throws {
-        connectIfConfigured()
-        if state == .connected { return }
-        if case .notConfigured = state { throw RelayError.notConfigured }
-        // 最多等 8 秒：连上了、连接失败了、或者到点了，谁先到就按谁收尾（每个等待只会被收尾一次）。
-        // 以前用任务组做超时：组要等所有子任务结束，而等连接的那个不响应取消，8 秒到了也走不掉，
-        // 要一直等到下一次重连失败（最长 30 多秒），电脑没开时发出去的消息很久才报错
-        let token = UUID()
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            waiters[token] = c
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(8))
-                self?.waiters.removeValue(forKey: token)?.resume(throwing: RelayError.unreachable)
-            }
-        }
-    }
-
-    // MARK: - 调用
-
-    /// 取回一条之前的回复（从头开始收）：App 被关掉期间电脑上写好的内容
-    func resume(_ id: String) -> AsyncThrowingStream<RelayEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let work = Task { @MainActor in
-                do {
-                    try await self.waitUntilConnected()
-                    self.streams[id] = continuation
-                    self.received[id] = 0
-                    self.sendJSON(["type": "resume", "id": id, "from": 0])
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in
-                work.cancel()
-                Task { @MainActor in self.streams.removeValue(forKey: id) }
-            }
-        }
-    }
-
-    func run(_ request: RelayRequest, id: String = UUID().uuidString) -> AsyncThrowingStream<RelayEvent, Error> {
-        AsyncThrowingStream { continuation in
-            let work = Task { @MainActor in
-                do {
-                    try await self.waitUntilConnected()
-                    self.streams[id] = continuation
-                    var payload: [String: Any] = [
-                        "type": "run", "id": id, "engine": request.engine, "model": request.model,
-                        "effort": request.effort, "system": request.system, "prompt": request.prompt,
-                        "work": request.work,
-                    ]
-                    if !request.attachments.isEmpty {
-                        payload["attachments"] = request.attachments.map { ["kind": $0.kind, "name": $0.name, "data": $0.data] }
-                    }
-                    self.sendJSON(payload)
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { reason in
-                work.cancel()
-                if case .cancelled = reason {
-                    Task { @MainActor in
-                        self.streams.removeValue(forKey: id)
-                        self.sendJSON(["type": "cancel", "id": id])
-                    }
-                }
-            }
-        }
-    }
-
-    /// 一次性请求：等完整回复
-    func complete(_ request: RelayRequest) async throws -> String {
-        var text = ""
-        for try await event in run(request) {
-            if case .text(let t) = event { text += t }
-        }
-        return text.trimmed
     }
 }

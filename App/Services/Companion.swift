@@ -110,19 +110,15 @@ enum Companion {
             // 已经过了该追问的时间（比如刚打开 App）：过两三分钟再来
             if deliver < now.addingTimeInterval(90) { deliver = now.addingTimeInterval(Double.random(in: 120...300)) }
             guard !Prefs.isQuiet(deliver) else { continue }
-            let names = [persona.id: persona.name]
-            let memory = convo.memory.trimmed
             let gap = Fmt.duration(deliver.timeIntervalSince(last.createdAt))
             let prompt = """
-            \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")下面是你们最近的聊天记录：
+            \(PromptParts.contextBlock(memory: convo, history: visible, recent: Limits.Prompt.recentChat, names: [persona.id: persona.name]))
 
-            \(PromptBuilder.transcript(Array(visible.suffix(Limits.Prompt.recentChat)), names: names))
-
-            你最后发的那条，\(PromptBuilder.userName)已经过了\(gap)还没回。先想想真人朋友这时会不会再找 TA：
+            你最后发的那条，\(PromptParts.userName)已经过了\(gap)还没回。先想想真人朋友这时会不会再找 TA：
             如果聊天已经自然收尾了（道了别、说了晚安、TA 说要去忙或去睡、你最后那条本来就不需要回），或者现在去追问会显得黏人、打扰，就只输出：不追问
             否则像真人朋友一样再发一条：可以俏皮或关心地问 TA 怎么不回消息、是不是在忙，或者接着刚才没聊完的话题再说一句。一两句话，口语化，不要重复你上一条说过的话。只输出消息内容。
             """
-            guard let raw = await relay.attempt(lightRequest(persona, prompt), "追问"), !raw.trimmed.isEmpty else { continue }
+            guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "追问"), !raw.trimmed.isEmpty else { continue }
             // 去掉【心声】【表情】这类聊天里的小标记，只留要说的话
             let text = ReplyText.markers(in: raw).body
             guard !text.trimmed.isEmpty else { continue }
@@ -155,15 +151,15 @@ enum Companion {
         DiaryState.shared.replying.insert(entry.id)
         defer { DiaryState.shared.replying.remove(entry.id) }
         let convo = context.chat(for: persona)
-        let recent = Array(convo.visibleMessages().suffix(Limits.Prompt.recentChat))
-        let memory = convo.memory.trimmed
         let prompt = """
-        \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")\(recent.isEmpty ? "" : "你们最近的聊天：\n\(PromptBuilder.transcript(recent, names: [persona.id: persona.name]))\n\n")\(PromptBuilder.userName)在 \(Fmt.md.string(from: entry.day)) 写了一篇日记\(entry.mood.isEmpty ? "" : "（心情：\(entry.mood)）")：
+        \(PromptParts.contextBlock(memory: convo, history: convo.visibleMessages(), recent: Limits.Prompt.recentChat, names: [persona.id: persona.name]))
+
+        \(PromptParts.userName)在 \(Fmt.md.string(from: entry.day)) 写了一篇日记\(entry.mood.isEmpty ? "" : "（心情：\(entry.mood)）")：
         \(text)
 
         你们在交换日记。请以「\(persona.name)」的身份，在 TA 的日记下面回一小段话：真诚、温柔、具体地回应 TA 写的事和心情，可以接着聊或轻轻鼓励，不要说教，不要复述原文，60 到 120 字。只输出回信内容。
         """
-        guard let reply = await relay.attempt(lightRequest(persona, prompt), "交换日记回信"), !reply.trimmed.isEmpty,
+        guard let reply = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "交换日记回信"), !reply.trimmed.isEmpty,
               !entry.isDeleted else { return }
         withAnimation(Motion.spring) {
             entry.reply = ReplyText.markers(in: reply).body.trimmed
@@ -220,10 +216,10 @@ enum Companion {
         guard defaults.string(forKey: Prefs.whisperDay) != dayKey else { return }
         let todos = todayTodos(context).map(\.title).prefix(Limits.Prompt.todos).joined(separator: "、")
         let prompt = """
-        今天是 \(Fmt.full.string(from: .now))。\(Weather.summary.map { "\(PromptBuilder.userName)那边的天气：\($0)" } ?? "")\(todos.isEmpty ? "" : "\(PromptBuilder.userName)今天的待办：\(todos)。")
-        写一句今天想对\(PromptBuilder.userName)说的话：温柔、具体、有画面感，不超过 28 个字，可以用逗号分成两小句。不要引号，只输出这一句。
+        今天是 \(Fmt.full.string(from: .now))。\(PromptParts.weatherLine)\(todos.isEmpty ? "" : "\(PromptParts.userName)今天的待办：\(todos)。")
+        写一句今天想对\(PromptParts.userName)说的话：温柔、具体、有画面感，不超过 28 个字，可以用逗号分成两小句。不要引号，只输出这一句。
         """
-        guard let raw = await relay.attempt(lightRequest(persona, prompt), "今日一句") else { return }
+        guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "今日一句") else { return }
         let text = ReplyText.markers(in: raw).body.trimmed
         guard !text.isEmpty else { return }
         defaults.set(text.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "“", with: "").replacingOccurrences(of: "”", with: ""),
@@ -237,7 +233,7 @@ enum Companion {
     private static func diaries(context: ModelContext, relay: RelayClient, persona: Persona) async {
         let today = Date.now.startOfDay
         var days = [today.adding(days: -1)]
-        if Calendar.current.component(.hour, from: .now) >= 20 { days.append(today) }
+        if Clock.hour() >= Limits.Hours.diary { days.append(today) }
         // 今天：你选的那位还没写就写；昨天：谁都没写才补一篇
         let pending = days.filter { day in
             day == today ? aiDiary(on: day, by: persona, context: context) == nil
@@ -255,15 +251,15 @@ enum Companion {
             // TA 自己写的日记和心情：写日记时一起参考
             let mine = ((try? context.fetch(FetchDescriptor<DiaryEntry>(predicate: #Predicate { $0.day == day && $0.authorRaw == me }))) ?? []).first
             let diaryLine = mine.map { e in
-                "\(PromptBuilder.userName)这天自己也写了日记\(e.mood.isEmpty ? "" : "（心情：\(e.mood)）")：\(e.text.trimmed)\n"
+                "\(PromptParts.userName)这天自己也写了日记\(e.mood.isEmpty ? "" : "（心情：\(e.mood)）")：\(e.text.trimmed)\n"
             } ?? ""
-            let postsLine = posts.isEmpty ? "" : "\(PromptBuilder.userName)这天发的动态：\n"
+            let postsLine = posts.isEmpty ? "" : "\(PromptParts.userName)这天发的动态：\n"
                 + posts.map { "- \($0.text.trimmed.isEmpty ? "（只有图片）" : short($0.text))" }.joined(separator: "\n") + "\n"
             let mineLine = diaryLine + postsLine
             let prompt = """
-            下面是 \(Fmt.md.string(from: day)) 你和\(PromptBuilder.userName)的聊天：
+            下面是 \(Fmt.md.string(from: day)) 你和\(PromptParts.userName)的聊天：
 
-            \(PromptBuilder.transcript(Array(messages.suffix(Limits.Prompt.diaryChat)), names: names))
+            \(PromptParts.transcript(Array(messages.suffix(Limits.Prompt.diaryChat)), names: names))
 
             \(done.isEmpty ? "" : "这天完成的待办：\(done)。\n")\(mineLine)
             请以「\(persona.name)」的第一人称写这一天的日记，150 字左右，温柔真诚，写你们一起聊过的事和你的感受\(mineLine.isEmpty ? "" : "，也可以写读了 TA 的日记、动态后的心情")，不要列清单。
@@ -271,7 +267,7 @@ enum Companion {
             """
             DiaryState.shared.writing.insert(day)
             defer { DiaryState.shared.writing.remove(day) }
-            guard let raw = await relay.attempt(lightRequest(persona, prompt), "日记"), !raw.isEmpty, !persona.isDeleted else { continue }
+            guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "日记"), !raw.isEmpty, !persona.isDeleted else { continue }
             let (text, mood) = parseMood(ReplyText.markers(in: raw).body)
             let entry = DiaryEntry(day: day, author: .ai, text: text, mood: mood)
             entry.personaID = persona.id
@@ -315,20 +311,17 @@ enum Companion {
             // （通话记录气泡在你这边，但不是要 TA 回的话）
             if let last = convo.visibleMessages(at: now).last, last.role == .user, last.kind != .call { continue }
             let deliver = World.awake(nextSlot(after: now, frequency: persona.proactiveFreq, habits: habits), for: persona.id)
-            let history = convo.visibleMessages(at: now)
-            let names = [persona.id: persona.name]
             let todos = todayTodos(context).map(\.title).prefix(Limits.Prompt.todos).joined(separator: "、")
-            let memory = convo.memory.trimmed
             let notes = myDiaryNotes(context: context)
             let prompt = """
-            \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")\(notes.isEmpty ? "" : "\(PromptBuilder.userName)最近发的动态、写的日记：\n\(notes)\n\n")下面是你们最近的聊天记录：
+            \(PromptParts.contextBlock(memory: convo, history: convo.visibleMessages(at: now), recent: Limits.Prompt.recentChat,
+                                       names: [persona.id: persona.name],
+                                       between: notes.isEmpty ? "" : "\(PromptParts.userName)最近发的动态、写的日记：\n\(notes)"))
 
-            \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(Array(history.suffix(Limits.Prompt.recentChat)), names: names))
-
-            现在是 \(Fmt.full.string(from: now))。\(Weather.summary.map { "\(PromptBuilder.userName)那边的天气：\($0)" } ?? "")你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptBuilder.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
+            现在是 \(Fmt.full.string(from: now))。\(PromptParts.weatherLine)你打算在 \(Fmt.full.string(from: deliver)) 主动给\(PromptParts.userName)发一条消息。\(todos.isEmpty ? "" : "TA 最近的待办有：\(todos)。")
             像朋友一样自然地开个话题：可以接着之前聊的事、关心一下 TA、或者轻轻提醒一件事。一两句话，口语化，不要说「我来主动找你」。只输出消息内容。
             """
-            guard let raw = await relay.attempt(lightRequest(persona, prompt), "主动消息") else { continue }
+            guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "主动消息") else { continue }
             let text = ReplyText.markers(in: raw).body.trimmed
             // 生成的这段时间里聊天被清空、角色被删：这条不要了（CONC-3）
             guard !text.isEmpty, !persona.isDeleted, !convo.isDeleted else { continue }
@@ -356,7 +349,7 @@ enum Companion {
         let cal = Calendar.current
         var date = now.addingTimeInterval(Double.random(in: hours) * 3600)
         // 聊天记录够多时，按你的习惯挑那一天里的某个钟点（聊得越多的钟点越容易被选中）
-        let usable = habits.filter { $0.key >= 9 && $0.key < 22 && $0.value > 0 }
+        let usable = habits.filter { inProactiveHours(Double($0.key)) && $0.value > 0 }
         if usable.values.reduce(0, +) >= 20 {
             let total = usable.values.reduce(0, +)
             var pick = Int.random(in: 0..<total)
@@ -370,21 +363,20 @@ enum Companion {
             date = candidate
         }
         for _ in 0..<4 {
-            let h = cal.component(.hour, from: date)
-            if h >= 9 && h < 22 && !Prefs.isQuiet(date) { break }
-            let base = h >= 22 ? date.adding(days: 1).startOfDay : date.startOfDay
+            let h = Double(cal.component(.hour, from: date))
+            if inProactiveHours(h) && !Prefs.isQuiet(date) { break }
+            let base = h >= Limits.Hours.proactiveTo ? date.adding(days: 1).startOfDay : date.startOfDay
             date = base.addingTimeInterval(Double.random(in: 9.5...11.5) * 3600)
         }
         return date
     }
 
-    // MARK: - 工具
-
-    static func lightRequest(_ persona: Persona, _ prompt: String) -> RelayRequest {
-        // 今日一句、日记、主动消息都是轻任务，用低强度省额度
-        RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
-                     system: PromptBuilder.system(for: persona, convo: nil, members: [persona]), prompt: prompt)
+    /// 主动消息挑的钟点：整点算（9 点到 21 点那一小时都行）
+    private static func inProactiveHours(_ hour: Double) -> Bool {
+        Clock.within(hour, from: Limits.Hours.proactiveFrom, to: Limits.Hours.proactiveTo)
     }
+
+    // MARK: - 工具
 
     static func todayTodos(_ context: ModelContext) -> [TodoItem] {
         let end = Date.now.startOfDay.adding(days: 1)

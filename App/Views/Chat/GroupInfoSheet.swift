@@ -31,6 +31,7 @@ struct MemoryEditor: View {
     }
 }
 
+/// 群聊信息（点群聊页头打开）：名称、成员、自动讨论、记忆、聊天背景，清空记录和删除群聊
 struct GroupInfoSheet: View {
     @Bindable var convo: Conversation
     @Environment(\.modelContext) private var context
@@ -45,80 +46,12 @@ struct GroupInfoSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.section) {
-                    VStack(alignment: .leading, spacing: Space.tight) {
-                        SectionLabel(text: "群聊名称")
-                        TextField("群聊", text: $convo.title)
-                            .font(.system(size: 16))
-                            .padding(.horizontal, Space.card)
-                            .frame(height: Space.row)
-                            .card()
-                    }
-                    VStack(alignment: .leading, spacing: Space.tight) {
-                        SectionLabel(text: "成员")
-                        VStack(spacing: 0) {
-                            ForEach(personas) { p in
-                                Button { toggle(p) } label: {
-                                    HStack(spacing: Space.item) {
-                                        AvatarView(persona: p, size: 32)
-                                        Text(p.name).font(.system(size: 16)).foregroundStyle(Palette.ink)
-                                        Spacer()
-                                        if convo.memberIDs.contains(p.id) {
-                                            Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
-                                        }
-                                    }
-                                    .padding(.horizontal, Space.card)
-                                    .frame(height: Space.row)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(PressableRowStyle())
-                                if p.id != personas.last?.id { Hairline(inset: 60) }
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                        .card()
-                    }
-                    VStack(alignment: .leading, spacing: Space.tight) {
-                        SectionLabel(text: "自动讨论")
-                        VStack(alignment: .leading, spacing: Space.tight) {
-                            Segmented(items: [(1, "不讨论"), (Conversation.occasionalRounds, "偶尔"), (2, "2 轮"), (3, "3 轮")], selection: $convo.discussRounds)
-                            Text("你说一句后，大家会接着彼此的话聊几轮；「偶尔」是有时聊上两三轮、有时各回一句。你随时插话就会停下来听你说。")
-                                .font(.system(size: Typo.secondary))
-                                .foregroundStyle(Palette.inkSoft)
-                                .padding(.horizontal, 4)
-                        }
-                        .padding(Space.card)
-                        .card()
-                    }
+                    nameSection
+                    membersSection
+                    discussSection
                     MemoryEditor(memory: $convo.memory)
-                    VStack(alignment: .leading, spacing: Space.tight) {
-                        SectionLabel(text: "聊天背景")
-                        WallpaperPicker(owner: convo.id)
-                            .padding(Space.card)
-                            .card()
-                    }
-                    VStack(spacing: 0) {
-                        Button { confirmClear = true } label: {
-                            Text("清空聊天记录")
-                                .font(.system(size: 16))
-                                .foregroundStyle(Palette.danger)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: Space.row)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PressableRowStyle())
-                        Hairline()
-                        Button { confirmDelete = true } label: {
-                            Text("删除群聊")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(Palette.danger)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: Space.row)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PressableRowStyle())
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                    .card()
+                    wallpaperSection
+                    dangerSection
                 }
                 .padding(Space.page)
             }
@@ -160,6 +93,104 @@ struct GroupInfoSheet: View {
         }
     }
 
+    // MARK: - 分区
+
+    /// 群聊名称
+    private var nameSection: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            SectionLabel(text: "群聊名称")
+            TextField("群聊", text: $convo.title)
+                .font(.system(size: 16))
+                .padding(.horizontal, Space.card)
+                .frame(height: Space.row)
+                .card()
+        }
+    }
+
+    /// 成员：所有角色列出来，点一下加进群或移出群（至少留两位）
+    private var membersSection: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            SectionLabel(text: "成员")
+            VStack(spacing: 0) {
+                ForEach(personas) { p in
+                    Button { toggle(p) } label: {
+                        HStack(spacing: Space.item) {
+                            AvatarView(persona: p, size: 32)
+                            Text(p.name).font(.system(size: 16)).foregroundStyle(Palette.ink)
+                            Spacer()
+                            if convo.memberIDs.contains(p.id) {
+                                Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
+                            }
+                        }
+                        .padding(.horizontal, Space.card)
+                        .frame(height: Space.row)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressableRowStyle())
+                    if p.id != personas.last?.id { Hairline(inset: 60) }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .card()
+        }
+    }
+
+    /// 自动讨论：你说一句后大家接着聊几轮
+    private var discussSection: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            SectionLabel(text: "自动讨论")
+            VStack(alignment: .leading, spacing: Space.tight) {
+                Segmented(items: [(1, "不讨论"), (Conversation.occasionalRounds, "偶尔"), (2, "2 轮"), (3, "3 轮")], selection: $convo.discussRounds)
+                Text("你说一句后，大家会接着彼此的话聊几轮；「偶尔」是有时聊上两三轮、有时各回一句。你随时插话就会停下来听你说。")
+                    .font(.system(size: Typo.secondary))
+                    .foregroundStyle(Palette.inkSoft)
+                    .padding(.horizontal, 4)
+            }
+            .padding(Space.card)
+            .card()
+        }
+    }
+
+    /// 这个群自己的聊天背景
+    private var wallpaperSection: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            SectionLabel(text: "聊天背景")
+            WallpaperPicker(owner: convo.id)
+                .padding(Space.card)
+                .card()
+        }
+    }
+
+    /// 清空记录、删除群聊（都要再确认一次）
+    private var dangerSection: some View {
+        VStack(spacing: 0) {
+            Button { confirmClear = true } label: {
+                Text("清空聊天记录")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Palette.danger)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Space.row)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableRowStyle())
+            Hairline()
+            Button { confirmDelete = true } label: {
+                Text("删除群聊")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Palette.danger)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Space.row)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableRowStyle())
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .card()
+    }
+
+    // MARK: - 动作
+
+    /// 加进群或移出群：群里至少留两位角色
     private func toggle(_ p: Persona) {
         if let i = convo.memberIDs.firstIndex(of: p.id) {
             if convo.memberIDs.count > 2 { convo.memberIDs.remove(at: i) }

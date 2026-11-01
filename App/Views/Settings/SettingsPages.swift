@@ -154,6 +154,7 @@ struct AppearanceSettingsView: View {
 
 // MARK: - 备份与恢复
 
+/// 设置 › 备份与恢复：备份到电脑、从电脑恢复、导出到「文件」和从文件恢复
 struct BackupView: View {
     @Environment(\.modelContext) private var context
     @Environment(RelayClient.self) private var relay
@@ -181,58 +182,9 @@ struct BackupView: View {
 
     var body: some View {
         SettingsPage(title: "备份与恢复") {
-            SettingsGroup(title: "备份到电脑") {
-                SettingRow(title: "每天自动备份", subtitle: "连着电脑时每天一次，存在电脑的 D:\\絮语备份，保留最近 30 份") {
-                    InkToggle(isOn: $auto, label: "每天自动备份")
-                }
-                Hairline()
-                // 上次没备份成功（多半是自动备份）：这一行右边就换成这句，红色
-                actionRow("立即备份到电脑",
-                          detail: backupFailed > 0 ? "上次没备份成功"
-                              : lastBackup > 0 ? "上次 " + Date(timeIntervalSince1970: lastBackup).listStamp : "",
-                          alert: backupFailed > 0,
-                          disabled: !relay.isConnected) {
-                    run("正在备份…") {
-                        let ok = await Backup.backupToPC(context: context, relay: relay)
-                        // 刷新下面「从电脑恢复」的列表，刚备份的这份马上能看到
-                        pcBackups = await relay.listBackups()
-                        return ok ? "已备份到电脑" : "电脑没有回应，备份没有完成"
-                    }
-                }
-            }
-
-            SettingsGroup(title: "从电脑恢复") {
-                if !relay.isConnected {
-                    Text("连上电脑后显示电脑上的备份").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(Space.card)
-                } else if pcBackups.isEmpty {
-                    Text("电脑上还没有备份").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(Space.card)
-                } else {
-                    ForEach(pcBackups.prefix(8)) { b in
-                        Button { restoring = .pc(b) } label: {
-                            SettingRow(title: b.at.listStamp + " " + Fmt.hm.string(from: b.at),
-                                       subtitle: ByteCountFormatter.string(fromByteCount: Int64(b.size), countStyle: .file)) {
-                                Text("恢复").font(.system(size: 14)).foregroundStyle(Palette.ink2)
-                            }
-                        }
-                        .buttonStyle(PressableRowStyle())
-                        if b.id != pcBackups.prefix(8).last?.id { Hairline() }
-                    }
-                }
-            }
-
-            SettingsGroup(title: "文件") {
-                actionRow("导出到「文件」", detail: "", disabled: false) {
-                    run("正在打包…") {
-                        guard let data = try? await Backup.exportData(context: context) else { return "导出失败" }
-                        exportDoc = BackupDocument(data: data)
-                        return nil
-                    }
-                }
-                Hairline()
-                actionRow("从文件恢复", detail: "", disabled: false) { showImporter = true }
-            }
+            backupGroup
+            pcRestoreGroup
+            fileGroup
 
             Text("恢复会用备份里的内容替换现在 App 里的全部角色、聊天、待办和日记。")
                 .font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).padding(.horizontal, 6)
@@ -268,6 +220,72 @@ struct BackupView: View {
             Text("现在 App 里的角色、聊天、待办和日记会被备份里的内容替换。建议先备份一次现在的。")
         }
     }
+
+    // MARK: 分组
+
+    /// 备份到电脑：每天自动备份的开关、立即备份一次
+    private var backupGroup: some View {
+        SettingsGroup(title: "备份到电脑") {
+            SettingRow(title: "每天自动备份", subtitle: "连着电脑时每天一次，存在电脑的 D:\\絮语备份，保留最近 30 份") {
+                InkToggle(isOn: $auto, label: "每天自动备份")
+            }
+            Hairline()
+            // 上次没备份成功（多半是自动备份）：这一行右边就换成这句，红色
+            actionRow("立即备份到电脑",
+                      detail: backupFailed > 0 ? "上次没备份成功"
+                          : lastBackup > 0 ? "上次 " + Date(timeIntervalSince1970: lastBackup).listStamp : "",
+                      alert: backupFailed > 0,
+                      disabled: !relay.isConnected) {
+                run("正在备份…") {
+                    let ok = await Backup.backupToPC(context: context, relay: relay)
+                    // 刷新下面「从电脑恢复」的列表，刚备份的这份马上能看到
+                    pcBackups = await relay.listBackups()
+                    return ok ? "已备份到电脑" : "电脑没有回应，备份没有完成"
+                }
+            }
+        }
+    }
+
+    /// 从电脑恢复：电脑上最近的 8 份备份，点一份恢复（先确认）
+    private var pcRestoreGroup: some View {
+        SettingsGroup(title: "从电脑恢复") {
+            if !relay.isConnected {
+                Text("连上电脑后显示电脑上的备份").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(Space.card)
+            } else if pcBackups.isEmpty {
+                Text("电脑上还没有备份").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(Space.card)
+            } else {
+                ForEach(pcBackups.prefix(8)) { b in
+                    Button { restoring = .pc(b) } label: {
+                        SettingRow(title: b.at.listStamp + " " + Fmt.hm.string(from: b.at),
+                                   subtitle: ByteCountFormatter.string(fromByteCount: Int64(b.size), countStyle: .file)) {
+                            Text("恢复").font(.system(size: 14)).foregroundStyle(Palette.ink2)
+                        }
+                    }
+                    .buttonStyle(PressableRowStyle())
+                    if b.id != pcBackups.prefix(8).last?.id { Hairline() }
+                }
+            }
+        }
+    }
+
+    /// 文件：导出到「文件」App、从文件恢复
+    private var fileGroup: some View {
+        SettingsGroup(title: "文件") {
+            actionRow("导出到「文件」", detail: "", disabled: false) {
+                run("正在打包…") {
+                    guard let data = try? await Backup.exportData(context: context) else { return "导出失败" }
+                    exportDoc = BackupDocument(data: data)
+                    return nil
+                }
+            }
+            Hairline()
+            actionRow("从文件恢复", detail: "", disabled: false) { showImporter = true }
+        }
+    }
+
+    // MARK: 操作
 
     private func actionRow(_ title: String, detail: String, alert: Bool = false, disabled: Bool,
                            action: @escaping () -> Void) -> some View {

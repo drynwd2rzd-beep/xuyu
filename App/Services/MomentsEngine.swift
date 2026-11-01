@@ -34,7 +34,7 @@ final class MomentsEngine {
         let key = "\(moment.id.uuidString)|\(comment.id.uuidString)|\(persona.id.uuidString)"
         let prompt = MomentPrompt.reply(as: persona, to: comment, on: moment, context: context)
         // 没能回（电脑没连上、出错了）：记下来，连上以后补回（以前就这么没下文了）
-        guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "回动态评论") else {
+        guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "回动态评论") else {
             pending.insert(key)
             return
         }
@@ -133,7 +133,7 @@ enum MomentsPlanner {
         let photos = context.album(of: persona.id)
         let voice = Voice.enabled(for: persona)
         let prompt = MomentPrompt.post(for: persona, at: deliver, photos: photos, voice: voice, context: context)
-        guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "发动态"),
+        guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "发动态"),
               let post = MomentText.parse(raw), !persona.isDeleted else { return }
         let moment = Moment(personaID: persona.id, text: post.text, mood: post.mood, createdAt: deliver)
         if let n = post.photo, photos.indices.contains(n - 1) { moment.photoIDs = [photos[n - 1].id] }
@@ -152,7 +152,7 @@ enum MomentsPlanner {
         var commented: [MomentComment] = []
         for persona in picks {
             let prompt = MomentPrompt.react(as: persona, to: moment, context: context)
-            guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "动态点赞评论"), !moment.isDeleted else { continue }
+            guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "动态点赞评论"), !moment.isDeleted else { continue }
             let reaction = MomentText.parseReaction(raw)
             if reaction.like && !moment.likedBy.contains(persona.id) { moment.likedBy.append(persona.id) }
             guard let text = reaction.comment else { continue }
@@ -164,7 +164,7 @@ enum MomentsPlanner {
         // TA 自己的动态下有人评论：有时回一句
         if let author = moment.personaID.flatMap({ context.persona($0) }), let first = commented.first, Bool.random() {
             let prompt = MomentPrompt.reply(as: author, to: first, on: moment, context: context)
-            if let raw = await relay.attempt(Companion.lightRequest(author, prompt), "回动态评论") {
+            if let raw = await relay.attempt(PromptBuilder.lightRequest(author, prompt), "回动态评论") {
                 let text = MomentText.clean(raw)
                 if !text.isEmpty {
                     let reply = MomentComment(personaID: author.id, text: text, replyTo: first.personaID,
@@ -182,7 +182,7 @@ enum MomentsPlanner {
         for photo in all.filter({ $0.caption.isEmpty && $0.personaID != nil }).prefix(3) {
             guard let id = photo.personaID, let persona = context.persona(id),
                   let small = ImageUtil.downscale(photo.data, maxSide: 768, quality: 0.7) else { continue }
-            var request = Companion.lightRequest(persona, "用一句话（十个字左右）说说这张照片里是什么，只输出这句话。")
+            var request = PromptBuilder.lightRequest(persona, "用一句话（十个字左右）说说这张照片里是什么，只输出这句话。")
             request.attachments = [RelayAttachment(kind: AttachmentKind.image.rawValue, name: "photo.jpg", data: small.base64EncodedString())]
             if let text = await relay.attempt(request, "相册描述") { photo.caption = MomentText.clean(text) }
         }
@@ -193,7 +193,7 @@ enum MomentsPlanner {
 /// 发给模型的动态提示
 enum MomentPrompt {
     private static func name(_ id: UUID?, context: ModelContext) -> String {
-        guard let id else { return PromptBuilder.userName }
+        guard let id else { return PromptParts.userName }
         return context.persona(id)?.name ?? "朋友"
     }
 
@@ -205,29 +205,26 @@ enum MomentPrompt {
     static func thread(_ moment: Moment, context: ModelContext, viewer: UUID? = nil) -> String {
         moment.visibleComments().suffix(8).map { c in
             let who = c.personaID == viewer && viewer != nil ? "你" : name(c.personaID, context: context)
-            let to = c.replyToMe ? "（回复\(PromptBuilder.userName)）" : c.replyTo.map { "（回复\(name($0, context: context))）" } ?? ""
+            let to = c.replyToMe ? "（回复\(PromptParts.userName)）" : c.replyTo.map { "（回复\(name($0, context: context))）" } ?? ""
             return "\(who)\(to)：\(c.text)"
         }.joined(separator: "\n")
     }
 
     static func post(for persona: Persona, at deliver: Date, photos: [AlbumPhoto], voice: Bool, context: ModelContext) -> String {
         let convo = context.chat(for: persona)
-        let history = Array(convo.visibleMessages().suffix(16))
         let recent = context.visibleMoments(by: persona.id).prefix(5).map { "- \(when($0.createdAt))：\($0.text)" }
-        let memory = convo.memory.trimmed
         let album = photos.enumerated().map { "\($0.offset + 1). \($0.element.caption.isEmpty ? "（一张照片）" : $0.element.caption)" }
         let lang = persona.lang == .ko ? "用韩语" : "用中文"
         return """
-        \(memory.isEmpty ? "" : "你记得的关于\(PromptBuilder.userName)的事：\n\(memory)\n\n")你们最近的聊天：
-        \(history.isEmpty ? "（还没有聊过）" : PromptBuilder.transcript(history, names: [persona.id: persona.name]))
+        \(PromptParts.contextBlock(memory: convo, history: convo.visibleMessages(), recent: Limits.Prompt.shortChat, names: [persona.id: persona.name]))
 
         你最近发过的动态（别重复）：
         \(recent.isEmpty ? "（还没发过）" : recent.joined(separator: "\n"))
 
         \(album.isEmpty ? "你的相册是空的，这次不配图。" : "你的相册里有这些照片，可以挑一张配图，也可以不配：\n" + album.joined(separator: "\n"))
 
-        现在是 \(Fmt.full.string(from: .now))。你要在 \(Fmt.full.string(from: deliver)) 发一条动态（像朋友圈），\(PromptBuilder.userName)和别的朋友都能看到。
-        写你那时候在做什么、想什么、看到了什么，贴着你的人设和生活；偶尔可以含蓄地带到和\(PromptBuilder.userName)聊过的事，但不是在跟 TA 说话。一两句，口语，像真人随手发的，不要表情符号、不要话题标签。
+        现在是 \(Fmt.full.string(from: .now))。你要在 \(Fmt.full.string(from: deliver)) 发一条动态（像朋友圈），\(PromptParts.userName)和别的朋友都能看到。
+        写你那时候在做什么、想什么、看到了什么，贴着你的人设和生活；偶尔可以含蓄地带到和\(PromptParts.userName)聊过的事，但不是在跟 TA 说话。一两句，口语，像真人随手发的，不要表情符号、不要话题标签。
         按下面的格式输出，不要别的：
         心情：两三个字
         动态：正文
@@ -269,7 +266,7 @@ enum MomentPrompt {
         let theirs = context.visibleMoments(by: persona.id).filter { $0.createdAt > since }.prefix(3)
         let mine = context.visibleMoments(by: nil).filter { $0.createdAt > since }.prefix(2)
         guard !theirs.isEmpty || !mine.isEmpty else { return nil }
-        let user = PromptBuilder.userName
+        let user = PromptParts.userName
         var lines = ["最近的动态（像朋友圈，大家都能看到）："]
         for m in theirs {
             let liked = m.likedByMe ? "，\(user)点了喜欢" : ""

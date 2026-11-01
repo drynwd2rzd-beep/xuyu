@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 
+// MARK: - 设置首页
+
+/// 设置首页：连接（电脑中继、两个引擎的默认模型）、对话（角色、World、我）、更多（二级页面入口）、重置
 struct SettingsView: View {
     @Environment(RelayClient.self) private var relay
     @Environment(Router.self) private var router
@@ -17,58 +20,9 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.section) {
-                section("连接") {
-                    Button { router.open(.connection) } label: {
-                        connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected, symbol: "desktopcomputer")
-                    }
-                    .buttonStyle(PressableRowStyle())
-                    Hairline(inset: 62)
-                    engineRow(.claude)
-                    Hairline(inset: 62)
-                    engineRow(.codex)
-                }
-
-                section("对话") {
-                    Button { router.open(.personas) } label: {
-                        SettingRow(title: "角色") {
-                            Text("\(personas.count) 位").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
-                            Chevron()
-                        }
-                    }
-                    .buttonStyle(PressableRowStyle())
-                    Hairline()
-                    // 世界观：大家生活的世界、关系、每个人的作息和今天
-                    navRow("World", route: .world)
-                    Hairline()
-                    meRow
-                }
-
-                // 不常改的放进二级页面，主页面保持简短
-                section("更多") {
-                    navRow("通知", route: .notifications)
-                    Hairline()
-                    navRow("外观与背景", route: .appearance)
-                    Hairline()
-                    navRow("备份与恢复", route: .backup)
-                    Hairline()
-                    navRow("语音", route: .voice)
-                    Hairline()
-                    navRow("隐私与安全", route: .privacy)
-                }
-
-                // 从轻到重：只还原偏好 → 删掉所有角色 → 什么都删（像刚装好）
-                section("重置") {
-                    resetRow("还原所有设置") { confirming = .settings }
-                    Hairline()
-                    resetRow("删除所有人设") { confirming = .personas }
-                    Hairline()
-                    resetRow("恢复出厂设置", danger: true) { confirming = .everything }
-                }
-                .disabled(resetting)
-            }
-            .padding(.horizontal, Space.page)
-            .padding(.bottom, 40)
+            sections
+                .padding(.horizontal, Space.page)
+                .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
         .safeAreaInset(edge: .top, spacing: 0) { SubpageHeader(title: "设置") }
@@ -117,6 +71,62 @@ struct SettingsView: View {
         .sensoryFeedback(.success, trigger: resetDone)
     }
 
+    /// 首页的四个分组：连接、对话、更多、重置
+    private var sections: some View {
+        VStack(alignment: .leading, spacing: Space.section) {
+            section("连接") {
+                Button { router.open(.connection) } label: {
+                    connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected, symbol: "desktopcomputer")
+                }
+                .buttonStyle(PressableRowStyle())
+                Hairline(inset: 62)
+                engineRow(.claude)
+                Hairline(inset: 62)
+                engineRow(.codex)
+            }
+
+            section("对话") {
+                Button { router.open(.personas) } label: {
+                    SettingRow(title: "角色") {
+                        Text("\(personas.count) 位").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                        Chevron()
+                    }
+                }
+                .buttonStyle(PressableRowStyle())
+                Hairline()
+                // 世界观：大家生活的世界、关系、每个人的作息和今天
+                navRow("World", route: .world)
+                Hairline()
+                meRow
+            }
+
+            // 不常改的放进二级页面，主页面保持简短
+            section("更多") {
+                navRow("通知", route: .notifications)
+                Hairline()
+                navRow("外观与背景", route: .appearance)
+                Hairline()
+                navRow("备份与恢复", route: .backup)
+                Hairline()
+                navRow("语音", route: .voice)
+                Hairline()
+                navRow("隐私与安全", route: .privacy)
+            }
+
+            // 从轻到重：只还原偏好 → 删掉所有角色 → 什么都删（像刚装好）
+            section("重置") {
+                resetRow("还原所有设置") { confirming = .settings }
+                Hairline()
+                resetRow("删除所有人设") { confirming = .personas }
+                Hairline()
+                resetRow("恢复出厂设置", danger: true) { confirming = .everything }
+            }
+            .disabled(resetting)
+        }
+    }
+
+    // MARK: - 重置
+
     @Environment(\.modelContext) private var context
     @Environment(ChatEngine.self) private var engine
     @State private var confirming: ResetKind?
@@ -125,6 +135,7 @@ struct SettingsView: View {
     @State private var resetDone = 0
     @State private var resetFailed = false
 
+    /// 重置的三档，从轻到重
     enum ResetKind: Identifiable {
         case settings, personas, everything
         var id: Self { self }
@@ -192,6 +203,8 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - 各行
 
     /// 二级页面入口：只有名字和箭头，右边不放多余的信息
     private func navRow(_ title: String, route: Route) -> some View {
@@ -306,6 +319,7 @@ struct SettingsView: View {
         .buttonStyle(PressableRowStyle())
     }
 
+    /// 模型 ID 的简写（中继还没报来模型清单时用，见 ModelNames.name）
     static func short(_ model: String) -> String {
         let map = ["claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-haiku-5-5": "Haiku 5.5",
                    "claude-fable-5-1": "Fable 5.1", "opus": "Opus", "sonnet": "Sonnet", "haiku": "Haiku"]
@@ -313,6 +327,9 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - 状态点
+
+/// 一个小圆点：绿 = 正常（连上了、装好了），灰 = 没连上（设置首页和电脑中继页共用）
 struct StatusDot: View {
     let ok: Bool
     var body: some View {
@@ -320,182 +337,5 @@ struct StatusDot: View {
             .fill(ok ? Color(hex: 0x5E8F58) : Palette.faint)
             .frame(width: 8, height: 8)
             .accessibilityLabel(ok ? "正常" : "未连接")
-    }
-}
-
-enum ModelNames {
-    static func name(_ id: String, engine: Engine, status: RelayStatus?) -> String {
-        if id.isEmpty { return "自动" }
-        return status?.catalog(for: engine).first { $0.id == id }?.name ?? SettingsView.short(id)
-    }
-
-    static func summary(_ id: String, _ effort: String, engine: Engine, status: RelayStatus?) -> String {
-        let n = name(id, engine: engine, status: status)
-        return effort.isEmpty ? n : "\(n) · \(EffortName.label(effort))"
-    }
-
-    /// 某个模型能选的推理强度；不知道时给通用的一组
-    static func efforts(for id: String, engine: Engine, status: RelayStatus?) -> [String] {
-        let list = status?.catalog(for: engine) ?? []
-        if let m = list.first(where: { $0.id == id }), !m.efforts.isEmpty { return m.efforts }
-        if id.isEmpty, let first = list.first, !first.efforts.isEmpty { return first.efforts }
-        return ["low", "medium", "high", "xhigh", "max"]
-    }
-}
-
-/// 某一个引擎（Claude 或 Codex）的默认模型和推理强度
-struct ModelPicker: View {
-    let engine: Engine
-    @Binding var selection: String
-    @Binding var effort: String
-    let status: RelayStatus?
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Space.section) {
-                HStack(spacing: Space.tight) {
-                    EngineLogo(engine: engine, size: 18)
-                    Text("\(engine.label) 默认模型").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink)
-                    Spacer()
-                    Button("完成") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.ink)
-                }
-                group(selection: $selection, effort: $effort)
-            }
-            .padding(Space.page)
-        }
-    }
-
-    private func group(selection: Binding<String>, effort: Binding<String>) -> some View {
-        let models = status?.catalog(for: engine) ?? []
-        return VStack(alignment: .leading, spacing: Space.tight) {
-            VStack(spacing: 0) {
-                row("自动", subtitle: "账号默认的模型", value: "", selection: selection)
-                ForEach(models) { m in
-                    Hairline()
-                    row(m.name, subtitle: m.description.isEmpty ? nil : m.description, value: m.id, selection: selection)
-                }
-                Hairline()
-                SettingRow(title: "推理强度", subtitle: "越高越聪明，也越慢、越耗额度") {
-                    EffortMenu(options: ModelNames.efforts(for: selection.wrappedValue, engine: engine, status: status),
-                               selection: effort)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-            .card()
-            if models.isEmpty {
-                Text("连接电脑后显示可用的模型").font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).padding(.leading, 6)
-            }
-        }
-    }
-
-    private func row(_ title: String, subtitle: String?, value: String, selection: Binding<String>) -> some View {
-        Button { selection.wrappedValue = value } label: {
-            SettingRow(title: title, subtitle: subtitle) {
-                if selection.wrappedValue == value {
-                    Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
-                }
-            }
-        }
-        .buttonStyle(PressableRowStyle())
-        .sensoryFeedback(.selection, trigger: selection.wrappedValue)
-    }
-}
-
-/// 推理强度选择：默认 + 模型支持的几档
-struct EffortMenu: View {
-    let options: [String]
-    @Binding var selection: String
-
-    var body: some View {
-        Menu {
-            item("", "默认")
-            ForEach(options, id: \.self) { e in item(e, EffortName.label(e)) }
-        } label: {
-            MenuValue(text: EffortName.label(selection))
-        }
-        .sensoryFeedback(.selection, trigger: selection)
-    }
-
-    @ViewBuilder
-    private func item(_ value: String, _ title: String) -> some View {
-        Button { selection = value } label: {
-            if selection == value { Label(title, systemImage: "checkmark") } else { Text(title) }
-        }
-    }
-}
-
-struct QuietHoursSheet: View {
-    @Binding var start: Int
-    @Binding var end: Int
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.section) {
-            HStack {
-                Text("免打扰").font(Typo.serif(20, .medium)).foregroundStyle(Palette.ink)
-                Spacer()
-                Button("完成") { dismiss() }.fontWeight(.semibold).foregroundStyle(Palette.ink)
-            }
-            HStack {
-                picker("开始", $start)
-                Text("–").foregroundStyle(Palette.inkSoft)
-                picker("结束", $end)
-            }
-            .padding(Space.card)
-            .card()
-            Text("这段时间里，角色不会主动给你发消息。").font(.system(size: 13)).foregroundStyle(Palette.inkSoft).padding(.leading, 6)
-        }
-        .padding(Space.page)
-    }
-
-    private func picker(_ label: String, _ value: Binding<Int>) -> some View {
-        VStack(spacing: 4) {
-            Text(label).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-            Picker(label, selection: value) {
-                ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) }
-            }
-            .pickerStyle(.wheel)
-            .frame(height: 110)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-/// 真实天气：开关，下面一行是 TA 现在知道的天气；城市留空就跟着定位
-struct WeatherRows: View {
-    @AppStorage(Prefs.weatherEnabled) private var on = true
-    @AppStorage(Prefs.weatherCity) private var city = ""
-    @State private var line = Weather.shortLine
-
-    var body: some View {
-        SettingRow(title: "真实天气", subtitle: on ? line : nil) {
-            InkToggle(isOn: $on, label: "真实天气")
-        }
-        .onChange(of: on) { _, now in if now { refresh() } }
-        if on {
-            Hairline()
-            HStack(spacing: Space.item) {
-                Text("城市").font(.system(size: 16)).foregroundStyle(Palette.ink)
-                Spacer()
-                TextField("跟着定位", text: $city)
-                    .multilineTextAlignment(.trailing)
-                    .font(.system(size: 15))
-                    .foregroundStyle(Palette.ink2)
-                    .submitLabel(.done)
-                    .onSubmit(refresh)
-                    .frame(maxWidth: 180)
-            }
-            .padding(.horizontal, Space.card)
-            .frame(height: Space.row)
-            .transition(.opacity)
-        }
-    }
-
-    private func refresh() {
-        Task {
-            await Weather.refreshIfNeeded(force: true)
-            withAnimation(Motion.snappy) { line = Weather.shortLine }
-        }
     }
 }

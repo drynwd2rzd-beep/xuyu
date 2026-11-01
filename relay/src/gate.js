@@ -3,24 +3,12 @@
 //   读写文件：只能在工作文件夹里，外面的一律拒绝；会改 AI 自己权限和指令的文件（.claude、CLAUDE.md 这类）不许写
 //   运行命令、打开网页、上网搜索：先在手机上弹「允许 / 不允许」，点了允许才做；手机没回应就当不允许
 //   不认识的工具：拒绝
-// 中继启动时随机生成一把钥匙，只有带着它、从本机来的请求才算数。出任何错都按「不允许」处理
-import fs from 'node:fs';
+// 判断规则在 policy.js。中继启动时随机生成一把钥匙，只有带着它、从本机来的请求才算数。出任何错都按「不允许」处理
 import path from 'node:path';
-
-// ---- 工具分类 ----
-const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep']);
-const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
-// Codex 的命令也叫 Bash；web_search 是 Codex 的上网搜索
-const ASK_TOOLS = new Set(['Bash', 'WebFetch', 'WebSearch', 'web_search']);
-// 只是整理步骤，不碰电脑
-const HARMLESS_TOOLS = new Set(['TodoWrite', 'update_plan']);
-
-// 会改变 AI 权限或指令的文件和文件夹：AI 写了它们，下一次干活时就能绕过把关（审查 Z-005）
-const PROTECTED_DIRS = new Set(['.claude', '.codex', '.git']);
-const PROTECTED_FILES = new Set(['.mcp.json', 'claude.md', 'claude.local.md', 'agents.md', 'agents.override.md']);
-
-// 确认卡片上要能看清整条命令：太长的直接拒绝，让 AI 拆开做（审查 Z-031）
-const MAX_ASK_TEXT = 1500;
+import { TIMEOUTS } from './protocol.js';
+import {
+  FILE_TOOLS, WRITE_TOOLS, ASK_TOOLS, HARMLESS_TOOLS, MAX_ASK_TEXT, checkPath, patchPaths, describe,
+} from './policy.js';
 
 // ---- 回答 ----
 const isCodex = process.env.XUYU_ENGINE === 'codex';
@@ -35,65 +23,15 @@ function answer(decision, reason) {
   process.exit(0);
 }
 
-// ---- 路径 ----
-/** 解析符号链接和目录联接以后的真实路径；目标还不存在时，取最近一个存在的上级的真实路径再拼回去 */
-function realPath(target) {
-  const rest = [];
-  let current = path.resolve(target);
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync.native(current), ...rest);
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) return path.resolve(target);
-      rest.unshift(path.basename(current));
-      current = parent;
-    }
-  }
-}
-
-/** 相对工作文件夹的路径；在外面时返回 null（Windows 不分大小写） */
-function relativeInside(root, target) {
-  const rel = path.relative(realPath(root).toLowerCase(), realPath(target).toLowerCase());
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)) ? rel : null;
-}
-
-function isProtected(rel) {
-  const parts = rel.split(/[\\/]/).filter(Boolean);
-  return parts.some((p) => PROTECTED_DIRS.has(p)) || PROTECTED_FILES.has(parts[parts.length - 1] || '');
-}
-
-/** 检查一个要读写的路径；不行时返回拒绝的理由 */
-function checkPath(root, base, target, writing) {
-  const rel = relativeInside(root, path.resolve(base, String(target)));
-  if (rel === null) return '只能读写工作文件夹里的文件，这个在外面，已拒绝。';
-  if (writing && isProtected(rel)) return '这个文件管着 AI 自己的权限和指令，不能改，已拒绝。';
-  return '';
-}
-
-/** Codex 改文件用的补丁里写到的所有路径 */
-function patchPaths(patch) {
-  const re = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm;
-  return [...String(patch || '').matchAll(re)].map((m) => m[1].trim());
-}
-
 // ---- 问中继 ----
-function describe(tool, input) {
-  switch (tool) {
-    case 'Bash': return `运行命令：${String(input.command || '')}`;
-    case 'WebFetch': return `打开网页：${String(input.url || '')}`;
-    default: return `上网搜索：${String(input.query || '')}`;
-  }
-}
-
 /** 告诉中继「把关来过了」；要问手机时带上 text，等到你点了才回来。中继没回应就当不允许 */
 async function tellRelay(text) {
   const res = await fetch(process.env.XUYU_GATE_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-xuyu-gate': process.env.XUYU_GATE_KEY || '' },
     body: JSON.stringify({ job: process.env.XUYU_JOB || '', text }),
-    // 比钩子本身的时限（10 分钟）短一点，自己先收尾
-    signal: AbortSignal.timeout(9.5 * 60 * 1000),
+    // 比钩子本身的时限短一点，自己先收尾（顺序见 protocol.js 的 TIMEOUTS）
+    signal: AbortSignal.timeout(TIMEOUTS.gateSelf),
   });
   const reply = await res.json();
   return reply.ok === true;
@@ -140,6 +78,7 @@ async function decide(input) {
   return answer('deny', '工作模式里不能用这个工具，已拒绝。');
 }
 
+// ---- 入口：钩子从标准输入读这次要用的工具 ----
 let raw = '';
 process.stdin.on('data', (d) => (raw += d));
 process.stdin.on('end', async () => {

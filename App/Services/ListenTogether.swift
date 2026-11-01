@@ -181,10 +181,10 @@ final class ListenTogether {
         lastComment = .now
         Task {
             let prompt = """
-            你和\(PromptBuilder.userName)正在一起听歌（你听不到声音，但知道在放哪首）。现在开始放《\(song.title)》\(song.artist.isEmpty ? "" : " - \(song.artist)")。
+            你和\(PromptParts.userName)正在一起听歌（你听不到声音，但知道在放哪首）。现在开始放《\(song.title)》\(song.artist.isEmpty ? "" : " - \(song.artist)")。
             像一起听歌的朋友那样随口说一句：可以说你对这首歌的印象、它让你想起什么、或者问 TA 喜不喜欢。一句话，口语化，不要用书名号以外的引号。只输出这一句。
             """
-            guard let text = await relay.attempt(Companion.lightRequest(persona, prompt), "一起听插话"),
+            guard let text = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "一起听插话"),
                   !text.trimmed.isEmpty, self.persona == id else { return }
             let convo = context.chat(for: persona)
             // TA 正在打字回你：这句就不插了，不然会把那段回复从中间隔开

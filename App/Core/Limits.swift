@@ -9,6 +9,8 @@ enum Limits {
         static let recentChat = 20
         /// 补一句、发动态时看的最近聊天条数
         static let shortChat = 16
+        /// 打电话时每一轮带的最近聊天条数
+        static let callChat = 12
         /// 写日记时一天里最多读的聊天条数
         static let diaryChat = 80
         /// 长期记忆最多多少字
@@ -45,6 +47,17 @@ enum Limits {
         static let todoHorizon: TimeInterval = 14 * 24 * 3600
         /// 一起听：TA 插话至少隔这么久
         static let listenComment: TimeInterval = 360
+    }
+
+    /// 一天里的几个钟点（按 `Clock.hour` 算）
+    enum Hours {
+        /// 过了这个钟点就写今天的日记
+        static let diary = 20.0
+        /// 这个钟点以前算深夜：TA 有点困、话少
+        static let lateNight = 6.0
+        /// 主动消息只挑这段时间（再避开你的免打扰）
+        static let proactiveFrom = 9.0
+        static let proactiveTo = 22.0
     }
 
     /// 会一直增长的记录最多留多少（DATA-8）

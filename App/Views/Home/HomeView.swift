@@ -133,7 +133,7 @@ struct HomeView: View {
         .onChange(of: router.tab) { _, tab in if tab != .today { setEditing(false) } }
         // 看到今天的日记还没写、又已经过了 8 点：马上去写（不用等下次打开 App）
         .task(id: "\(relay.isConnected)") {
-            guard Calendar.current.component(.hour, from: .now) >= 20 else { return }
+            guard Clock.hour() >= Limits.Hours.diary else { return }
             await Companion.writeDiaries(context: context, relay: relay)
         }
         .sensoryFeedback(.selection, trigger: day)

@@ -240,20 +240,26 @@ enum Voice {
 
     // MARK: - 念
 
-    /// 用这个角色的声音和设置把一句话念成语音（mp3）；选的模型用不了就退回最稳定的。
-    /// 话里可以带语气标签（笑、叹气、停顿），模型不支持时先去掉
+    /// 用这个角色的声音和设置把一句话念成语音（mp3）：先在主线程上拷出声音设置，再去联网
+    @MainActor
     static func speak(_ text: String, for persona: Persona) async throws -> Data {
-        let provider = provider(of: persona)
+        try await speak(text, spec: VoiceSpec(persona))
+    }
+
+    /// 按一份声音设置把一句话念成语音（mp3）；选的模型用不了就退回最稳定的。
+    /// 话里可以带语气标签（笑、叹气、停顿），模型不支持时先去掉。不碰角色，可以在后台跑
+    static func speak(_ text: String, spec: VoiceSpec) async throws -> Data {
+        let provider = spec.provider
         guard isConfigured(provider) else { throw Failure.noKey }
-        let chosen = persona.voiceModel.isEmpty ? provider.defaultModel : persona.voiceModel
+        let chosen = spec.model
         let tries = chosen == provider.fallbackModel ? [chosen] : [chosen, provider.fallbackModel]
         var lastError: Error = Failure.other("没有生成语音")
         for model in tries {
             let line = supportsTags(model, provider) ? text : VoiceTags.strip(text)
             do {
                 switch provider {
-                case .elevenlabs: return try await ElevenLabs.speak(line, persona: persona, model: model)
-                case .minimax: return try await MiniMax.speak(line, persona: persona, model: model)
+                case .elevenlabs: return try await ElevenLabs.speak(line, spec: spec, model: model)
+                case .minimax: return try await MiniMax.speak(line, spec: spec, model: model)
                 }
             } catch Failure.other(let message) {
                 // 这个模型用不了：换下一个

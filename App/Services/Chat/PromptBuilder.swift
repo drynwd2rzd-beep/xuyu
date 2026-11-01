@@ -1,20 +1,10 @@
 import Foundation
 import SwiftData
 
-/// 拼出发给模型的内容：人设和规则（system）、最近的聊天记录、附件
+/// 拼出发给模型的内容：人设和规则（system）、最近的聊天记录、附件。
+/// 它是「汇总者」：会去读世界观、动态、一起听、记忆窗口这些服务；底层小零件在 `PromptParts`
 enum PromptBuilder {
-    static var userName: String {
-        let n = Prefs.nicknameValue
-        return n.isEmpty ? "用户" : n
-    }
-
-    static func model(for persona: Persona) -> String {
-        persona.model.isEmpty ? Prefs.defaultModel(for: persona.engine) : persona.model
-    }
-
-    static func effort(for persona: Persona) -> String {
-        persona.effort.isEmpty ? Prefs.defaultEffort(for: persona.engine) : persona.effort
-    }
+    private static var userName: String { PromptParts.userName }
 
     // MARK: - 人设和规则
 
@@ -99,47 +89,6 @@ enum PromptBuilder {
         Array(history.filter { $0.createdAt > convo.memoryUntil }.suffix(Memory.maxWindow))
     }
 
-    static func line(for m: Message, names: [UUID: String]) -> String {
-        let who = m.role == .user ? userName : (m.personaID.flatMap { names[$0] } ?? "AI")
-        var body: String
-        switch m.kind {
-        case .text: body = m.content
-        case .images: body = "[发了 \(m.attachments?.count ?? 0) 张图片]" + (m.content.isEmpty ? "" : " \(m.content)")
-        case .file: body = "[发了文件：\(m.sortedAttachments.map(\.fileName).joined(separator: "、"))]" + (m.content.isEmpty ? "" : " \(m.content)")
-        case .note: body = "【写下的想法】\(m.content)"
-        // 你发的表情：TA 第一次看到时记下了它是什么样（存在这条消息的正文里，界面上不显示）
-        case .sticker: body = "[发了一个表情\(m.content.isEmpty ? "" : "：\(m.content)")]"
-        case .voice: body = "[发了一条语音] \(m.content)"
-        // 拍一拍：你拍的那条正文里存着被拍的人的名字
-        case .nudge: body = m.role == .user ? "（拍了拍\(m.content)）" : "（拍了拍\(userName)）"
-        // 语音通话：TA 记得电话里聊了什么（最多带上最后 8 句）
-        case .call:
-            let said = CallLogs.shared.lines(m.id).suffix(8).map { ($0.mine ? userName : "你") + "：" + $0.zh }.joined(separator: "；")
-            body = "（打了 \(m.content) 的语音电话\(said.isEmpty ? "" : "，电话里说了：\(said)")）"
-        }
-        if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }
-        // TA 当时的心声：TA 记得自己想过什么（你看得到，聊天记录里也带着）
-        if m.role == .assistant, let thought = Thoughts.shared.text(m.id) { body += "（心里想：\(thought)）" }
-        // TA 分享过的视频 / 热搜
-        if let card = VideoCards.shared.card(m.id) { body += "（分享了：\(card.title)）" }
-        if m.recalled { body = "（撤回了一条消息）" }
-        return "[\(Fmt.time24.string(from: m.createdAt))] \(who)：\(body)"
-    }
-
-    static func transcript(_ messages: [Message], names: [UUID: String]) -> String {
-        var lines: [String] = []
-        var lastDay: Date?
-        for m in messages where m.status != .error {
-            let day = m.createdAt.startOfDay
-            if day != lastDay {
-                lines.append("— \(Fmt.md.string(from: m.createdAt)) —")
-                lastDay = day
-            }
-            lines.append(line(for: m, names: names))
-        }
-        return lines.joined(separator: "\n")
-    }
-
     /// 感知聊天间隔：隔了 12 小时以上心里有数；隔了 3 天以上自然地表现出好久没聊了。
     /// 你连着发了几条时，从这几条的第一条往前算
     static func gapNote(_ history: [Message]) -> String {
@@ -175,7 +124,7 @@ enum PromptBuilder {
                 let note = c.isGroup
                     ? "\(place)最近在聊："
                     : "\(place)最近说的话（只有你们俩知道；在群里别主动说出来，除非 TA 自己先提）："
-                block.append(note + "\n" + transcript(Array(recent), names: names))
+                block.append(note + "\n" + PromptParts.transcript(Array(recent), names: names))
             }
             if !block.isEmpty { parts.append(block.joined(separator: "\n")) }
         }
@@ -197,7 +146,7 @@ enum PromptBuilder {
         let diary = diaryNotes.isEmpty ? "" : "\(userName)最近几天发的动态、写的日记（记在心上，合适时自然地关心，不要生硬复述）：\n\(diaryNotes)\n\n"
         // 这一刻的状态（今天的心情、你隔了多久才回、闹没闹别扭、相册里能发的照片）：每次都不一样，放在末尾
         // 真实天气也放在这里（每小时会变）：TA 能自然地提醒带伞、降温、天黑了
-        let weather = Weather.summary.map { "\(userName)那边的天气：\($0)" } ?? ""
+        let weather = PromptParts.weatherLine
         // 正在和这位一起听歌：在放哪首、放到哪
         let listening = (ListenTogether.line.flatMap { $0.persona == persona.id ? $0.text : nil } ?? "")
             // 一起在读的书：各自读到哪（不剧透）
@@ -207,14 +156,19 @@ enum PromptBuilder {
         let prompt = """
         \(shared)\(diary)下面是你们最近的聊天记录：
 
-        \(transcript(recent(history, convo: convo), names: names))
+        \(PromptParts.transcript(recent(history, convo: convo), names: names))
 
         现在是 \(Fmt.time24.string(from: .now))。\(gapNote(history))\(state)\(ask)直接输出要说的话，不要加名字或时间。
         """
-        return RelayRequest(engine: persona.engine.rawValue, model: model(for: persona), effort: effort(for: persona),
+        return RelayRequest(engine: persona.engine.rawValue, model: PromptParts.model(for: persona), effort: PromptParts.effort(for: persona),
                             system: system(for: persona, convo: convo, members: members,
                                            stickerCategories: persona.canWork ? [] : stickerCategories),
                             prompt: prompt, attachments: newAttachments(for: persona, in: history), work: persona.canWork)
+    }
+
+    /// 用角色口吻的轻任务（今日一句、日记、主动消息、追问、动态、约定……）：带整份人设，不带某个对话的内容
+    static func lightRequest(_ persona: Persona, _ prompt: String) -> RelayRequest {
+        PromptParts.lightRequest(persona, prompt, system: system(for: persona, convo: nil, members: [persona]))
     }
 
     /// 这位角色上次说话之后你发的附件（群聊里别人先回了，这位也要看到你的图）

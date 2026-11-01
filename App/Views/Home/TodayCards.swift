@@ -45,18 +45,7 @@ struct TodoCard: View {
     var body: some View {
         let open = pending, done = finished
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(isToday ? "To do" : "Plans").font(Typo.serif(22)).foregroundStyle(Palette.ink)
-                Spacer()
-                if !open.isEmpty || !done.isEmpty {
-                    Text("\(done.count) / \(open.count + done.count)")
-                        .font(Typo.serif(14))
-                        .foregroundStyle(Palette.inkSoft)
-                        .contentTransition(.numericText())
-                }
-            }
-            .padding(.top, 4)
-            .padding(.bottom, 4)
+            header(open: open, done: done)
 
             ForEach(open) { item in
                 row(item)
@@ -67,26 +56,7 @@ struct TodoCard: View {
 
             if !done.isEmpty {
                 Hairline(inset: 36)
-                Button { withAnimation(Motion.spring) { doneOpen.toggle() } } label: {
-                    HStack(spacing: Space.tight) {
-                        ZStack {
-                            Circle().fill(Palette.ink)
-                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.inkInverse)
-                        }
-                        .frame(width: 22, height: 22)
-                        .frame(width: 28)
-                        Text("\(done.count) done").font(Typo.serif(15).italic()).foregroundStyle(Palette.inkSoft)
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Palette.inkSoft)
-                            .rotationEffect(.degrees(doneOpen ? 180 : 0))
-                    }
-                    .frame(minHeight: 48)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityValue(doneOpen ? Text("已展开") : Text("已收起"))
+                doneToggle(count: done.count)
                 if doneOpen {
                     ForEach(done) { item in
                         Hairline(inset: 36)
@@ -123,6 +93,48 @@ struct TodoCard: View {
                 .presentationCornerRadius(Radius.sheet)
                 .presentationBackground(Palette.paper)
         }
+    }
+
+    // MARK: 各行
+
+    /// 标题（今天是 To do，别的日子是 Plans），右边是「做完几条 / 一共几条」
+    private func header(open: [TodoItem], done: [TodoItem]) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(isToday ? "To do" : "Plans").font(Typo.serif(22)).foregroundStyle(Palette.ink)
+            Spacer()
+            if !open.isEmpty || !done.isEmpty {
+                Text("\(done.count) / \(open.count + done.count)")
+                    .font(Typo.serif(14))
+                    .foregroundStyle(Palette.inkSoft)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 4)
+    }
+
+    /// 做完的收成一行「N done」，点一下展开或收起
+    private func doneToggle(count: Int) -> some View {
+        Button { withAnimation(Motion.spring) { doneOpen.toggle() } } label: {
+            HStack(spacing: Space.tight) {
+                ZStack {
+                    Circle().fill(Palette.ink)
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.inkInverse)
+                }
+                .frame(width: 22, height: 22)
+                .frame(width: 28)
+                Text("\(count) done").font(Typo.serif(15).italic()).foregroundStyle(Palette.inkSoft)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Palette.inkSoft)
+                    .rotationEffect(.degrees(doneOpen ? 180 : 0))
+            }
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(doneOpen ? Text("已展开") : Text("已收起"))
     }
 
     private func row(_ item: TodoItem) -> some View {

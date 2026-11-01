@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
+// ---- 找命令 ----
 /**
  * 找到可以直接 spawn 的命令（不经过 shell，参数里的换行和引号才安全）。
  * Windows 上 npm 装的命令是 .cmd 包装，这里解析出真正的 .js 入口，用当前 node 运行。
@@ -33,6 +34,7 @@ export function resolveCommand(name) {
   return cmd ? fromPath(cmd) : null;
 }
 
+// ---- 解析 npm 的 .cmd 包装 ----
 function fromPath(file) {
   if (!file.toLowerCase().endsWith('.cmd')) return { file, pre: [] };
   const text = fs.readFileSync(file, 'utf8');

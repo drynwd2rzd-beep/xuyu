@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { DEFAULT_PORT } from './protocol.js';
 
+// ---- 文件夹 ----
 const base = process.env.APPDATA || path.join(os.homedir(), '.config');
 const dir = path.join(base, 'xuyu-relay');
 
@@ -20,8 +22,9 @@ export const paths = {
 const oldWorkDir = path.join(os.homedir(), '絮语工作区');
 const defaultWorkDir = fs.existsSync('D:\\') ? 'D:\\絮语工作区' : oldWorkDir;
 
+// ---- 默认设置 ----
 const defaults = {
-  port: 51888,
+  port: DEFAULT_PORT,
   workDir: defaultWorkDir,
   // 手机的聊天备份放这里（和工作区分开，AI 碰不到）
   backupDir: fs.existsSync('D:\\') ? 'D:\\絮语备份' : path.join(os.homedir(), '絮语备份'),
@@ -40,6 +43,7 @@ function newToken() {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
+// ---- 读写 ----
 export function loadConfig() {
   for (const d of [paths.dir, paths.workspace, paths.uploads, paths.replies]) fs.mkdirSync(d, { recursive: true });
   let saved = {};

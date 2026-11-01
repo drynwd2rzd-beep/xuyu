@@ -61,11 +61,11 @@ enum VideoCards {
         你在\(useHot ? "看抖音热搜" : "刷 B 站")，下面是你刷到的：
         \(list)
 
-        \(life.role.isEmpty ? "" : "你是：\(life.role)。")挑一个你真觉得有意思、或者觉得\(PromptBuilder.userName)会喜欢的，分享给 TA，配一句随口的话（比如「笑死，这只猫跟你一模一样」）。你看不到视频画面，只按标题说，别编具体画面。
+        \(life.role.isEmpty ? "" : "你是：\(life.role)。")挑一个你真觉得有意思、或者觉得\(PromptParts.userName)会喜欢的，分享给 TA，配一句随口的话（比如「笑死，这只猫跟你一模一样」）。你看不到视频画面，只按标题说，别编具体画面。
         都没意思就只输出：不分享
         否则只输出 JSON：{"index":编号,"text":"你说的那句话"}
         """
-        guard let raw = await relay.attempt(Companion.lightRequest(persona, prompt), "视频分享"), !raw.contains("不分享"),
+        guard let raw = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "视频分享"), !raw.contains("不分享"),
               let start = raw.firstIndex(of: "{"), let end = raw.lastIndex(of: "}"),
               let data = String(raw[start...end]).data(using: .utf8),
               let pick = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -16,7 +16,7 @@ enum Memory {
 
     private static var working: Set<UUID> = []
 
-    static func updateIfNeeded(_ convo: Conversation, members: [Persona], context: ModelContext, relay: RelayClient) async {
+    static func updateIfNeeded(_ convo: Conversation, members: [Persona], context: ModelContext, relay: any RelayTransport) async {
         guard !working.contains(convo.id), let persona = members.first else { return }
         let pending = convo.visibleMessages().filter { $0.createdAt > convo.memoryUntil && $0.status != .error }
         guard pending.count > trigger else { return }
@@ -26,7 +26,7 @@ enum Memory {
         working.insert(convo.id)
         defer { working.remove(convo.id) }
 
-        let user = PromptBuilder.userName
+        let user = PromptParts.userName
         let names = Dictionary(members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         let who = convo.isGroup ? "群聊「\(convo.displayTitle(members))」里的大家" : "「\(persona.name)」"
         // 这段时间一起读的书、一起听的歌（不在聊天记录里，也该记住）
@@ -45,7 +45,7 @@ enum Memory {
         \(convo.memory.trimmed.isEmpty ? "（还没有）" : convo.memory.trimmed)
 
         更早的聊天记录：
-        \(PromptBuilder.transcript(chunk, names: names))
+        \(PromptParts.transcript(chunk, names: names))
         \(alsoDid)
         请输出更新后的完整记忆：
         - 保留关于\(user)的重要信息：身份、喜好、习惯、经历、正在做的事和计划、重要的日子、情绪上的变化，以及你们之间的约定、昵称、梗，一起做过的事（打过的电话、一起读的书、一起听的歌）。
@@ -53,8 +53,7 @@ enum Memory {
         - 用简洁的中文要点，每条一行，以「- 」开头，最多 25 条，总共不超过 600 字。
         只输出记忆本身，不要别的话。
         """
-        let request = RelayRequest(engine: persona.engine.rawValue, model: PromptBuilder.model(for: persona), effort: "low",
-                                   system: "你是一个细心的记录者，只负责整理聊天里值得长期记住的事。", prompt: prompt)
+        let request = PromptParts.lightRequest(persona, prompt, system: "你是一个细心的记录者，只负责整理聊天里值得长期记住的事。")
         // 整理的这段时间里被停下（清空聊天、删角色）：不写回（CONC-3）
         guard let text = await relay.attempt(request, "记忆整理"), !text.trimmed.isEmpty,
               !Task.isCancelled, !convo.isDeleted else { return }

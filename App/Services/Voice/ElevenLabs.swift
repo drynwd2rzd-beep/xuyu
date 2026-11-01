@@ -40,9 +40,9 @@ enum ElevenLabs {
         }
     }
 
-    static func speak(_ text: String, persona: Persona, model: String) async throws -> Data {
-        let style = persona.style
-        var req = request("v1/text-to-speech/\(persona.voiceID)", method: "POST")
+    static func speak(_ text: String, spec: VoiceSpec, model: String) async throws -> Data {
+        let style = spec.style
+        var req = request("v1/text-to-speech/\(spec.voiceID)", method: "POST")
         // 念一句话不该等太久：等不到就先发文字，不让「正在输入」一直挂着
         req.timeoutInterval = 15
         req.url?.append(queryItems: [URLQueryItem(name: "output_format", value: "mp3_44100_128")])
@@ -56,11 +56,11 @@ enum ElevenLabs {
                 "style": style.style,
                 "use_speaker_boost": style.speakerBoost,
                 // 语速只能 0.7～1.2
-                "speed": min(1.2, max(0.7, persona.voiceSpeed)),
+                "speed": min(1.2, max(0.7, spec.speed)),
             ] as [String: Any],
         ]
         // 指定说哪种话（多语言 v2 不支持这一项）
-        if !model.contains("multilingual_v2") { json["language_code"] = persona.lang.rawValue }
+        if !model.contains("multilingual_v2") { json["language_code"] = spec.language.rawValue }
         req.httpBody = try JSONSerialization.data(withJSONObject: json)
         let (data, response) = try await URLSession.shared.data(for: req)
         try check(response, data)

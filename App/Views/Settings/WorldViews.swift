@@ -41,45 +41,9 @@ struct WorldView: View {
                 .padding(Space.card)
             }
 
-            SettingsGroup(title: "People") {
-                ForEach(Array(personas.filter { !$0.canWork }.enumerated()), id: \.element.id) { index, p in
-                    if index > 0 { Hairline(inset: 62) }
-                    Button { router.open(.worldLife(p.id)) } label: { personRow(p) }
-                        .buttonStyle(PressableRowStyle())
-                }
-            }
-
-            SettingsGroup(title: "Relationships") {
-                ForEach(s.relations) { r in
-                    Button { editing = r } label: {
-                        SettingRow(title: pairName(r), subtitle: r.text) { Chevron() }
-                    }
-                    .buttonStyle(PressableRowStyle())
-                    Hairline()
-                }
-                Button {
-                    editing = World.Relation(a: nil, b: personas.first?.id, text: "")
-                } label: {
-                    SettingRow(title: "添加关系") {
-                        Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
-                    }
-                }
-                .buttonStyle(PressableRowStyle())
-            }
-
-            SettingsGroup(title: "Living") {
-                SettingRow(title: "TA 们自己的生活", subtitle: "按自己的作息起床、上班、睡觉，每天有自己的事") {
-                    InkToggle(isOn: $s.lifeOn, label: "TA 们自己的生活")
-                }
-                Hairline()
-                SettingRow(title: "心情会延续", subtitle: "今天的情绪会带到聊天里") {
-                    InkToggle(isOn: $s.moodCarry, label: "心情会延续")
-                }
-                Hairline()
-                SettingRow(title: "世界在发生", subtitle: "TA 们之间发生的事大家都知道，会聊起") {
-                    InkToggle(isOn: $s.eventsOn, label: "世界在发生")
-                }
-            }
+            peopleGroup
+            relationsGroup
+            livingGroup
 
             Button { router.open(.worldEvents) } label: { weekCard }
                 .buttonStyle(ScaleButtonStyle())
@@ -101,6 +65,59 @@ struct WorldView: View {
             .presentationBackground(Palette.paper)
         }
     }
+
+    // MARK: 分组
+
+    /// People：每个人（工作模式的角色不算），点进去看 TA 的生活与作息
+    private var peopleGroup: some View {
+        SettingsGroup(title: "People") {
+            ForEach(Array(personas.filter { !$0.canWork }.enumerated()), id: \.element.id) { index, p in
+                if index > 0 { Hairline(inset: 62) }
+                Button { router.open(.worldLife(p.id)) } label: { personRow(p) }
+                    .buttonStyle(PressableRowStyle())
+            }
+        }
+    }
+
+    /// Relationships：谁和谁是什么关系，点一条改，最后一行添加
+    private var relationsGroup: some View {
+        SettingsGroup(title: "Relationships") {
+            ForEach(s.relations) { r in
+                Button { editing = r } label: {
+                    SettingRow(title: pairName(r), subtitle: r.text) { Chevron() }
+                }
+                .buttonStyle(PressableRowStyle())
+                Hairline()
+            }
+            Button {
+                editing = World.Relation(a: nil, b: personas.first?.id, text: "")
+            } label: {
+                SettingRow(title: "添加关系") {
+                    Image(systemName: "plus").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
+                }
+            }
+            .buttonStyle(PressableRowStyle())
+        }
+    }
+
+    /// Living：TA 们自己的生活、心情延续、世界在发生三个开关
+    private var livingGroup: some View {
+        SettingsGroup(title: "Living") {
+            SettingRow(title: "TA 们自己的生活", subtitle: "按自己的作息起床、上班、睡觉，每天有自己的事") {
+                InkToggle(isOn: $s.lifeOn, label: "TA 们自己的生活")
+            }
+            Hairline()
+            SettingRow(title: "心情会延续", subtitle: "今天的情绪会带到聊天里") {
+                InkToggle(isOn: $s.moodCarry, label: "心情会延续")
+            }
+            Hairline()
+            SettingRow(title: "世界在发生", subtitle: "TA 们之间发生的事大家都知道，会聊起") {
+                InkToggle(isOn: $s.eventsOn, label: "世界在发生")
+            }
+        }
+    }
+
+    // MARK: 小件
 
     private func personRow(_ p: Persona) -> some View {
         let life = World.life(p.id)
@@ -316,7 +333,7 @@ struct PersonaLifeView: View {
     }
 
     private func planRow(_ item: World.PlanItem, index: Int) -> some View {
-        let t = World.hour()
+        let t = Clock.hour()
         let now = World.current(of: persona.id)?.at == item.at
         let past = item.at < t && !now
         return HStack(spacing: Space.item) {

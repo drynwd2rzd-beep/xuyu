@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// 底部三页：Today（主页和待办合在一起）· Chats · Moments
 enum AppTab: Hashable { case today, chats, moments }
@@ -27,6 +26,23 @@ enum Route: Hashable {
     case personaPage(UUID, PersonaPage)
 }
 
+/// 角色设置的二级页面：不常改的收在这里，编辑角色的主页面只留资料、人设和互动。
+/// 放在 Core：导航（Route）要用它，界面在 Views/Settings/PersonaPages.swift（ARCH-1）
+enum PersonaPage: Hashable {
+    case touch, voice, moments, model
+
+    var title: String {
+        switch self {
+        case .touch: "真人感"
+        case .voice: "语音"
+        case .moments: "动态与相册"
+        case .model: "模型"
+        }
+    }
+}
+
+/// 导航状态：底部哪一页、页面栈、盖在最上面的聊天和侧滑返回的进度
+@MainActor
 @Observable
 final class Router {
     var tab: AppTab = .today
@@ -122,45 +138,5 @@ final class BannerCenter {
 
     func dismiss() {
         withAnimation(Motion.spring) { current = nil }
-    }
-}
-
-/// CI 截图：`-demo YES -demoScreen chat` 用内存数据启动并直达指定页面
-enum DemoMode {
-    static var isOn: Bool { UserDefaults.standard.bool(forKey: Prefs.demo) }
-    static var screen: String { UserDefaults.standard.string(forKey: Prefs.demoScreen) ?? "" }
-
-    @MainActor
-    static func apply(router: Router, context: ModelContext, engine: ChatEngine) {
-        guard isOn, !router.demoApplied else { return }
-        router.demoApplied = true
-        switch screen {
-        case "chats": router.tab = .chats
-        case "today", "past", "calendar": router.tab = .today
-        case "settings":
-            router.tab = .today
-            router.open(.settings)
-        case "backup":
-            router.tab = .today
-            router.open(.settings)
-            router.open(.backup)
-        case "chat", "group", "stickers":
-            router.tab = .chats
-            let all = (try? context.fetch(FetchDescriptor<Conversation>())) ?? []
-            let matching = all.filter { $0.isGroup == (screen == "group") }
-            if let c = matching.max(by: { ($0.messages?.count ?? 0) < ($1.messages?.count ?? 0) }) { router.open(.chat(c.id)) }
-        case "persona":
-            router.tab = .chats
-            if let p = context.allPersonas().first { router.open(.persona(p.id)) }
-        case "moments":
-            router.tab = .moments
-        case "profile":
-            router.tab = .moments
-            if let p = context.allPersonas().first { router.open(.momentsOf(p.id)) }
-        case "motion":
-            router.tab = .chats
-            DemoMotion.run(router: router, context: context, engine: engine)
-        default: break
-        }
     }
 }

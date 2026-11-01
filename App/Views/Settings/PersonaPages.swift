@@ -1,20 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// 角色设置的二级页面：不常改的收在这里，编辑角色的主页面只留资料、人设和互动
-enum PersonaPage: Hashable {
-    case touch, voice, moments, model
-
-    var title: String {
-        switch self {
-        case .touch: "真人感"
-        case .voice: "语音"
-        case .moments: "动态与相册"
-        case .model: "模型"
-        }
-    }
-}
-
+/// 角色设置的二级页面（页面编号 PersonaPage 在 Core/Router.swift）
 struct PersonaSubpage: View {
     @Bindable var persona: Persona
     let page: PersonaPage

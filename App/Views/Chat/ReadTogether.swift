@@ -182,14 +182,14 @@ struct ReaderView: View {
         defer { noting = false }
         let text = String(book.chapters[index].text.prefix(8000))
         let prompt = """
-        你在和\(PromptBuilder.userName)一起读《\(book.title)》，这是「\(book.chapters[index].title)」：
+        你在和\(PromptParts.userName)一起读《\(book.title)》，这是「\(book.chapters[index].title)」：
 
         \(text)
 
         像在书页边上写批注那样，挑 2～3 处你真有感觉的地方，各写一句（你的看法、联想到的事、或者想问 TA 的），口语化、简短。
         只输出 JSON：[{"quote":"原文里连续的 6～20 个字，要一字不差","note":"你的批注"}]
         """
-        guard let raw = try? await relay.complete(Companion.lightRequest(persona, prompt)),
+        guard let raw = try? await relay.complete(PromptBuilder.lightRequest(persona, prompt)),
               let start = raw.firstIndex(of: "["), let end = raw.lastIndex(of: "]"),
               let data = String(raw[start...end]).data(using: .utf8),
               let items = try? JSONDecoder().decode([[String: String]].self, from: data) else { return }
@@ -363,10 +363,10 @@ struct AskInBook: View {
         question = ""
         talk.append((q, ""))
         waiting = true
-        let context = talk.dropLast().map { "\(PromptBuilder.userName)：\($0.q)\n你：\($0.a)" }.joined(separator: "\n")
+        let context = talk.dropLast().map { "\(PromptParts.userName)：\($0.q)\n你：\($0.a)" }.joined(separator: "\n")
         let around = String(book.chapters[chapter].text.prefix(4000))
         let prompt = """
-        你和\(PromptBuilder.userName)正在一起读《\(book.title)》的「\(book.chapters[chapter].title)」。这一章的内容（节选）：
+        你和\(PromptParts.userName)正在一起读《\(book.title)》的「\(book.chapters[chapter].title)」。这一章的内容（节选）：
         \(around)
 
         TA 划出了这一段问你：「\(quote)」
@@ -374,7 +374,7 @@ struct AskInBook: View {
         像一起读书的朋友那样回答，口语化，不长篇大论；不要剧透这一章之后的内容。只输出你的回答。
         """
         Task {
-            let raw = (try? await relay.complete(Companion.lightRequest(persona, prompt)))?.trimmed ?? String(localized: "（没连上电脑，TA 暂时回不了）")
+            let raw = (try? await relay.complete(PromptBuilder.lightRequest(persona, prompt)))?.trimmed ?? String(localized: "（没连上电脑，TA 暂时回不了）")
             let answer = ReplyText.markers(in: raw).body
             waiting = false
             if let last = talk.indices.last { talk[last].a = answer }

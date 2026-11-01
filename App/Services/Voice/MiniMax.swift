@@ -54,16 +54,16 @@ enum MiniMax {
         return list
     }
 
-    static func speak(_ text: String, persona: Persona, model: String) async throws -> Data {
-        let style = persona.style
+    static func speak(_ text: String, spec: VoiceSpec, model: String) async throws -> Data {
+        let style = spec.style
         var setting: [String: Any] = [
-            "voice_id": persona.voiceID,
-            "speed": min(2, max(0.5, persona.voiceSpeed)),
-            "vol": min(10, max(0.1, persona.voiceVolume)),
-            "pitch": min(12, max(-12, persona.voicePitch)),
+            "voice_id": spec.voiceID,
+            "speed": min(2, max(0.5, spec.speed)),
+            "vol": min(10, max(0.1, spec.volume)),
+            "pitch": min(12, max(-12, spec.pitch)),
         ]
         // 情绪：空 = 让模型按文字自己判断；耳语、平稳只有 2.6 模型支持
-        let emotion = persona.voiceEmotion
+        let emotion = spec.emotion
         if !emotion.isEmpty && (!["whisper", "fluent"].contains(emotion) || model.hasPrefix("speech-2.6")) {
             setting["emotion"] = emotion
         }
@@ -72,13 +72,13 @@ enum MiniMax {
             "text": text,
             "stream": false,
             "audio_setting": ["sample_rate": 32000, "bitrate": 128000, "format": "mp3", "channel": 1],
-            "language_boost": style.languageBoost.isEmpty ? (persona.lang == .ko ? "Korean" : "Chinese") : style.languageBoost,
+            "language_boost": style.languageBoost.isEmpty ? (spec.language == .ko ? "Korean" : "Chinese") : style.languageBoost,
         ]
         // 混合声音：主声音和别的声音按比重混在一起（这时 voice_id 留空）
         let mixes = style.mixes.prefix(3).filter { $0.weight > 0 }
         if !mixes.isEmpty {
             setting["voice_id"] = ""
-            let main: [String: Any] = ["voice_id": persona.voiceID, "weight": min(100, max(1, style.mainWeight))]
+            let main: [String: Any] = ["voice_id": spec.voiceID, "weight": min(100, max(1, style.mainWeight))]
             json["timbre_weights"] = [main] + mixes.map { ["voice_id": $0.id, "weight": min(100, max(1, $0.weight))] as [String: Any] }
         }
         json["voice_setting"] = setting

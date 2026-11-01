@@ -102,7 +102,7 @@ enum Appointments {
     // MARK: - 答应 / 取消
 
     /// TA 答应了：记下约定，提前写好到点要发的那条消息
-    static func promise(_ p: ReplyText.Promise, persona: Persona, convo: Conversation, context: ModelContext, relay: RelayClient?) {
+    static func promise(_ p: ReplyText.Promise, persona: Persona, convo: Conversation, context: ModelContext, relay: (any RelayTransport)?) {
         guard let time = parseTime(p.time, now: .now), !p.what.isEmpty else { return }
         // 同一件事再约一次：以新的为准
         cancel(p.what, persona: persona, convo: convo, context: context)
@@ -138,7 +138,7 @@ enum Appointments {
 
     // MARK: - 维护：App 打开时、每隔一会儿检查一次
 
-    static func refresh(context: ModelContext, relay: RelayClient) async {
+    static func refresh(context: ModelContext, relay: any RelayTransport) async {
         let now = Date.now
         for var a in all {
             if a.at <= now {
@@ -163,21 +163,18 @@ enum Appointments {
 
     // MARK: - 写那条消息
 
-    private static func write(_ id: UUID, context: ModelContext, relay: RelayClient) async {
+    private static func write(_ id: UUID, context: ModelContext, relay: any RelayTransport) async {
         guard !DemoMode.isOn, var a = all.first(where: { $0.id == id }), let persona = context.persona(a.personaID) else { return }
         let convoID = a.conversationID
         guard let convo = try? context.fetch(FetchDescriptor<Conversation>(predicate: #Predicate { $0.id == convoID })).first else { return }
         let names = Dictionary(context.allPersonas().map { ($0.id, $0.name) }, uniquingKeysWith: { x, _ in x })
-        let memory = convo.memory.trimmed
-        let user = PromptBuilder.userName
+        let user = PromptParts.userName
         let prompt = """
-        \(memory.isEmpty ? "" : "你记得的关于\(user)的事：\n\(memory)\n\n")下面是你们最近的聊天记录：
-
-        \(PromptBuilder.transcript(Array(convo.visibleMessages().suffix(Limits.Prompt.recentChat)), names: names))
+        \(PromptParts.contextBlock(memory: convo, history: convo.visibleMessages(), recent: Limits.Prompt.recentChat, names: names))
 
         你答应过\(user)：\(Fmt.full.string(from: a.at)) 来\(a.what)。现在就是那个时间，写你这时要发给 TA 的那条消息：说到做到，自然、口语化，接得上你们聊过的事，一两句话。只输出消息内容。
         """
-        guard let text = await relay.attempt(Companion.lightRequest(persona, prompt), "约定"), !text.trimmed.isEmpty,
+        guard let text = await relay.attempt(PromptBuilder.lightRequest(persona, prompt), "约定"), !text.trimmed.isEmpty,
               all.contains(where: { $0.id == id }), !convo.isDeleted else { return }
         if let old = a.messageID { dropMessage(old, context: context) }
         let body = ReplyText.markers(in: text).body.trimmed

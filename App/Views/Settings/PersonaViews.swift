@@ -166,6 +166,7 @@ struct NewGroupSheet: View {
     }
 }
 
+/// 编辑角色：头像、资料、人设、二级页面入口、互动、约定、这段聊天的记忆和背景、清空和删除
 struct PersonaEditor: View {
     @Bindable var persona: Persona
     @Environment(\.modelContext) private var context
@@ -189,120 +190,13 @@ struct PersonaEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.section) {
                 avatarSection
-
-                // 是谁
-                SettingsGroup(title: "资料") {
-                    inputRow("名字", text: $persona.name)
-                    Hairline()
-                    inputRow("简介", text: $persona.bio)
-                }
-
-                SettingsGroup(title: "人设") {
-                    TextField("TA 的性格、说话方式、记得关于你的事…", text: $persona.systemPrompt, axis: .vertical)
-                        .font(.system(size: 15))
-                        .lineSpacing(5)
-                        .lineLimit(3...12)
-                        .padding(Space.card)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                // 不常改的收进二级页面
-                SettingsGroup(title: "TA") {
-                    if !persona.canWork {
-                        pageRow("生活与作息", route: .worldLife(persona.id))
-                        Hairline()
-                        pageRow("真人感", route: .personaPage(persona.id, .touch))
-                        Hairline()
-                        if Voice.isConfigured {
-                            pageRow("语音", route: .personaPage(persona.id, .voice))
-                            Hairline()
-                        }
-                        pageRow("动态与相册", route: .personaPage(persona.id, .moments))
-                        Hairline()
-                    }
-                    pageRow("模型", route: .personaPage(persona.id, .model))
-                }
-
-                // 怎么互动
-                SettingsGroup(title: "互动") {
-                    SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
-                    if persona.proactive {
-                        Hairline()
-                        SettingRow(title: "多久一次") {
-                            Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
-                                .fixedSize()
-                        }
-                        .transition(.opacity)
-                    }
-                    Hairline()
-                    SettingRow(title: "没回消息会来追问") {
-                        Menu {
-                            ForEach([1, 2, 3, 0], id: \.self) { option in
-                                Button {
-                                    persona.followUp = option
-                                } label: {
-                                    let title = Self.followUpLabel(option)
-                                    if persona.followUp == option { Label(title, systemImage: "checkmark") } else { Text(title) }
-                                }
-                            }
-                        } label: {
-                            MenuValue(text: Self.followUpLabel(persona.followUp))
-                        }
-                    }
-                    if !persona.canWork {
-                        Hairline()
-                        VideoShareRow(persona: persona)
-                    }
-                }
-                .animation(Motion.spring, value: persona.proactive)
-
-                if !appointments.isEmpty {
-                    SettingsGroup(title: "约定") {
-                        ForEach(appointments) { a in
-                            SettingRow(title: Appointments.label(for: a)) {
-                                Button {
-                                    withAnimation(Motion.spring) { Appointments.remove(a, context: context) }
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(Palette.inkSoft)
-                                        .frame(width: 28, height: 28)
-                                        .background(Palette.fill, in: Circle())
-                                }
-                                .accessibilityLabel("取消这个约定")
-                            }
-                            if a.id != appointments.last?.id { Hairline() }
-                        }
-                    }
-                    .transition(.opacity)
-                }
-
-                // 这段聊天
-                if let chat {
-                    MemoryEditor(memory: Binding(get: { chat.memory }, set: { chat.memory = $0 }))
-                    SettingsGroup(title: "聊天背景") {
-                        WallpaperPicker(owner: chat.id)
-                            .padding(Space.card)
-                    }
-                }
-
-                SettingsGroup(title: "管理") {
-                    Button { confirmClear = true } label: {
-                        SettingRow(title: "清空聊天记录") { EmptyView() }
-                    }
-                    .buttonStyle(PressableRowStyle())
-                    Hairline()
-                    Button { confirmDelete = true } label: {
-                        Text("删除角色")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Palette.danger)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, Space.card)
-                            .frame(height: Space.row)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressableRowStyle())
-                }
+                profileGroup
+                promptGroup
+                pagesGroup
+                interactionGroup
+                appointmentsGroup
+                chatGroups
+                manageGroup
             }
             .padding(.horizontal, Space.page)
             .padding(.bottom, 40)
@@ -352,6 +246,143 @@ struct PersonaEditor: View {
         default: "20 分钟～1 小时"
         }
     }
+
+    // MARK: - 编辑页的分组
+
+    /// 资料：是谁（名字、简介）
+    private var profileGroup: some View {
+        SettingsGroup(title: "资料") {
+            inputRow("名字", text: $persona.name)
+            Hairline()
+            inputRow("简介", text: $persona.bio)
+        }
+    }
+
+    /// 人设：TA 要了解的那段自我设定
+    private var promptGroup: some View {
+        SettingsGroup(title: "人设") {
+            TextField("TA 的性格、说话方式、记得关于你的事…", text: $persona.systemPrompt, axis: .vertical)
+                .font(.system(size: 15))
+                .lineSpacing(5)
+                .lineLimit(3...12)
+                .padding(Space.card)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// TA：不常改的收进二级页面（工作模式的角色只有「模型」）
+    private var pagesGroup: some View {
+        SettingsGroup(title: "TA") {
+            if !persona.canWork {
+                pageRow("生活与作息", route: .worldLife(persona.id))
+                Hairline()
+                pageRow("真人感", route: .personaPage(persona.id, .touch))
+                Hairline()
+                if Voice.isConfigured {
+                    pageRow("语音", route: .personaPage(persona.id, .voice))
+                    Hairline()
+                }
+                pageRow("动态与相册", route: .personaPage(persona.id, .moments))
+                Hairline()
+            }
+            pageRow("模型", route: .personaPage(persona.id, .model))
+        }
+    }
+
+    /// 互动：怎么互动（主动找你、多久一次、追问、分享视频）
+    private var interactionGroup: some View {
+        SettingsGroup(title: "互动") {
+            SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
+            if persona.proactive {
+                Hairline()
+                SettingRow(title: "多久一次") {
+                    Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
+                        .fixedSize()
+                }
+                .transition(.opacity)
+            }
+            Hairline()
+            SettingRow(title: "没回消息会来追问") {
+                Menu {
+                    ForEach([1, 2, 3, 0], id: \.self) { option in
+                        Button {
+                            persona.followUp = option
+                        } label: {
+                            let title = Self.followUpLabel(option)
+                            if persona.followUp == option { Label(title, systemImage: "checkmark") } else { Text(title) }
+                        }
+                    }
+                } label: {
+                    MenuValue(text: Self.followUpLabel(persona.followUp))
+                }
+            }
+            if !persona.canWork {
+                Hairline()
+                VideoShareRow(persona: persona)
+            }
+        }
+        .animation(Motion.spring, value: persona.proactive)
+    }
+
+    /// 约定：TA 答应你的事，一条条列出来，可以取消；没有就不显示
+    @ViewBuilder
+    private var appointmentsGroup: some View {
+        if !appointments.isEmpty {
+            SettingsGroup(title: "约定") {
+                ForEach(appointments) { a in
+                    SettingRow(title: Appointments.label(for: a)) {
+                        Button {
+                            withAnimation(Motion.spring) { Appointments.remove(a, context: context) }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Palette.inkSoft)
+                                .frame(width: 28, height: 28)
+                                .background(Palette.fill, in: Circle())
+                        }
+                        .accessibilityLabel("取消这个约定")
+                    }
+                    if a.id != appointments.last?.id { Hairline() }
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    /// 这段聊天：记忆和聊天背景（聊天读出来以后才有）
+    @ViewBuilder
+    private var chatGroups: some View {
+        if let chat {
+            MemoryEditor(memory: Binding(get: { chat.memory }, set: { chat.memory = $0 }))
+            SettingsGroup(title: "聊天背景") {
+                WallpaperPicker(owner: chat.id)
+                    .padding(Space.card)
+            }
+        }
+    }
+
+    /// 管理：清空聊天记录、删除角色（都会先问一次）
+    private var manageGroup: some View {
+        SettingsGroup(title: "管理") {
+            Button { confirmClear = true } label: {
+                SettingRow(title: "清空聊天记录") { EmptyView() }
+            }
+            .buttonStyle(PressableRowStyle())
+            Hairline()
+            Button { confirmDelete = true } label: {
+                Text("删除角色")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Palette.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.card)
+                    .frame(height: Space.row)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableRowStyle())
+        }
+    }
+
+    // MARK: - 小件
 
     /// 二级页面入口：只有名字和箭头
     private func pageRow(_ title: String, route: Route) -> some View {

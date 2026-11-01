@@ -3,8 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { TIMEOUTS } from './protocol.js';
+import { CLAUDE_WORK_TOOLS } from './policy.js';
+import { cut } from './util.js';
 
-
+// ---- 运行一次 ----
 /**
  * 运行一次 CLI，把输出转换成统一事件：
  *   onEvent({ type: 'text' | 'reasoning' | 'step', text })
@@ -97,8 +100,7 @@ export function runEngine({ engine, command, model, effort = '', system, prompt,
 
 class EngineError extends Error {}
 
-// 工作模式下 Claude 能用的工具
-const WORK_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'Bash', 'TodoWrite', 'WebSearch', 'WebFetch'];
+// ---- 工作模式的工具和把关钩子 ----
 // 明显手滑的危险命令：只按开头匹配，换个写法（cmd /c、powershell -c、rm -r -f）就挡不住，
 // 所以它只是顺手的提醒，不是安全边界。真正的把关是 gate.js：每条命令都要你在手机上点允许（审查 Z-480）
 const WORK_DENY = ['Bash(rm -rf:*)', 'Bash(rmdir:*)', 'Bash(del /s:*)', 'Bash(format:*)', 'Bash(shutdown:*)',
@@ -106,12 +108,12 @@ const WORK_DENY = ['Bash(rm -rf:*)', 'Bash(rmdir:*)', 'Bash(del /s:*)', 'Bash(fo
   'Bash(Set-ExecutionPolicy:*)', 'Bash(net user:*)', 'Bash(schtasks:*)', 'Bash(sc :*)', 'Bash(bcdedit:*)', 'Bash(takeown:*)',
   'Bash(icacls:*)', 'Bash(cipher:*)', 'Bash(vssadmin:*)', 'Bash(wmic:*)'];
 
-// 把关钩子：等手机确认最多 10 分钟（钩子默认只等 60 秒）。
+// 把关钩子：时限见 protocol.js 的 TIMEOUTS（钩子默认只等 60 秒）。
 // 用正在运行中继的这个 node 的完整路径：不靠 PATH 里找 node，找不到时钩子起不来（审查 Z-217）
 const GATE_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'gate.js').replace(/\\/g, '/');
 const GATE_COMMAND = `"${process.execPath.replace(/\\/g, '/')}" "${GATE_SCRIPT}"`;
 const gateHooks = (matcher) => ({
-  hooks: { PreToolUse: [{ matcher, hooks: [{ type: 'command', command: GATE_COMMAND, timeout: 600 }] }] },
+  hooks: { PreToolUse: [{ matcher, hooks: [{ type: 'command', command: GATE_COMMAND, timeout: TIMEOUTS.gateHook / 1000 }] }] },
 });
 const GATE_SETTINGS = JSON.stringify(gateHooks('*'));
 
@@ -133,6 +135,7 @@ function prepareCodexHooks(cwd) {
   }
 }
 
+// ---- Claude ----
 function claudeArgs({ model, effort, system, allowRead, work, readDirs = [] }) {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--max-turns', work ? '60' : allowRead ? '6' : '1'];
@@ -145,7 +148,7 @@ function claudeArgs({ model, effort, system, allowRead, work, readDirs = [] }) {
     // 不预先允许任何工具：只有把关明确放行才做，钩子出了错就停在「要你允许」上，后台没人点就不做（实测）。
     // 只读你自己的用户设置：工作文件夹里的 .claude 设置不生效，AI 写了也没用（审查 Z-005、Z-217）
     args.push('--strict-mcp-config', '--setting-sources', 'user',
-      '--tools', WORK_TOOLS.join(','), '--disallowedTools', ...WORK_DENY, '--settings', GATE_SETTINGS);
+      '--tools', CLAUDE_WORK_TOOLS.join(','), '--disallowedTools', ...WORK_DENY, '--settings', GATE_SETTINGS);
   } else {
     // 聊天不带任何工具和 MCP：否则每条消息都会附上几万字的工具说明，又慢又耗额度。
     // 有附件时只开 Read，让它看图片/文件。提示词从 stdin 读取
@@ -162,7 +165,6 @@ function claudeArgs({ model, effort, system, allowRead, work, readDirs = [] }) {
 /** 把 Claude 的一次工具调用写成一句人能看懂的步骤 */
 function describeClaudeTool(name, input = {}) {
   const file = (p) => path.basename(String(p || ''));
-  const cut = (s, n = 90) => (String(s || '').length > n ? String(s).slice(0, n) + '…' : String(s || ''));
   switch (name) {
     case 'Read': return `读取 ${file(input.file_path)}`;
     case 'Write': return `写入 ${file(input.file_path)}`;
@@ -235,6 +237,7 @@ function claudeParser(onEvent) {
   return state;
 }
 
+// ---- Codex ----
 function codexArgs({ model, effort, images, work }) {
   // 工作模式：只能写工作文件夹（Codex 自带的沙盒限制），聊天时只读
   const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', work ? 'workspace-write' : 'read-only'];
@@ -253,7 +256,6 @@ function codexArgs({ model, effort, images, work }) {
 
 /** 把 Codex 的一个动作写成一句人能看懂的步骤 */
 function describeCodexItem(item) {
-  const cut = (s, n = 90) => (String(s || '').length > n ? String(s).slice(0, n) + '…' : String(s || ''));
   switch (item.type) {
     case 'command_execution': {
       const cmd = String(item.command || '').replace(/^.*?-Command\s+/i, '').replace(/^["']|["']$/g, '');
@@ -312,6 +314,7 @@ function codexParser(onEvent) {
   return state;
 }
 
+// ---- 报错 ----
 /** 把常见的英文报错翻译成人能看懂的话 */
 export function explain(text) {
   const t = String(text || '').trim();

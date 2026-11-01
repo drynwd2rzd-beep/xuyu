@@ -1,4 +1,5 @@
-// 本机自检：先核对和 App 共用的算法，再不经过手机，直接让中继各问一句，确认 Claude Code / Codex 能用
+// 本机自检：先核对和 App 共用的算法，再不经过手机，直接让中继各问一句，确认 Claude Code / Codex 能用。
+// 协议、鉴权、把关、备份的检查在 test/ 里（npm test，不调用 Claude / Codex，CI 也跑）（审查 Z-224）
 // 用法：node src/selftest.js [claude|codex] [推理强度，例如 low]
 import { resolveCommand } from './resolve.js';
 import { runEngine } from './engines.js';
