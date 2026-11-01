@@ -129,7 +129,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
+    // 系统在后台线程调这两个：拿到的通知对象不传进主线程，只把要用的字符串带过去
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         // 正开着这个聊天：消息直接出现在聊天里，不再弹通知
         let target = notification.request.content.userInfo["conversation"] as? String
@@ -138,7 +139,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return [.banner, .sound]
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
         let target = info["conversation"] as? String

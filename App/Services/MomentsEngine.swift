@@ -191,6 +191,7 @@ enum MomentsPlanner {
 }
 
 /// 发给模型的动态提示
+@MainActor
 enum MomentPrompt {
     private static func name(_ id: UUID?, context: ModelContext) -> String {
         guard let id else { return PromptParts.userName }
