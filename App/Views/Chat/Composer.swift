@@ -187,14 +187,16 @@ struct Composer: View {
     private func panelView(_ panel: Panel) -> some View {
         switch panel {
         case .plus:
-            PlusPanel(isGroup: convo.isGroup, onPhotos: stage, onCamera: { showCamera = true },
+            // 回调都写成闭包：直接传方法（stage、startCall）在严格并发检查下编译器推不出类型
+            let single = !convo.isGroup
+            PlusPanel(isGroup: convo.isGroup, onPhotos: { stage($0) }, onCamera: { showCamera = true },
                       onLibrary: { showPhotos = true }, onFile: { showFiles = true },
-                      onNote: { showNote = true }, onMention: mention,
-                      onCall: convo.isGroup ? nil : startCall,
-                      onListen: convo.isGroup ? nil : { showListen = true },
-                      onRead: convo.isGroup ? nil : { showRead = true })
+                      onNote: { showNote = true }, onMention: { mention() },
+                      onCall: single ? { startCall() } : nil,
+                      onListen: single ? { showListen = true } : nil,
+                      onRead: single ? { showRead = true } : nil)
         case .stickers:
-            StickerPanel(onSticker: sendSticker, atTop: $panelAtTop)
+            StickerPanel(onSticker: { sendSticker($0) }, atTop: $panelAtTop)
         }
     }
 
