@@ -39,8 +39,6 @@ final class Router {
     var chatSwipe: CGFloat = 0
     /// 当前打开的对话（用来决定要不要弹 App 内提示）
     var openConversation: UUID?
-    /// 主页正在编辑小组件
-    var homeEditing = false
     @ObservationIgnored var demoApplied = false
 
     /// from：从哪一行点进来的（屏幕上的位置），聊天会从那里飞进去

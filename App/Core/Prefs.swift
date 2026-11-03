@@ -20,11 +20,8 @@ enum Prefs {
     static let wallpaperStamp = "wallpaperStamp"
     static let myAvatarStamp = "myAvatarStamp"
     static let widgetPhotoStamp = "widgetPhotoStamp"
-    static let homeWidgets = "homeWidgets"
     /// 上次看动态的时间：之后发的算「新的」
     static let momentsSeenAt = "momentsSeenAt"
-    /// 动态小组件已经自动加到主页过一次（之后你删了就不再加）
-    static let momentsWidgetAdded = "momentsWidgetAdded"
 
     // MARK: 聊天
     /// 上次键盘的高度：面板和键盘一样高，切换时不跳
@@ -171,9 +168,7 @@ enum Prefs {
         Entry(key: wallpaperStamp, kind: .double, backup: false, clears: []),
         Entry(key: myAvatarStamp, kind: .double, backup: false, clears: []),
         Entry(key: widgetPhotoStamp, kind: .double, backup: false, clears: []),
-        Entry(key: homeWidgets, kind: .string, backup: true, clears: .settings),
         Entry(key: momentsSeenAt, kind: .double, backup: false, clears: .personas),
-        Entry(key: momentsWidgetAdded, kind: .bool, backup: false, clears: .settings),
         Entry(key: keyboardHeight, kind: .double, backup: false, clears: .settings),
         Entry(key: stickerPackOrder, kind: .string, backup: true, clears: []),
         Entry(key: recentSearches, kind: .string, backup: false, clears: []),

@@ -1,81 +1,6 @@
 import SwiftUI
 import UIKit
 
-extension UIColor {
-    convenience init(hex: UInt32, alpha: CGFloat = 1) {
-        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255,
-                  green: CGFloat((hex >> 8) & 0xFF) / 255,
-                  blue: CGFloat(hex & 0xFF) / 255,
-                  alpha: alpha)
-    }
-}
-
-extension Color {
-    init(hex: UInt32, opacity: Double = 1) {
-        self.init(.sRGB,
-                  red: Double((hex >> 16) & 0xFF) / 255,
-                  green: Double((hex >> 8) & 0xFF) / 255,
-                  blue: Double(hex & 0xFF) / 255,
-                  opacity: opacity)
-    }
-
-    static func dynamic(light: UInt32, dark: UInt32) -> Color {
-        Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light) })
-    }
-}
-
-/// 统一设计规范（2026-11 新版，设计素材/设计规范-草案.md）：白底、浅灰块代替卡片和阴影、墨黑字，
-/// 质感交给照片（见 PhotoGrade）。所有颜色同时有深色版本。
-enum Palette {
-    /// 页面底色（名字沿用以前的纸色）
-    static let paper = Color.dynamic(light: 0xFFFFFF, dark: 0x0B0B0C)
-    /// 卡片、文字块、胶囊：白底上的一块浅灰，不加阴影和描边
-    static let card = Color.dynamic(light: 0xF5F5F7, dark: 0x1C1C1E)
-    /// 按下的行、分段控件的底槽、开关关着的轨道：比卡片再深一点
-    static let fill = Color.dynamic(light: 0xECECEF, dark: 0x2A2A2D)
-    static let ink = Color.dynamic(light: 0x0E0E10, dark: 0xF2F2F4)
-    static let inkInverse = Color.dynamic(light: 0xFFFFFF, dark: 0x0E0E10)
-    /// 次要字
-    static let inkSoft = Color.dynamic(light: 0x8B8B92, dark: 0x98989F)
-    static let ink2 = Color.dynamic(light: 0x3A3A40, dark: 0xCACACF)
-    /// 只用于装饰和不可用状态（UI-9）：箭头、页脚
-    static let faint = Color.dynamic(light: 0xC1C1C7, dark: 0x55555B)
-    /// 细线：只留给表格、代码块这类内容本身的边（设计规范不用横贯的分割线）
-    static let hairline = Color.dynamic(light: 0xECECEF, dark: 0x2A2A2E)
-    /// 你的气泡：iMessage 的蓝，上面的字是白的（onUserBubble）
-    static let userBubble = Color.dynamic(light: 0x0A7CFF, dark: 0x0A84FF)
-    static let onUserBubble = Color(hex: 0xFFFFFF)
-    /// TA 的气泡：iMessage 的浅灰，字用 ink
-    static let botBubble = Color.dynamic(light: 0xE9E9EB, dark: 0x262628)
-    /// 页头、输入栏的磨砂底：半透明的底色，下面的消息隐约透出来（不加分割线，靠这个分层）
-    static let frosted = Color.dynamic(light: 0xFFFFFF, dark: 0x0B0B0C).opacity(0.86)
-    static let noir = Color.dynamic(light: 0x0E0E10, dark: 0xF2F2F4)
-    static let onNoir = Color.dynamic(light: 0xFFFFFF, dark: 0x0E0E10)
-    static let danger = Color.dynamic(light: 0xD4485F, dark: 0xEC6B80)
-    static let highlight = Color.dynamic(light: 0xEADFC4, dark: 0x4A4232)
-    static let clay = Color(hex: 0xD97757)
-    /// 浮在灰底上的一块：分段控件选中的那一格
-    static let raised = Color.dynamic(light: 0xFFFFFF, dark: 0x3A3A3D)
-    /// 「已连接」「装好了」的小绿点
-    static let online = Color(hex: 0x34C27A)
-    /// 照片统一调色里那层暖光（PhotoGrade）
-    static let photoWarmth = Color(hex: 0xFFB070)
-
-    /// 加号菜单圆图标的渐变（深色、浅色），照设计稿；压在图标上的符号是白的，不分深浅色
-    enum Menu {
-        static let call = (Color(hex: 0x35B871), Color(hex: 0x9BE6B8))
-        static let listen = (Color(hex: 0xF2547A), Color(hex: 0xFFB3C6))
-        static let read = (Color(hex: 0xE8A33A), Color(hex: 0xFFD79A))
-        static let note = (Color(hex: 0x8C7BF0), Color(hex: 0xD3CBFF))
-        static let photo = (Color(hex: 0xFF7A45), Color(hex: 0xFFC9A3))
-        static let file = (Color(hex: 0x4FB3EE), Color(hex: 0xCDEFFF))
-        static let camera = (Color(hex: 0x8E8E95), Color(hex: 0xD5D5DA))
-        static let mention = (Color(hex: 0x7466F2), Color(hex: 0xD9D3FF))
-    }
-
-    static let avatarTints: [UInt32] = [0x1E1E1F, 0xE7E3DA, 0xD8C5AE, 0xB7C3B1, 0xAEBFCE, 0xD6B9B6]
-}
-
 enum Typo {
     static func display(_ size: CGFloat) -> Font { .system(size: size, weight: .regular, design: .serif) }
     static func serif(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
@@ -102,6 +27,30 @@ enum Typo {
     static let rowTitle: CGFloat = 15
     /// 设置行右边的当前值
     static let value: CGFloat = 13
+
+    /// 主页画册里的大字（装饰性的大号，只在画册里用）
+    enum Book {
+        /// 封面上 TA 的那句话，和它的行距
+        static let quote: CGFloat = 26
+        static let quoteSpacing: CGFloat = 16
+        /// 「此刻」那一页 TA 在做的事（宋体），和它的行距
+        static let prose: CGFloat = 16
+        static let proseSpacing: CGFloat = 14
+        /// 日记正文的行距（很松，像本子）
+        static let diarySpacing: CGFloat = 20
+        /// 动态那一页的一句话
+        static let post: CGFloat = 21
+        /// 「此刻」那一页的心情词（很细的字）
+        static let mood: CGFloat = 36
+        /// 待办那一页的大数字
+        static let count: CGFloat = 132
+        /// 日记那一页的日期
+        static let date: CGFloat = 64
+        /// 日记正文
+        static let diary: CGFloat = 18
+        /// 一起听的歌名
+        static let song: CGFloat = 23
+    }
 
     /// 中文小标题、设置行的字距：新版设计的字都略微拉开
     static let tracking: CGFloat = 0.6
@@ -140,6 +89,10 @@ enum Space {
     static let page: CGFloat = 18
     /// 卡片与卡片之间
     static let section: CGFloat = 14
+    /// 主页画册：字离屏幕左右边、页眉离顶、正文离底（底栏在下面）
+    static let book: CGFloat = 28
+    static let bookTop: CGFloat = 64
+    static let bookBottom: CGFloat = 132
     /// 同一组气泡之间（像 iMessage 一样几乎贴着）
     static let bubbleGap: CGFloat = 2
     /// 设置里一组和一组之间：靠留白分开，不加线
@@ -168,6 +121,8 @@ enum Space {
 enum AvatarSize {
     /// 聊天页头
     static let header: CGFloat = 36
+    /// 画册封面右上角进设置的头像
+    static let folio: CGFloat = 30
 }
 
 /// 图标和小按钮的尺寸（UI-1）
@@ -180,6 +135,8 @@ enum Icon {
     static let send: CGFloat = 28
     /// 发送圆里的箭头
     static let sendGlyph: CGFloat = 13
+    /// 一起听的播放 / 暂停
+    static let play: CGFloat = 18
     /// 加号菜单里的彩色圆图标
     static let menuCircle: CGFloat = 40
     /// 加号菜单圆图标里的符号
@@ -200,6 +157,12 @@ enum Motion {
     static let pressOut = Animation.spring(duration: 0.5, bounce: 0)
     /// 拖动松手后的归位：跟着手势速度，柔和收尾
     static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
+    /// 心情光晕的呼吸：很慢地一大一小，一直循环（MoodGlow；减弱动态效果时不用）
+    static let breathe = Animation.easeInOut(duration: 7).repeatForever(autoreverses: true)
+    /// 主页画册翻到一页时，那一页的字从糊到清楚地浮现出来
+    static let reveal = Animation.easeOut(duration: 1.1)
+    /// 同一页里的几行字依次浮现，每行比上一行晚多少秒
+    static let revealStep: Double = 0.12
     /// 一串东西依次出现时，每个比上一个晚多少秒（加号菜单）
     static let stagger: Double = 0.03
     /// 很快地淡掉（或在原地换一样东西）：小点变字前淡出、切页前旧页淡出、键盘和面板互换

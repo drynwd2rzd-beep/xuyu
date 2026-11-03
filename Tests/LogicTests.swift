@@ -36,6 +36,16 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(ends, [b.id.uuidString, c.id.uuidString, d.id.uuidString])
     }
 
+    // MARK: - 心情光晕
+
+    /// 日记里写的心情归到设计稿的几种颜色；没写时是平静，认不出的算低落
+    func testMoodTint() {
+        XCTAssertEqual(MoodTint.glow(for: "开心"), Palette.Mood.bright)
+        XCTAssertEqual(MoodTint.glow(for: "有点累了"), Palette.Mood.tired)
+        XCTAssertEqual(MoodTint.glow(for: " "), Palette.Mood.calm)
+        XCTAssertEqual(MoodTint.glow(for: "难过"), Palette.Mood.low)
+    }
+
     // MARK: - 回复拆成几条
 
     func testParagraphsSplitOnBlankLines() {

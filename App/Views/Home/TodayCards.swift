@@ -7,6 +7,8 @@ struct TodoCard: View {
     let day: Date
     /// 点「之后」那一行：跳到那一天
     var onJump: (Date) -> Void = { _ in }
+    /// 放在画册的待办页上：不要标题和卡片底，大数字由那一页自己画
+    var plain = false
     @Environment(\.modelContext) private var context
     @Query(sort: \TodoItem.createdAt) private var items: [TodoItem]
     @State private var newTitle = ""
@@ -45,7 +47,7 @@ struct TodoCard: View {
     var body: some View {
         let open = pending, done = finished
         VStack(alignment: .leading, spacing: 0) {
-            header(open: open, done: done)
+            if !plain { header(open: open, done: done) }
 
             ForEach(open) { item in
                 row(item)
@@ -79,9 +81,9 @@ struct TodoCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, Space.card)
-        .padding(.vertical, 6)
-        .card()
+        .padding(.horizontal, plain ? 0 : Space.card)
+        .padding(.vertical, plain ? 0 : Space.tight)
+        .background(plain ? Color.clear : Palette.card, in: .rounded(Radius.card))
         .animation(Motion.spring, value: open.map(\.id) + done.map(\.id))
         .sheet(item: $editing) { item in
             TodoEditor(item: item)

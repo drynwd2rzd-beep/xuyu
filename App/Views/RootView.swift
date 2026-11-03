@@ -127,7 +127,7 @@ struct RootView: View {
         }
     }
 
-    private var tabBarShown: Bool { !keyboardShown && !router.hideTabBar }
+    private var tabBarShown: Bool { !keyboardShown }
 
     private static let tabOrder: [AppTab] = [.today, .chats, .moments]
 
@@ -165,10 +165,6 @@ extension UIView {
     }
 }
 
-extension Router {
-    /// 主页编辑小组件时隐藏底栏
-    var hideTabBar: Bool { homeEditing && tab == .today }
-}
 
 struct FloatingTabBar: View {
     @Binding var selection: AppTab

@@ -57,15 +57,7 @@ final class FlowTests: XCTestCase {
         let month = app.buttons["monthToggle"]
         XCTAssertTrue(month.waitForExistence(timeout: 10), "Today 页没有出现")
 
-        // 清单末尾直接写一条新待办
-        let add = app.textFields["新待办"]
-        if add.waitForExistence(timeout: 5) {
-            add.tap()
-            add.typeText("测试待办\n")
-            sleep(1)
-        }
-
-        // 点日期弹出月历，翻一个月再翻回来；点这个月 1 号去看那一天，再回到今天
+        // 点封面上的日期弹出月历，翻一个月再翻回来；点这个月 1 号去看那一天，再回到今天
         month.tap()
         sleep(1)
         tapIfExists(app.buttons["上个月"])
@@ -75,8 +67,22 @@ final class FlowTests: XCTestCase {
         tapIfExists(app.buttons["回到今天"])
         sleep(1)
 
-        // 头像进设置
-        tapIfExists(app.buttons["设置"])
+        // 画册往下翻到待办页，在清单末尾写一条新待办，再翻回封面
+        app.swipeUp()
+        app.swipeUp()
+        let add = app.textFields["新待办"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "画册里没有翻到待办页")
+        add.tap()
+        add.typeText("测试待办\n")
+        sleep(1)
+        app.swipeDown()
+        app.swipeDown()
+        sleep(1)
+
+        // 封面右上角的头像进设置
+        let settings = app.buttons["设置"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "封面上没有进设置的头像")
+        settings.tap()
         tapIfExists(app.buttons["备份与恢复"])
         sleep(1)
         tapIfExists(app.buttons["返回"])

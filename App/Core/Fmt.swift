@@ -43,6 +43,8 @@ enum Fmt {
     static let enMonth = make("MMMM", en)
     static let enMonthDay = make("MMMM d", en)
     static let enMonthShort = make("MMM", en)
+    /// 画册日记页的大日期：「Nov. 1」
+    static let enMonthDayShort = make("MMM. d", en)
     static let ymd = make("yyyy.M.d")
     static let full = make("yyyy年M月d日 EEEE HH:mm")
     static let day = make("yyyy年M月d日 EEEE")
