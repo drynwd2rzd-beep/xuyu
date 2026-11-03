@@ -215,9 +215,9 @@ struct ConversationRow: View {
             .padding(.horizontal, Space.page)
             .padding(.vertical, Space.section)
             .contentShape(Rectangle())
-            // 旁白：名字、最新一句一起读，有新消息时说「未读」（小圆点本身读不出来）
+            // 旁白：名字、最新一句、未读几条一起读
             .accessibilityElement(children: .combine)
-            .accessibilityValue(unread ? Text("未读") : Text(""))
+            .accessibilityValue(unread > 0 ? Text("未读") : Text(""))
         }
     }
 
