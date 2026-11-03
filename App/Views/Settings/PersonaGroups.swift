@@ -1,42 +1,73 @@
 import SwiftUI
 import SwiftData
 
-/// 角色设置的二级页面（页面编号 PersonaPage 在 Core/Router.swift）
-struct PersonaSubpage: View {
+// 编辑角色五章里用到的分组（五章怎么分见 PersonaEditor.swift）
+
+/// 「习惯」一章的「主动」：TA 会不会来找你、多久一次、你没回会不会追问
+struct ReachOutGroup: View {
     @Bindable var persona: Persona
-    let page: PersonaPage
 
     var body: some View {
-        SettingsPage(title: page.title) {
-            switch page {
-            case .touch: TouchRows(persona: persona)
-            case .voice: PersonaVoiceGroup(persona: persona)
-            case .moments: PersonaMomentsGroups(persona: persona)
-            case .model: PersonaModelGroup(persona: persona)
+        SettingsGroup(title: "主动") {
+            SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
+            if persona.proactive {
+                Hairline()
+                SettingRow(title: "多久一次") {
+                    Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
+                        .fixedSize()
+                }
+                .transition(.opacity)
             }
+            Hairline()
+            SettingRow(title: "没回消息会来追问") {
+                Menu {
+                    ForEach([1, 2, 3, 0], id: \.self) { option in
+                        Button {
+                            persona.followUp = option
+                        } label: {
+                            let title = Self.followUpLabel(option)
+                            if persona.followUp == option { Label(title, systemImage: "checkmark") } else { Text(title) }
+                        }
+                    }
+                } label: {
+                    MenuValue(text: Self.followUpLabel(persona.followUp))
+                }
+            }
+        }
+        .animation(Motion.spring, value: persona.proactive)
+    }
+
+    static func followUpLabel(_ setting: Int) -> String {
+        switch setting {
+        case 0: "不追问"
+        case 2: "1～3 小时"
+        case 3: "3～6 小时"
+        default: "20 分钟～1 小时"
         }
     }
 }
 
-/// 真人节奏（会忙、晚点回、补一句、打字犹豫）、小情绪的程度、内心想法。存在本机，见 HumanTouch
-private struct TouchRows: View {
+/// 「习惯」一章的「像真人」：真人节奏（会忙、晚点回、补一句、打字犹豫）、小情绪的程度、内心想法、刷视频分享。
+/// 存在本机，见 HumanTouch
+struct HumanTouchGroup: View {
     @AppStorage private var pace: Bool
     @AppStorage private var mood: Int
     @AppStorage private var thoughts: Bool
+    @AppStorage private var videos: Bool
 
     init(persona: Persona) {
         _pace = AppStorage(wrappedValue: true, Prefs.human(.pace, persona.id))
         _mood = AppStorage(wrappedValue: 1, Prefs.human(.mood, persona.id))
         _thoughts = AppStorage(wrappedValue: false, Prefs.human(.thoughts, persona.id))
+        _videos = AppStorage(wrappedValue: true, Prefs.human(.videos, persona.id))
     }
 
     var body: some View {
-        SettingsGroup(title: "节奏") {
+        SettingsGroup(title: "像真人") {
             SettingRow(title: "真人节奏", subtitle: "会忙、会晚点回、想起来再补一句") {
                 InkToggle(isOn: $pace, label: "真人节奏")
             }
-        }
-        SettingsGroup(title: "情绪") {
+            Hairline()
             SettingRow(title: "小情绪") {
                 Segmented(items: [(0, "不要"), (1, "一点点"), (2, "明显")], selection: $mood)
                     .fixedSize()
@@ -45,33 +76,22 @@ private struct TouchRows: View {
             SettingRow(title: "内心想法", subtitle: "气泡上方偶尔有一句 TA 的心声") {
                 InkToggle(isOn: $thoughts, label: "内心想法")
             }
+            Hairline()
+            SettingRow(title: "刷视频分享给我", subtitle: "B 站、抖音热搜，一天最多一次") {
+                InkToggle(isOn: $videos, label: "刷视频分享给我")
+            }
         }
     }
 }
 
-/// 刷视频分享给我：放在编辑角色主页面的「互动」里
-struct VideoShareRow: View {
-    @AppStorage private var videos: Bool
-
-    init(persona: Persona) {
-        _videos = AppStorage(wrappedValue: true, Prefs.human(.videos, persona.id))
-    }
-
-    var body: some View {
-        SettingRow(title: "刷视频分享给我", subtitle: "B 站、抖音热搜，一天最多一次") {
-            InkToggle(isOn: $videos, label: "刷视频分享给我")
-        }
-    }
-}
-
-/// 语音：先选发不发；发的话再选声音、调声音、说哪种话。TA 打字的语言跟着 App 界面走
-private struct PersonaVoiceGroup: View {
+/// 「灵魂」一章的「声音」：先选发不发；发的话再选声音、调声音、说哪种话。TA 打字的语言跟着 App 界面走
+struct PersonaVoiceGroup: View {
     @Bindable var persona: Persona
     @State private var pickingVoice = false
     @State private var tuning = false
 
     var body: some View {
-        SettingsGroup(title: "语音") {
+        SettingsGroup(title: "声音") {
             SettingRow(title: "发语音") {
                 Segmented(items: [(0, "不发"), (1, "偶尔"), (2, "常常")], selection: $persona.voiceFreq)
                     .fixedSize()
@@ -157,8 +177,8 @@ private struct PersonaVoiceGroup: View {
     }
 }
 
-/// 动态：多常发、去不去看别人的；相册里的照片是 TA 发动态、聊天时分享的配图
-private struct PersonaMomentsGroups: View {
+/// 「生活」一章的动态：多常发、去不去看别人的；相册里的照片是 TA 发动态、聊天时分享的配图
+struct PersonaMomentsGroups: View {
     @Bindable var persona: Persona
 
     var body: some View {
@@ -182,8 +202,8 @@ private struct PersonaMomentsGroups: View {
     }
 }
 
-/// 用什么模型、能不能操作电脑
-private struct PersonaModelGroup: View {
+/// 「底层」一章：用什么模型、能不能操作电脑
+struct PersonaModelGroup: View {
     @Bindable var persona: Persona
     @Environment(RelayClient.self) private var relay
 

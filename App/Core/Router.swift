@@ -18,27 +18,9 @@ enum Route: Hashable {
     case moments
     /// 某个角色的主页和动态
     case momentsOf(UUID)
-    /// 世界观：World、某个角色的生活、世界大事和快到的日子
+    /// 世界观：世界、世界大事和快到的日子（每个人自己的生活在编辑角色的「生活」一章里）
     case world
-    case worldLife(UUID)
     case worldEvents
-    /// 编辑角色里收起来的二级页面：真人感、语音、动态与相册、模型
-    case personaPage(UUID, PersonaPage)
-}
-
-/// 角色设置的二级页面：不常改的收在这里，编辑角色的主页面只留资料、人设和互动。
-/// 放在 Core：导航（Route）要用它，界面在 Views/Settings/PersonaPages.swift（ARCH-1）
-enum PersonaPage: Hashable {
-    case touch, voice, moments, model
-
-    var title: String {
-        switch self {
-        case .touch: "真人感"
-        case .voice: "语音"
-        case .moments: "动态与相册"
-        case .model: "模型"
-        }
-    }
 }
 
 /// 导航状态：底部哪一页、页面栈、盖在最上面的聊天和侧滑返回的进度

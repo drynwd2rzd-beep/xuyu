@@ -4,7 +4,8 @@ import PhotosUI
 
 // MARK: - 设置首页
 
-/// 设置首页：连接（电脑中继、两个引擎的默认模型）、对话（角色、World、我）、更多（二级页面入口）、重置
+/// 设置首页：我（头像、称呼、你是谁）、AI（角色与群聊、世界、两个引擎的默认模型）、
+/// App（电脑中继、语音服务、通知、外观、隐私、备份）、重置。每个角色自己的设置在编辑角色的五章里
 struct SettingsView: View {
     @Environment(RelayClient.self) private var relay
     @Environment(Router.self) private var router
@@ -17,6 +18,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.myAvatarStamp) private var avatarStamp = 0.0
     @State private var avatarItem: PhotosPickerItem?
     @State private var modelEngine: Engine?
+    @State private var you = World.state.you
 
     var body: some View {
         ScrollView {
@@ -71,46 +73,47 @@ struct SettingsView: View {
         .sensoryFeedback(.success, trigger: resetDone)
     }
 
-    /// 首页的四个分组：连接、对话、更多、重置
+    /// 首页的四块：我（你是谁）、AI（TA 们和驱动 TA 们的模型）、App（这台手机上的 App 本身）、重置
     private var sections: some View {
         VStack(alignment: .leading, spacing: Space.section) {
-            section("连接") {
-                Button { router.open(.connection) } label: {
-                    connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected, symbol: "desktopcomputer")
-                }
-                .buttonStyle(PressableRowStyle())
-                Hairline(inset: 62)
-                engineRow(.claude)
-                Hairline(inset: 62)
-                engineRow(.codex)
+            section("我") {
+                meRow
+                Hairline()
+                youRow
             }
 
-            section("对话") {
+            section("AI") {
                 Button { router.open(.personas) } label: {
-                    SettingRow(title: "角色") {
+                    SettingRow(title: "角色与群聊") {
                         Text("\(personas.count) 位").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
                         Chevron()
                     }
                 }
                 .buttonStyle(PressableRowStyle())
                 Hairline()
-                // 世界观：大家生活的世界、关系、每个人的作息和今天
-                navRow("World", route: .world)
+                // 大家共用的世界：生活的世界、天气、关系
+                navRow("世界", route: .world)
                 Hairline()
-                meRow
+                engineRow(.claude)
+                Hairline(inset: 62)
+                engineRow(.codex)
             }
 
-            // 不常改的放进二级页面，主页面保持简短
-            section("更多") {
+            section("App") {
+                Button { router.open(.connection) } label: {
+                    connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected, symbol: "desktopcomputer")
+                }
+                .buttonStyle(PressableRowStyle())
+                Hairline()
+                navRow("语音服务", route: .voice)
+                Hairline()
                 navRow("通知", route: .notifications)
                 Hairline()
                 navRow("外观与背景", route: .appearance)
                 Hairline()
-                navRow("备份与恢复", route: .backup)
-                Hairline()
-                navRow("语音", route: .voice)
-                Hairline()
                 navRow("隐私与安全", route: .privacy)
+                Hairline()
+                navRow("备份与恢复", route: .backup)
             }
 
             // 从轻到重：只还原偏好 → 删掉所有角色 → 什么都删（像刚装好）
@@ -249,6 +252,27 @@ struct SettingsView: View {
         }
         .padding(.horizontal, Space.card)
         .frame(height: Space.rowTall)
+    }
+
+    /// 你是谁：TA 们都知道的那一段（存在世界观里，见 World.State.you）
+    private var youRow: some View {
+        TextField("你是谁：住在哪、做什么、喜欢什么…", text: $you, axis: .vertical)
+            .font(.system(size: 15))
+            .lineSpacing(4)
+            .lineLimit(2...8)
+            .padding(Space.card)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: you) { _, new in
+                var s = World.state
+                guard s.you != new else { return }
+                s.you = new
+                World.state = s
+            }
+            .onReceive(NotificationCenter.default.publisher(for: World.changed)) { _ in
+                // 从备份恢复、恢复出厂设置后跟着变
+                let latest = World.state.you
+                if latest != you { you = latest }
+            }
     }
 
     private var relayLine: String {

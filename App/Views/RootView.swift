@@ -276,12 +276,8 @@ struct RouteView: View {
             if let persona = context.persona(id) { MomentProfileView(persona: persona) } else { missing }
         case .world:
             WorldView()
-        case .worldLife(let id):
-            if let persona = context.persona(id) { PersonaLifeView(persona: persona) } else { missing }
         case .worldEvents:
             WorldEventsView()
-        case .personaPage(let id, let page):
-            if let persona = context.persona(id) { PersonaSubpage(persona: persona, page: page) } else { missing }
         }
     }
 
