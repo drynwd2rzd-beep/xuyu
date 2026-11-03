@@ -12,7 +12,7 @@ struct ListenPage: View {
     private static let controlGap: CGFloat = 44
 
     var body: some View {
-        BookPage(folio: String(localized: "一起听"), number: number, total: total, onDark: true) {
+        PhotobookPage(folio: String(localized: "一起听"), number: number, total: total, onDark: true) {
             Palette.listenNight
             RadialGradient(colors: [Palette.onPhoto.opacity(0.14), .clear], center: UnitPoint(x: 0.5, y: 0.34),
                            startRadius: 0, endRadius: Self.glowRadius)

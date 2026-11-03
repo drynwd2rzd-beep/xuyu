@@ -15,7 +15,7 @@ struct TodoPage: View {
             return (item.dueDate ?? .distantPast) < end
         }
         let done = today.filter(\.isDone).count
-        BookPage(folio: String(localized: "待办　今天"), number: number, total: total) {
+        PhotobookPage(folio: String(localized: "待办　今天"), number: number, total: total) {
             Palette.card
         } content: {
             VStack(alignment: .leading, spacing: Space.group) {

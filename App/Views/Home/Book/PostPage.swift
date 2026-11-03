@@ -14,9 +14,9 @@ struct PostPage: View {
 
     var body: some View {
         let name = moment.personaID.flatMap { names[$0] } ?? ""
-        BookPage(folio: String(localized: "\(name)的动态　\(Fmt.bubble.string(from: moment.createdAt))"),
+        PhotobookPage(folio: String(localized: "\(name)的动态　\(Fmt.bubble.string(from: moment.createdAt))"),
                  number: number, total: total, onDark: true) {
-            if let image { BookPhoto(image: image) } else { Palette.listenNight }
+            if let image { PhotobookPhoto(image: image) } else { Palette.listenNight }
         } content: {
             VStack(alignment: .leading, spacing: Space.page) {
                 if !moment.text.trimmed.isEmpty {

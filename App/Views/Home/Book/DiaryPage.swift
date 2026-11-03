@@ -11,7 +11,7 @@ struct DiaryPage: View {
     private static let maxLines = 12
 
     var body: some View {
-        BookPage(folio: String(localized: "日记"), number: number, total: total) {
+        PhotobookPage(folio: String(localized: "日记"), number: number, total: total) {
             Palette.paper
         } content: {
             VStack(alignment: .leading, spacing: Space.group) {

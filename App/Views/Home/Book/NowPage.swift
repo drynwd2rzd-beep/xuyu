@@ -16,7 +16,7 @@ struct NowPage: View {
     var body: some View {
         let glow = MoodTint.glow(for: mood)
         TimelineView(.everyMinute) { ctx in
-            BookPage(folio: String(localized: "\(persona.name)　此刻"), number: number, total: total) {
+            PhotobookPage(folio: String(localized: "\(persona.name)　此刻"), number: number, total: total) {
                 LinearGradient(stops: [
                     .init(color: glow.t1, location: 0),
                     .init(color: glow.t2, location: 0.58),

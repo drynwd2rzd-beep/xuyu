@@ -24,9 +24,9 @@ struct CoverPage: View {
     private static let coverPixel = 2600
 
     var body: some View {
-        BookPage(folio: folio, number: 1, total: total, onDark: cover != nil, trailing: AnyView(settingsButton), onFolio: onCalendar) {
+        PhotobookPage(folio: folio, number: 1, total: total, onDark: cover != nil, trailing: AnyView(settingsButton), onFolio: onCalendar) {
             if let cover {
-                BookPhoto(image: cover)
+                PhotobookPhoto(image: cover)
             } else {
                 // 还没有照片：那一页就是一片很淡的光
                 LinearGradient(colors: [Palette.Mood.calm.t1, Palette.paper], startPoint: .top, endPoint: .bottom)

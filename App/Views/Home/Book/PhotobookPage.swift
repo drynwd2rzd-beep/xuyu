@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 主页画册的一页：占满一屏，像翻摄影集一样上下翻（HomeView 里按页对齐）。
 /// 左上角一行小字说明这一页是什么，右上角页码「02 / 06」；压在照片、深色上时字是白的
-struct BookPage<Background: View, Content: View>: View {
+struct PhotobookPage<Background: View, Content: View>: View {
     let folio: String
     let number: Int
     let total: Int
@@ -72,7 +72,7 @@ extension View {
 }
 
 /// 铺满一页的照片：统一调色，上下两头压暗一点，白字压在上面看得清
-struct BookPhoto: View {
+struct PhotobookPhoto: View {
     let image: UIImage
 
     var body: some View {
