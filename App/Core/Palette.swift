@@ -56,6 +56,8 @@ enum Palette {
     static let clay = Color(hex: 0xD97757)
     /// 浮在灰底上的一块：分段控件选中的那一格
     static let raised = Color.dynamic(light: 0xFFFFFF, dark: 0x3A3A3D)
+    /// 喜欢了的红心（动态）
+    static let heart = Color(hex: 0xFF3B5C)
     /// 「已连接」「装好了」的小绿点
     static let online = Color(hex: 0x34C27A)
     /// 压在照片上的字和小图标（画册封面、动态那一页）：不跟深浅色变

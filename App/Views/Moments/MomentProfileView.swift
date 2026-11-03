@@ -2,7 +2,9 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 
-/// TA 的主页（点聊天顶部的头像进来）：头像、名字、一句签名，相册里的照片，再按日子排的动态
+/// TA 的主页（点聊天顶部的头像、动态里的头像进来），照 X：最上面一条横幅照片（TA 相册里最新的一张），
+/// 头像压在横幅下沿，右边是「发消息」「相册」；下面名字、一句签名、几条动态几张照片，再往下是 TA 的动态。
+/// 往上滑横幅跟着变糊，往下拉横幅被拉大
 struct MomentProfileView: View {
     let persona: Persona
     @Environment(\.modelContext) private var context
@@ -10,60 +12,42 @@ struct MomentProfileView: View {
     @Environment(Router.self) private var router
     @Query(sort: \Moment.createdAt, order: .reverse) private var moments: [Moment]
     @Query(sort: \AlbumPhoto.createdAt) private var photos: [AlbumPhoto]
+    @Query private var personas: [Persona]
     @State private var showAlbum = false
+    @State private var pull: CGFloat = 0
+    private static let banner: CGFloat = 170
 
     var body: some View {
         let album = photos.filter { $0.personaID == persona.id }
         let theirs = moments.filter { $0.personaID == persona.id && $0.createdAt <= .now }
-        let pictures = Dictionary(album.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let pictures = Dictionary(photos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let people = Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         ScrollView {
-            VStack(spacing: 0) {
-                HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(Palette.ink)
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("返回")
-                    Spacer()
-                    Button { router.open(.persona(persona.id)) } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("编辑角色")
-                }
-                .padding(.horizontal, Space.tight)
-
+            VStack(alignment: .leading, spacing: 0) {
+                banner(album.last)
                 profile(albumCount: album.count, momentCount: theirs.count)
-
-                if !album.isEmpty {
-                    DayDivider(label: "From the album")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: Space.section) {
-                            ForEach(Array(album.reversed().enumerated()), id: \.element.id) { i, p in
-                                Polaroid(photo: p, width: 92, height: 104, tilt: [-3, 2, -1.5, 3, -2][i % 5], border: 4)
-                            }
-                        }
-                        .padding(.horizontal, Space.page + 6)
-                        .padding(.vertical, Space.section)
-                    }
-                }
-
-                DayDivider(label: "Moments")
                 if theirs.isEmpty {
                     Text("还没有发过动态。")
-                        .font(Typo.serif(15).italic())
+                        .font(Typo.serif(Typo.body))
                         .foregroundStyle(Palette.inkSoft)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Space.page + 6)
+                        .padding(.horizontal, Space.card)
+                        .padding(.top, Space.group)
                 }
-                timeline(theirs, pictures: pictures)
+                LazyVStack(spacing: 0) {
+                    ForEach(theirs) { m in
+                        PostView(moment: m, people: people, pictures: pictures, now: .now,
+                                 onOpen: { comment in router.open(.moment(m.id, comment: comment)) },
+                                 onProfile: { _ in })
+                    }
+                }
+                .padding(.top, Space.group)
             }
-            .padding(.bottom, 60)
+            .padding(.bottom, Space.bookBottom)
         }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in pull = y }
+        .scrollIndicators(.hidden)
+        .ignoresSafeArea(edges: .top)
+        .overlay(alignment: .top) { topButtons }
         .background(Palette.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showAlbum) {
@@ -83,102 +67,106 @@ struct MomentProfileView: View {
         }
     }
 
+    // MARK: - 横幅
+
+    /// 横幅：往下拉（pull < 0）时被拉高，往上滑时变糊；没有照片就是 TA 心情色的一片光
+    private func banner(_ photo: AlbumPhoto?) -> some View {
+        let stretch = max(0, -pull)
+        let blur = min(Self.maxBlur, max(0, pull) / Self.blurRate)
+        return ZStack {
+            if let photo {
+                PhotoFill(photo: photo)
+            } else {
+                LinearGradient(colors: [Palette.Mood.calm.m2, Palette.Mood.tender.m3], startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+        }
+        .frame(height: Self.banner + stretch)
+        .blur(radius: Motion.reduced ? 0 : blur)
+        .clipped()
+        .offset(y: -stretch)
+        .padding(.bottom, -stretch)
+        .accessibilityHidden(true)
+    }
+
+    private static let maxBlur: CGFloat = 12
+    private static let blurRate: CGFloat = 10
+
+    /// 压在横幅上的返回、编辑角色：白字，底下一小圈磨砂
+    private var topButtons: some View {
+        HStack {
+            round("chevron.left", "返回") { dismiss() }
+            Spacer()
+            round("slider.horizontal.3", "编辑角色") { router.open(.persona(persona.id)) }
+        }
+        .padding(.horizontal, Space.item)
+    }
+
+    private func round(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: Icon.plus, weight: .semibold))
+                .foregroundStyle(Palette.onPhoto)
+                .frame(width: Space.field, height: Space.field)
+                .background(.ultraThinMaterial, in: Circle())
+                .environment(\.colorScheme, .dark)
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .accessibilityLabel(LocalizedStringKey(label))
+    }
+
+    // MARK: - 名字一栏
+
     private func profile(albumCount: Int, momentCount: Int) -> some View {
         let signature = persona.bio.trimmed.components(separatedBy: .newlines).first?.trimmed ?? ""
-        return VStack(spacing: 4) {
-            AvatarView(persona: persona, size: 84)
-                .padding(5)
-                .overlay(Circle().strokeBorder(Palette.ink, lineWidth: 1.5))
-            Text(persona.name)
-                .font(Typo.display(34))
-                .tracking(-0.5)
+        return VStack(alignment: .leading, spacing: Space.tight) {
+            HStack(alignment: .bottom) {
+                AvatarView(persona: persona, size: AvatarSize.profile)
+                    .padding(Space.tiny)
+                    .background(Palette.paper, in: Circle())
+                    .padding(.top, -AvatarSize.profileOverlap)
+                Spacer()
+                pill("发消息", filled: true, action: openChat)
+                pill("相册", filled: false) { showAlbum = true }
+            }
+            Text(verbatim: persona.name)
+                .font(.system(size: Typo.heading, weight: .medium))
+                .tracking(Typo.tracking)
                 .foregroundStyle(Palette.ink)
-                .padding(.top, Space.item)
+                .padding(.top, Space.tight)
             if !signature.isEmpty {
-                Text("“\(signature)”")
-                    .font(Typo.serif(16).italic())
+                Text(verbatim: signature)
+                    .font(Typo.serif(Typo.body))
+                    .lineSpacing(Space.tiny)
                     .foregroundStyle(Palette.ink2)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
-            Text(verbatim: "\(momentCount) \(momentCount == 1 ? "moment" : "moments") · \(albumCount) \(albumCount == 1 ? "photo" : "photos")")
-                .font(Typo.serif(13))
-                .foregroundStyle(Palette.faint)
-                .padding(.top, 4)
-            HStack(spacing: 10) {
-                Button(action: openChat) {
-                    Text("发消息")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.inkInverse)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 46)
-                        .background(Palette.ink, in: Capsule())
-                }
-                .buttonStyle(ScaleButtonStyle())
-                Button { showAlbum = true } label: {
-                    Text("相册")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.ink)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 46)
-                        .background(Palette.card, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
-                }
-                .buttonStyle(ScaleButtonStyle())
+            HStack(spacing: Space.page) {
+                count(momentCount, "动态")
+                count(albumCount, "照片")
             }
-            .padding(.top, Space.section)
+            .padding(.top, Space.tiny)
         }
-        .padding(.horizontal, Space.page + 6)
+        .padding(.horizontal, Space.card)
     }
 
-    /// 按日子排：左边是日期，右边是这条动态，中间一条细线串起来
-    private func timeline(_ items: [Moment], pictures: [UUID: AlbumPhoto]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { i, m in
-                Button { router.open(.moments) } label: {
-                    HStack(alignment: .top, spacing: Space.section) {
-                        VStack(spacing: 2) {
-                            Text(Self.dayNumber.string(from: m.createdAt)).font(Typo.serif(26)).foregroundStyle(Palette.ink)
-                            Text(Fmt.enMonthShort.string(from: m.createdAt)).font(Typo.serif(12)).foregroundStyle(Palette.faint)
-                        }
-                        .frame(width: 52)
-                        .padding(.vertical, 4)
-                        .background(Palette.paper)
-                        VStack(alignment: .leading, spacing: Space.tight) {
-                            if m.text.count <= 16 {
-                                Text(m.text).font(Typo.serif(19)).foregroundStyle(Palette.ink)
-                            } else {
-                                Text(m.text).font(.system(size: 15)).lineSpacing(5).foregroundStyle(Palette.ink).lineLimit(4)
-                            }
-                            if let first = m.photoIDs.first.flatMap({ pictures[$0] }) {
-                                Polaroid(photo: first, width: 112, height: 96, tilt: i % 2 == 0 ? -2 : 2, border: 4)
-                                    .padding(.vertical, 4)
-                            }
-                            Text(meta(m)).font(.system(size: 12)).foregroundStyle(Palette.faint)
-                        }
-                        .multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.bottom, 26)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
+    private func count(_ n: Int, _ label: String) -> some View {
+        HStack(spacing: Space.tiny) {
+            Text(verbatim: "\(n)").font(.system(size: Typo.label, weight: .medium)).foregroundStyle(Palette.ink)
+            Text(LocalizedStringKey(label)).font(.system(size: Typo.label)).foregroundStyle(Palette.inkSoft)
         }
-        .background(alignment: .topLeading) {
-            Rectangle().fill(Palette.hairline).frame(width: 0.5).padding(.leading, 26).padding(.vertical, 18)
-        }
-        .padding(.horizontal, Space.page + 6)
-        .padding(.top, 4)
     }
 
-    private func meta(_ m: Moment) -> String {
-        var parts = [Fmt.hm.string(from: m.createdAt)]
-        let likes = m.likedBy.count + (m.likedByMe ? 1 : 0)
-        let comments = m.visibleComments().count
-        if likes > 0 { parts.append(String(localized: "\(likes) 人喜欢")) }
-        if comments > 0 { parts.append(String(localized: "\(comments) 条评论")) }
-        return parts.joined(separator: " · ")
+    private func pill(_ title: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(LocalizedStringKey(title))
+                .font(.system(size: Typo.label, weight: .medium))
+                .tracking(Typo.tracking)
+                .foregroundStyle(filled ? Palette.inkInverse : Palette.ink)
+                .padding(.horizontal, Space.card)
+                .frame(height: Space.field)
+                .background(filled ? Palette.ink : Palette.card, in: Capsule())
+        }
+        .buttonStyle(ScaleButtonStyle())
     }
 
     private func openChat() {
@@ -186,12 +174,6 @@ struct MomentProfileView: View {
         // 从聊天里点头像进来的：回去就是
         if router.chat == convo.id { dismiss() } else { router.open(.chat(convo.id)) }
     }
-
-    static let dayNumber: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d"
-        return f
-    }()
 }
 
 /// 相册：网格排着，点右上角的小叉移除，最后一格添加（一次能选好几张）

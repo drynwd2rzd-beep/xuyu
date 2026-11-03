@@ -18,6 +18,8 @@ enum Route: Hashable {
     case moments
     /// 某个角色的主页和动态
     case momentsOf(UUID)
+    /// 一条动态的详情：帖子和全部评论
+    case moment(UUID, comment: Bool)
     /// 世界观：世界、世界大事和快到的日子（每个人自己的生活在编辑角色的「生活」一章里）
     case world
     case worldEvents

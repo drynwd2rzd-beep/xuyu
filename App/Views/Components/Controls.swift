@@ -70,15 +70,16 @@ struct Segmented<T: Hashable>: View {
     }
 }
 
-/// 墨黑开关
+/// 开关：平时墨黑，编辑某位角色时是 TA 的心情色（toggleTint）
 struct InkToggle: View {
     @Binding var isOn: Bool
     var label: String
+    @Environment(\.toggleTint) private var tint
 
     var body: some View {
         Toggle(LocalizedStringKey(label), isOn: $isOn)
             .labelsHidden()
-            .tint(Palette.ink)
+            .tint(tint)
     }
 }
 
@@ -113,4 +114,9 @@ struct Chevron: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Palette.faint)
     }
+}
+
+extension EnvironmentValues {
+    /// 开关打开时的颜色：平时是墨黑，编辑某位角色时换成 TA 的心情色（设计稿「开的时候填成 TA 的心情色」）
+    @Entry var toggleTint: Color = Palette.ink
 }

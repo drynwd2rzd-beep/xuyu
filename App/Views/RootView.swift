@@ -166,9 +166,10 @@ extension UIView {
 }
 
 
+/// 底栏（照设计稿）：只有三个英文小字，宽字距、全大写；当前那页更亮、下面一个小点。
+/// 字是白的、和下面的内容做「差值」叠加：压在白底上是黑的，压在照片、黑底上是白的，哪一页都看得清
 struct FloatingTabBar: View {
     @Binding var selection: AppTab
-    @Namespace private var pill
 
     private struct Item: Identifiable {
         let tab: AppTab
@@ -179,33 +180,35 @@ struct FloatingTabBar: View {
     private let items = [Item(tab: .today, title: "Today"), Item(tab: .chats, title: "Chats"), Item(tab: .moments, title: "Moments")]
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Space.tabGap) {
             ForEach(items) { item in
                 let selected = selection == item.tab
                 Button {
                     withAnimation(Motion.spring) { selection = item.tab }
                 } label: {
-                    Text(item.title)
-                        .font(Typo.serif(Typo.body, selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Palette.inkInverse : Palette.inkSoft)
-                        .padding(.horizontal, 20)
-                        .frame(height: 44)
-                        .background {
-                            if selected {
-                                Capsule().fill(Palette.ink).matchedGeometryEffect(id: "pill", in: pill)
-                            }
+                    Text(verbatim: item.title)
+                        .textCase(.uppercase)
+                        .font(.system(size: Typo.caption))
+                        .tracking(Typo.tabTracking)
+                        .foregroundStyle(Palette.onPhoto)
+                        .opacity(selected ? 1 : 0.5)
+                        .overlay(alignment: .bottom) {
+                            Circle().fill(Palette.onPhoto)
+                                .frame(width: Space.tabDot, height: Space.tabDot)
+                                .opacity(selected ? 1 : 0)
+                                .offset(y: Space.tight)
                         }
-                        .contentShape(Capsule())
+                        .frame(minHeight: Space.control)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(item.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .padding(5)
-        .background {
-            Capsule().fill(.ultraThinMaterial).shadow(color: .black.opacity(0.09), radius: 18, y: 8)
-        }
-        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
-        .padding(.bottom, 6)
+        .blendMode(.difference)
+        .animation(Motion.snappy, value: selection)
+        .padding(.bottom, Space.tight)
         .sensoryFeedback(.selection, trigger: selection)
     }
 }
@@ -270,6 +273,8 @@ struct RouteView: View {
             MomentsView()
         case .momentsOf(let id):
             if let persona = context.persona(id) { MomentProfileView(persona: persona) } else { missing }
+        case .moment(let id, let comment):
+            if let moment = context.moment(id) { MomentDetailView(moment: moment, commenting: comment) } else { missing }
         case .world:
             WorldView()
         case .worldEvents:

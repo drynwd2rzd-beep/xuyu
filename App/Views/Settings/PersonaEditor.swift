@@ -44,6 +44,12 @@ struct PersonaEditor: View {
     @State private var chat: Conversation?
     /// 约定存在本机设置里：读这个让列表跟着变
     @AppStorage(Prefs.appointments) private var appointmentsRaw = ""
+    @Query(sort: \DiaryEntry.day, order: .reverse) private var entries: [DiaryEntry]
+
+    /// TA 最近一篇日记里的心情（开关的颜色跟着它）
+    private var mood: String {
+        entries.first { $0.author == .ai && $0.personaID == persona.id && !$0.mood.isEmpty }?.mood ?? ""
+    }
 
     /// TA 答应你的事（到点来找你）
     private var appointments: [Appointment] {
@@ -78,6 +84,8 @@ struct PersonaEditor: View {
         }
         .background(Palette.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        // 这一位的开关打开时是 TA 的心情色（设计稿）
+        .environment(\.toggleTint, MoodTint.glow(for: mood).m1)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task {

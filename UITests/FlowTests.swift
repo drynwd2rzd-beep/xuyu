@@ -95,7 +95,10 @@ final class FlowTests: XCTestCase {
         // 切换底部三个页面
         tapIfExists(app.buttons["返回"])
         tapIfExists(app.buttons["返回"])
-        tapIfExists(app.buttons["Moments"])
+        let moments = app.buttons["Moments"]
+        XCTAssertTrue(moments.waitForExistence(timeout: 5), "底栏没有 Moments")
+        moments.tap()
+        XCTAssertTrue(app.buttons["发动态"].firstMatch.waitForExistence(timeout: 5), "动态页没有出现")
         tapIfExists(app.buttons["Chats"])
         tapIfExists(app.buttons["Today"])
         XCTAssertEqual(app.state, .runningForeground, "App 闪退了")

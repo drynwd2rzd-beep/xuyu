@@ -30,6 +30,8 @@ enum Typo {
 
     /// 主页画册里的大字（装饰性的大号，只在画册里用）
     enum Book {
+        /// 动态、聊天列表这类页面的大标题（细字、宽字距）
+        static let title: CGFloat = 26
         /// 封面上 TA 的那句话，和它的行距
         static let quote: CGFloat = 26
         static let quoteSpacing: CGFloat = 16
@@ -54,6 +56,8 @@ enum Typo {
 
     /// 中文小标题、设置行的字距：新版设计的字都略微拉开
     static let tracking: CGFloat = 0.6
+    /// 底栏英文小字的字距（全大写，拉得很开）
+    static let tabTracking: CGFloat = 3.4
     /// 英文小标签（AI、App、分区名）的大字距
     static let labelTracking: CGFloat = 3
 }
@@ -66,6 +70,8 @@ enum Radius {
     static let card: CGFloat = 18
     /// 照片卡（画册、瀑布流）
     static let photo: CGFloat = 8
+    /// 设置首页的角色卡
+    static let cast: CGFloat = 22
     /// 小方块：表情、组件库图标、代码块
     static let tile: CGFloat = 18
     /// 聊天气泡
@@ -93,6 +99,9 @@ enum Space {
     static let book: CGFloat = 28
     static let bookTop: CGFloat = 64
     static let bookBottom: CGFloat = 132
+    /// 底栏三个字之间、当前那页下面的小点
+    static let tabGap: CGFloat = 52
+    static let tabDot: CGFloat = 3
     /// 同一组气泡之间（像 iMessage 一样几乎贴着）
     static let bubbleGap: CGFloat = 2
     /// 设置里一组和一组之间：靠留白分开，不加线
@@ -103,6 +112,8 @@ enum Space {
     static let card: CGFloat = 16
     /// 元素之间
     static let item: CGFloat = 12
+    /// 最紧的地方：图标和数字之间、几行小字之间
+    static let tiny: CGFloat = 4
     /// 紧凑处
     static let tight: CGFloat = 8
     /// 列表行高
@@ -123,6 +134,22 @@ enum AvatarSize {
     static let header: CGFloat = 36
     /// 画册封面右上角进设置的头像
     static let folio: CGFloat = 30
+    /// 动态里带照片那一条的头像、纯文字那一条的头像
+    static let post: CGFloat = 32
+    static let tweet: CGFloat = 38
+    /// 动态顶上那一排快拍
+    static let story: CGFloat = 64
+    /// 快拍环里面的头像、名字最宽多少
+    static let storyFace: CGFloat = 56
+    static let storyLabel: CGFloat = 76
+    /// 动态详情里的评论头像、回复别人的那条（小一点、往里缩一格）
+    static let comment: CGFloat = 30
+    static let reply: CGFloat = 24
+    static let replyIndent: CGFloat = 42
+    /// TA 的主页上压在横幅下沿的头像
+    static let profile: CGFloat = 76
+    /// 这个头像有多少压进横幅里（一半）
+    static let profileOverlap: CGFloat = 38
 }
 
 /// 图标和小按钮的尺寸（UI-1）
@@ -135,6 +162,17 @@ enum Icon {
     static let send: CGFloat = 28
     /// 发送圆里的箭头
     static let sendGlyph: CGFloat = 13
+    /// 动态里喜欢、评论的图标：带照片的大一号，纯文字的小一号
+    static let postAction: CGFloat = 22
+    static let tweetAction: CGFloat = 17
+    /// 双击照片时中间冒出来的那颗心
+    static let heartPop: CGFloat = 84
+    /// 发动态的笔
+    static let compose: CGFloat = 21
+    /// 返回键的箭头
+    static let back: CGFloat = 18
+    /// 快拍里「你」那个头像右下角的加号
+    static let storyPlus: CGFloat = 20
     /// 一起听的播放 / 暂停
     static let play: CGFloat = 18
     /// 加号菜单里的彩色圆图标

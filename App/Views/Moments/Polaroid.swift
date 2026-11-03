@@ -29,29 +29,6 @@ struct Polaroid: View {
     }
 }
 
-/// 动态里的配图：一张就大一点、微微歪着；几张就错开叠在一起
-struct PolaroidStack: View {
-    let photos: [AlbumPhoto]
-
-    var body: some View {
-        if photos.count == 1 {
-            Polaroid(photo: photos[0], width: 236, height: 220, tilt: -1.5)
-                .padding(.vertical, 6)
-                .padding(.leading, 4)
-        } else {
-            ZStack(alignment: .topLeading) {
-                ForEach(Array(photos.prefix(3).enumerated()), id: \.element.id) { i, p in
-                    Polaroid(photo: p, width: 172, height: 184, tilt: [-3, 4, -1][i])
-                        .offset(x: CGFloat(i) * 104, y: CGFloat(i % 2) * 22)
-                }
-            }
-            .frame(height: 214, alignment: .topLeading)
-            .padding(.vertical, 4)
-            .padding(.leading, 4)
-        }
-    }
-}
-
 /// 语音动态：点一下播放，波形跟着走
 struct VoiceMomentButton: View {
     let moment: Moment

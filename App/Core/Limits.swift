@@ -47,6 +47,9 @@ enum Limits {
         static let todoHorizon: TimeInterval = 14 * 24 * 3600
         /// 一起听：TA 插话至少隔这么久
         static let listenComment: TimeInterval = 360
+        /// 动态顶上的快拍：只放最近这么久内发的照片；每张停多少秒
+        static let storyWindow: TimeInterval = 24 * 3600
+        static let storyFrame: Double = 5
     }
 
     /// 一天里的几个钟点（按 `Clock.hour` 算）

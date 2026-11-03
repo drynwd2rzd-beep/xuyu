@@ -313,6 +313,12 @@ extension ModelContext {
         try? fetch(FetchDescriptor<Persona>(predicate: #Predicate { $0.id == id })).first
     }
 
+    /// 按 id 找一条动态（动态详情页用；删了就是 nil）
+    func moment(_ id: UUID) -> Moment? {
+        // 查不到和出错都当成「这条已经没了」，详情页会显示内容已删除
+        try? fetch(FetchDescriptor<Moment>(predicate: #Predicate { $0.id == id })).first
+    }
+
     func allPersonas() -> [Persona] {
         (try? fetch(FetchDescriptor<Persona>(sortBy: [SortDescriptor(\.sortIndex), SortDescriptor(\.createdAt)]))) ?? []
     }

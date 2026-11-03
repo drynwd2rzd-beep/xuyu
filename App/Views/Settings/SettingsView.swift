@@ -82,9 +82,12 @@ struct SettingsView: View {
             }
 
             SettingsGroup(title: "AI") {
+                // 一排角色卡，点卡片直接编辑那一位；群聊、排序、删除在「角色与群聊」里
+                PersonaCast()
+                    .padding(.bottom, Space.tight)
                 Button { router.open(.personas) } label: {
                     SettingRow(title: "角色与群聊") {
-                        Text("\(personas.count) 位").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
+                        Text("\(personas.count) 位").font(.system(size: Typo.value)).foregroundStyle(Palette.inkSoft)
                         Chevron()
                     }
                 }
