@@ -13,9 +13,7 @@ struct ConnectionView: View {
             VStack(alignment: .leading, spacing: Space.section) {
                 VStack(spacing: 0) {
                     field("在家", text: $address, placeholder: "192.168.1.8:51888", keyboard: .URL)
-                    Hairline()
                     field("出门", text: $away, placeholder: "Tailscale 地址（可不填）", keyboard: .URL)
-                    Hairline()
                     field("配对码", text: $code, placeholder: "电脑窗口里显示的 8 位", keyboard: .asciiCapable)
                 }
                 .card()
@@ -42,7 +40,6 @@ struct ConnectionView: View {
                 if relay.isConnected {
                     VStack(spacing: 0) {
                         engineLine(.claude, relay.status?.claude)
-                        Hairline(inset: 50)
                         engineLine(.codex, relay.status?.codex)
                     }
                     .card()

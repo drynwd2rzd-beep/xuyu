@@ -259,7 +259,7 @@ struct MemoryWidget: View {
         let pick = images.last
         ZStack(alignment: .bottomLeading) {
             if let pick, let image = cachedImage(pick.data, key: pick.id.uuidString) {
-                Image(uiImage: image).resizable().scaledToFill()
+                Image(uiImage: image).resizable().scaledToFill().graded()
             } else {
                 Palette.fill
                 Image(systemName: "photo").font(.system(size: 28, weight: .light)).foregroundStyle(Palette.faint)

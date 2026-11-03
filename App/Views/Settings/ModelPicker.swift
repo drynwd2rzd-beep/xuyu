@@ -56,10 +56,8 @@ struct ModelPicker: View {
             VStack(spacing: 0) {
                 row("自动", subtitle: "账号默认的模型", value: "", selection: selection)
                 ForEach(models) { m in
-                    Hairline()
                     row(m.name, subtitle: m.description.isEmpty ? nil : m.description, value: m.id, selection: selection)
                 }
-                Hairline()
                 SettingRow(title: "推理强度", subtitle: "越高越聪明，也越慢、越耗额度") {
                     EffortMenu(options: ModelNames.efforts(for: selection.wrappedValue, engine: engine, status: status),
                                selection: effort)

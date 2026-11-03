@@ -11,14 +11,12 @@ struct ReachOutGroup: View {
         SettingsGroup(title: "主动") {
             SettingRow(title: "主动找我聊天") { InkToggle(isOn: $persona.proactive, label: "主动找我聊天") }
             if persona.proactive {
-                Hairline()
                 SettingRow(title: "多久一次") {
                     Segmented(items: [(0, "偶尔"), (1, "每天"), (2, "常常")], selection: $persona.proactiveFreq)
                         .fixedSize()
                 }
                 .transition(.opacity)
             }
-            Hairline()
             SettingRow(title: "没回消息会来追问") {
                 Menu {
                     ForEach([1, 2, 3, 0], id: \.self) { option in
@@ -67,16 +65,13 @@ struct HumanTouchGroup: View {
             SettingRow(title: "真人节奏", subtitle: "会忙、会晚点回、想起来再补一句") {
                 InkToggle(isOn: $pace, label: "真人节奏")
             }
-            Hairline()
             SettingRow(title: "小情绪") {
                 Segmented(items: [(0, "不要"), (1, "一点点"), (2, "明显")], selection: $mood)
                     .fixedSize()
             }
-            Hairline()
             SettingRow(title: "内心想法", subtitle: "气泡上方偶尔有一句 TA 的心声") {
                 InkToggle(isOn: $thoughts, label: "内心想法")
             }
-            Hairline()
             SettingRow(title: "刷视频分享给我", subtitle: "B 站、抖音热搜，一天最多一次") {
                 InkToggle(isOn: $videos, label: "刷视频分享给我")
             }
@@ -97,7 +92,6 @@ struct PersonaVoiceGroup: View {
                     .fixedSize()
             }
             if persona.voiceFreq > 0 {
-                Hairline()
                 Button { pickingVoice = true } label: {
                     SettingRow(title: "声音", subtitle: persona.voiceID.isEmpty ? nil : Voice.provider(of: persona).label) {
                         Text(persona.voiceName.isEmpty ? String(localized: "未选择") : persona.voiceName)
@@ -110,7 +104,6 @@ struct PersonaVoiceGroup: View {
                 .buttonStyle(PressableRowStyle())
                 .transition(.opacity)
                 if !persona.voiceID.isEmpty {
-                    Hairline()
                     Button { tuning = true } label: {
                         SettingRow(title: "声音调节", subtitle: voiceModelName) {
                             Text(tuneSummary)
@@ -123,7 +116,6 @@ struct PersonaVoiceGroup: View {
                     .buttonStyle(PressableRowStyle())
                     .transition(.opacity)
                 }
-                Hairline()
                 SettingRow(title: "语音语言") {
                     Segmented(items: [(PersonaLanguage.zh.rawValue, "中文"), (PersonaLanguage.ko.rawValue, "한국어")], selection: $persona.language)
                         .fixedSize()
@@ -131,7 +123,6 @@ struct PersonaVoiceGroup: View {
                 .transition(.opacity)
                 // 语音和界面是同一种话就不用翻译
                 if persona.language != Self.uiLanguage {
-                    Hairline()
                     SettingRow(title: "自动翻译语音") {
                         InkToggle(isOn: $persona.autoTranslate, label: "自动翻译语音")
                     }
@@ -188,7 +179,6 @@ struct PersonaMomentsGroups: View {
                     .fixedSize()
             }
             if persona.momentsFreq > 0 {
-                Hairline()
                 SettingRow(title: "和别的角色互动") {
                     InkToggle(isOn: $persona.momentsMutual, label: "和别的角色互动")
                 }
@@ -213,7 +203,6 @@ struct PersonaModelGroup: View {
                 Segmented(items: Engine.allCases.map { ($0, $0.label) }, selection: $persona.engine)
                     .fixedSize()
             }
-            Hairline()
             SettingRow(title: "模型") {
                 Menu {
                     Button("跟随默认") { persona.model = "" }
@@ -224,7 +213,6 @@ struct PersonaModelGroup: View {
                     MenuValue(text: persona.model.isEmpty ? "跟随默认" : ModelNames.name(persona.model, engine: persona.engine, status: relay.status))
                 }
             }
-            Hairline()
             SettingRow(title: "推理强度") {
                 EffortMenu(options: ModelNames.efforts(for: persona.model, engine: persona.engine, status: relay.status),
                            selection: $persona.effort)

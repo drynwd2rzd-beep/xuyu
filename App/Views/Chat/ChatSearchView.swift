@@ -173,7 +173,6 @@ struct ChatSearchView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(PressableRowStyle())
-                    if m.id != textHits.last?.id { Hairline(inset: 56) }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))

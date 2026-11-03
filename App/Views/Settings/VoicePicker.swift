@@ -103,7 +103,6 @@ struct VoicePicker: View {
                 .buttonStyle(PressableRowStyle())
             }
             ForEach(Array(mine.enumerated()), id: \.element.id) { index, v in
-                if index > 0 || !picking { Hairline() }
                 row(v)
             }
         }
@@ -140,7 +139,6 @@ struct VoicePicker: View {
                 ProgressView().frame(maxWidth: .infinity).padding(Space.section)
             }
             ForEach(Array(others.enumerated()), id: \.element.id) { index, v in
-                if index > 0 { Hairline() }
                 row(v)
             }
         }

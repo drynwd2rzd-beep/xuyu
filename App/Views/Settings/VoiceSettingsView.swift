@@ -28,7 +28,6 @@ private struct VoiceKeyGroup: View {
                     Segmented(items: [(MiniMaxRegion.cn.rawValue, "国内版"), (MiniMaxRegion.global.rawValue, "国际版")], selection: $region)
                         .fixedSize()
                 }
-                Hairline()
             }
             if configured {
                 SettingRow(title: "密钥", subtitle: status) {
@@ -56,7 +55,6 @@ private struct VoiceKeyGroup: View {
                 .padding(.horizontal, Space.card)
                 .frame(minHeight: Space.row)
             }
-            Hairline()
             // 打开这家的充值页面（在 Safari 里登录、充值、看余额）
             Link(destination: provider.topUpURL) {
                 SettingRow(title: "充值与余额") {

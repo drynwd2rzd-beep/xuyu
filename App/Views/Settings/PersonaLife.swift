@@ -26,11 +26,8 @@ struct PersonaLifeGroups: View {
             SettingsGroup(title: "作息") {
                 SettingRow(title: "真实作息") { InkToggle(isOn: $life.realRhythm, label: "真实作息") }
                 if life.realRhythm {
-                    Hairline()
                     SettingRow(title: "睡觉") { hourMenu($life.rhythm.sleep) ; Text("–").foregroundStyle(Palette.inkSoft); hourMenu($life.rhythm.wake) }
-                    Hairline()
                     SettingRow(title: "忙") { hourMenu($life.rhythm.busyFrom) ; Text("–").foregroundStyle(Palette.inkSoft); hourMenu($life.rhythm.busyTo) }
-                    Hairline()
                     SettingRow(title: "周末不忙") { InkToggle(isOn: $life.rhythm.weekendFree, label: "周末不忙") }
                 }
             }
@@ -39,7 +36,6 @@ struct PersonaLifeGroups: View {
             if !todayPlan.isEmpty {
                 SettingsGroup(title: "今天") {
                     ForEach(Array(todayPlan.enumerated()), id: \.offset) { index, item in
-                        if index > 0 { Hairline(inset: 80) }
                         planRow(item, index: index)
                     }
                 }
@@ -119,13 +115,11 @@ struct YouTwoGroup: View {
                 SettingRow(title: "关系") {
                     Text(text).font(.system(size: 14)).foregroundStyle(Palette.inkSoft).lineLimit(1)
                 }
-                Hairline()
             }
             SettingRow(title: "认识", subtitle: r.nickname.isEmpty ? nil : String(localized: "TA 叫你「\(r.nickname)」")) {
                 Text("Day \(days)").font(Typo.serif(15).italic()).foregroundStyle(Palette.inkSoft)
             }
             if r.sulking {
-                Hairline()
                 SettingRow(title: "正在闹别扭") { Text("哄哄 TA").font(.system(size: 14)).foregroundStyle(Palette.inkSoft) }
             }
         }

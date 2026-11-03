@@ -49,24 +49,20 @@ struct TodoCard: View {
 
             ForEach(open) { item in
                 row(item)
-                Hairline(inset: 36)
             }
 
             addRow
 
             if !done.isEmpty {
-                Hairline(inset: 36)
                 doneToggle(count: done.count)
                 if doneOpen {
                     ForEach(done) { item in
-                        Hairline(inset: 36)
                         row(item)
                     }
                 }
             }
 
             if isToday, let next = upcoming.first, let nextDay = next.dueDate {
-                Hairline(inset: 36)
                 Button { onJump(nextDay.startOfDay) } label: {
                     HStack(spacing: Space.tight) {
                         Text("Later").font(Typo.serif(14).italic()).foregroundStyle(Palette.inkSoft).frame(width: 44, alignment: .leading)
@@ -378,7 +374,6 @@ struct PastDayCards: View {
                     }
                 }
                 .frame(minHeight: 50)
-                if item.id != done.last?.id || left > 0 { Hairline(inset: 36) }
             }
             if left > 0 {
                 HStack(spacing: Space.tight) {
@@ -405,7 +400,7 @@ struct PastDayCards: View {
             HStack(spacing: Space.item) {
                 if let id = m.photoIDs.first, let p = photos.first(where: { $0.id == id }),
                    let image = cachedImage(p.data, key: p.id.uuidString, maxPixel: 300) {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Image(uiImage: image).resizable().scaledToFill().graded()
                         .frame(width: 48, height: 48)
                         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }

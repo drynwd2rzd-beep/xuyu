@@ -116,7 +116,6 @@ struct VoiceTuneSheet: View {
                 ProgressView().frame(maxWidth: .infinity).padding(Space.card)
             }
             ForEach(Array(models.enumerated()), id: \.element.id) { index, m in
-                if index > 0 { Hairline() }
                 Button {
                     withAnimation(Motion.spring) {
                         persona.voiceModel = m.id == provider.defaultModel ? "" : m.id
@@ -142,13 +141,10 @@ struct VoiceTuneSheet: View {
                         range: provider == .minimax ? 0.5...2 : 0.7...1.2, step: 0.05,
                         label: String(format: "%.2g×", persona.voiceSpeed), low: "慢", high: "快")
             if provider == .minimax {
-                Hairline()
                 VoiceSlider(title: "音量", value: $persona.voiceVolume, range: 0.1...10, step: 0.1,
                             label: String(format: "%.1f", persona.voiceVolume), low: "轻", high: "响")
-                Hairline()
                 VoiceSlider(title: "音调", value: Self.whole($persona.voicePitch), range: -12...12, step: 1,
                             label: Self.signed(persona.voicePitch), low: "低", high: "高")
-                Hairline()
                 SettingRow(title: "情绪") {
                     Menu {
                         ForEach(emotions, id: \.0) { e in
@@ -169,13 +165,10 @@ struct VoiceTuneSheet: View {
         SettingsGroup(title: "表现") {
             VoiceSlider(title: "稳定性", value: style.stability, range: 0...1, step: 0.05,
                         label: Self.percent(persona.style.stability), low: "多变", high: "稳定")
-            Hairline()
             VoiceSlider(title: "相似度", value: style.similarity, range: 0...1, step: 0.05,
                         label: Self.percent(persona.style.similarity), low: "低", high: "高")
-            Hairline()
             VoiceSlider(title: "风格强度", value: style.style, range: 0...1, step: 0.05,
                         label: Self.percent(persona.style.style), low: "平淡", high: "夸张")
-            Hairline()
             SettingRow(title: "说话人增强") { InkToggle(isOn: style.speakerBoost, label: "说话人增强") }
         }
     }
@@ -185,13 +178,10 @@ struct VoiceTuneSheet: View {
         SettingsGroup(title: "音色") {
             VoiceSlider(title: "音高", value: Self.whole(style.tonePitch), range: -100...100, step: 1,
                         label: Self.signed(persona.style.tonePitch), low: "低沉", high: "明亮")
-            Hairline()
             VoiceSlider(title: "力度", value: Self.whole(style.intensity), range: -100...100, step: 1,
                         label: Self.signed(persona.style.intensity), low: "有力", high: "柔和")
-            Hairline()
             VoiceSlider(title: "质感", value: Self.whole(style.timbre), range: -100...100, step: 1,
                         label: Self.signed(persona.style.timbre), low: "浑厚", high: "清脆")
-            Hairline()
             SettingRow(title: "音效") {
                 Menu {
                     ForEach(VoiceStyle.effects, id: \.0) { e in
@@ -213,7 +203,6 @@ struct VoiceTuneSheet: View {
                 VoiceSlider(title: persona.voiceName.isEmpty ? "主声音" : persona.voiceName, value: Self.whole(style.mainWeight),
                             range: 1...100, step: 1, label: "\(persona.style.mainWeight)")
                 ForEach(persona.style.mixes) { mix in
-                    Hairline()
                     HStack(alignment: .top, spacing: 0) {
                         VoiceSlider(title: mix.name, value: weight(of: mix.id), range: 1...100, step: 1, label: "\(mix.weight)")
                         Button {
@@ -227,7 +216,6 @@ struct VoiceTuneSheet: View {
                         .padding(.trailing, 4)
                     }
                 }
-                Hairline()
             }
             if persona.style.mixes.count < 3 {
                 Button { addingMix = true } label: {
@@ -252,11 +240,9 @@ struct VoiceTuneSheet: View {
                     MenuValue(text: VoiceStyle.languages.first { $0.0 == persona.style.languageBoost }?.1 ?? persona.style.languageBoost)
                 }
             }
-            Hairline()
             SettingRow(title: "朗读优化", subtitle: "数字、符号读得更准，稍慢一点") {
                 InkToggle(isOn: style.quality, label: "朗读优化")
             }
-            Hairline()
             FieldRow(placeholder: "读音纠正，每行一条：重庆/(chong2)(qing4)",
                      text: Binding(get: { persona.style.pronunciations.joined(separator: "\n") },
                                    set: { persona.style.pronunciations = $0.components(separatedBy: "\n") }),

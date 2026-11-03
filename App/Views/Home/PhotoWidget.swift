@@ -9,7 +9,7 @@ struct PhotoWidget: View {
     var body: some View {
         ZStack {
             if let image = ImageFileStore.widgetPhoto.image {
-                Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill() }
+                Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill().graded() }
                     .transition(.opacity)
             } else {
                 Palette.fill

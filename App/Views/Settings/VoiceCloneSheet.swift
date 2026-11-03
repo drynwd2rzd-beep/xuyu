@@ -93,7 +93,6 @@ struct VoiceCloneSheet: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("移除")
                 }
-                Hairline()
             }
             Button { importing = .clips } label: {
                 SettingRow(title: "添加录音或视频") {
@@ -102,7 +101,6 @@ struct VoiceCloneSheet: View {
             }
             .buttonStyle(PressableRowStyle())
             if !clips.isEmpty {
-                Hairline()
                 SettingRow(title: "合计", subtitle: total > AudioMerge.cloneLimit ? "超过 4 分 50 秒的部分不会用" : total < 10.5 ? "至少要 10 秒" : nil) {
                     Text(Self.time(total)).font(.system(size: 14).monospacedDigit()).foregroundStyle(Palette.inkSoft)
                 }
@@ -124,7 +122,6 @@ struct VoiceCloneSheet: View {
             }
             .buttonStyle(PressableRowStyle())
             if reference != nil {
-                Hairline()
                 FieldRow(placeholder: "这段录音说的原话", text: $referenceText, multiline: true)
             }
         }
@@ -135,9 +132,7 @@ struct VoiceCloneSheet: View {
         SettingsGroup(title: "选项") {
             SettingRow(title: provider == .minimax ? "降噪" : "去除背景噪音") { InkToggle(isOn: $denoise, label: "降噪") }
             if provider == .minimax {
-                Hairline()
                 SettingRow(title: "音量统一") { InkToggle(isOn: $normalize, label: "音量统一") }
-                Hairline()
                 SettingRow(title: "语言增强") {
                     Menu {
                         ForEach(VoiceStyle.languages.dropFirst(), id: \.0) { item in
@@ -148,15 +143,12 @@ struct VoiceCloneSheet: View {
                         MenuValue(text: languageBoost.isEmpty ? "不设置" : VoiceStyle.languages.first { $0.0 == languageBoost }?.1 ?? languageBoost)
                     }
                 }
-                Hairline()
                 FieldRow(placeholder: "录音里说的原话（用来核对，选填）", text: $validation, multiline: true)
                 if !validation.trimmed.isEmpty {
-                    Hairline()
                     VoiceSlider(title: "核对严格度", value: $accuracy, range: 0.1...1, step: 0.05,
                                 label: "\(Int((accuracy * 100).rounded()))%")
                 }
             } else {
-                Hairline()
                 FieldRow(placeholder: "描述这个声音（选填）", text: $detail, multiline: true)
             }
         }

@@ -46,7 +46,6 @@ struct TodoEditor: View {
             TextField("要做的事", text: $item.title, axis: .vertical)
                 .font(Typo.serif(19))
                 .padding(Space.card)
-            Hairline()
             TextField("备注", text: $item.notes, axis: .vertical)
                 .font(.system(size: 15))
                 .lineLimit(2...6)
@@ -62,26 +61,21 @@ struct TodoEditor: View {
                 Toggle("", isOn: dateBinding).labelsHidden().tint(Palette.ink)
             }
             if item.dueDate != nil {
-                Hairline()
                 SettingRow(title: "哪一天") {
                     DatePicker("", selection: dueBinding, displayedComponents: .date).labelsHidden()
                 }
-                Hairline()
                 SettingRow(title: "具体时间") {
                     Toggle("", isOn: timeBinding).labelsHidden().tint(Palette.ink)
                 }
                 if item.hasTime {
-                    Hairline()
                     SettingRow(title: "几点") {
                         DatePicker("", selection: dueBinding, displayedComponents: .hourAndMinute).labelsHidden()
                     }
                 }
-                Hairline()
                 SettingRow(title: "提醒我", subtitle: item.remind && !item.hasTime ? "当天上午 9:00" : nil) {
                     Toggle("", isOn: remindBinding).labelsHidden().tint(Palette.ink)
                 }
                 if item.remind && item.hasTime {
-                    Hairline()
                     SettingRow(title: "提前") {
                         Picker("", selection: $item.remindLead) {
                             Text("准时").tag(0)

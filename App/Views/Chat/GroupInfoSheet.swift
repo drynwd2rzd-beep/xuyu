@@ -127,7 +127,6 @@ struct GroupInfoSheet: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(PressableRowStyle())
-                    if p.id != personas.last?.id { Hairline(inset: 60) }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -173,7 +172,6 @@ struct GroupInfoSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableRowStyle())
-            Hairline()
             Button { confirmDelete = true } label: {
                 Text("删除群聊")
                     .font(.system(size: 16, weight: .medium))

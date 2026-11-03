@@ -44,7 +44,6 @@ struct ListenSheet: View {
                         .padding(.horizontal, Space.card)
                         .frame(height: Space.row)
                         ForEach(results) { song in
-                            Hairline()
                             songRow(song)
                         }
                     }
@@ -52,8 +51,7 @@ struct ListenSheet: View {
 
                 if !music.history.isEmpty {
                     SettingsGroup(title: "一起听过") {
-                        ForEach(Array(music.history.prefix(12).enumerated()), id: \.element.id) { index, song in
-                            if index > 0 { Hairline() }
+                        ForEach(Array(music.history.prefix(12))) { song in
                             songRow(song)
                         }
                     }

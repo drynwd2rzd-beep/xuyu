@@ -36,7 +36,6 @@ struct PersonasView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(PressableRowStyle())
-                            if p.id != personas.last?.id { Hairline(inset: 68) }
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -55,7 +54,6 @@ struct PersonasView: View {
                                     }
                                 }
                                 .buttonStyle(PressableRowStyle())
-                                if g.id != groups.last?.id { Hairline() }
                             }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
@@ -154,7 +152,6 @@ struct NewGroupSheet: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(PressableRowStyle())
-                        if p.id != personas.last?.id { Hairline(inset: 64) }
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))

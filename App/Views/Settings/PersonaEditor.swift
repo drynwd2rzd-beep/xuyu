@@ -184,7 +184,6 @@ struct PersonaEditor: View {
     private var profileGroup: some View {
         SettingsGroup(title: "资料") {
             inputRow("名字", text: $persona.name)
-            Hairline()
             inputRow("简介", text: $persona.bio)
         }
     }
@@ -230,7 +229,6 @@ struct PersonaEditor: View {
                         }
                         .accessibilityLabel("取消这个约定")
                     }
-                    if a.id != appointments.last?.id { Hairline() }
                 }
             }
             .transition(.opacity)
@@ -246,7 +244,6 @@ struct PersonaEditor: View {
                 SettingRow(title: "清空聊天记录") { EmptyView() }
             }
             .buttonStyle(PressableRowStyle())
-            Hairline()
             Button { confirmDelete = true } label: {
                 Text("删除角色")
                     .font(.system(size: 16))

@@ -76,7 +76,6 @@ struct ChatListView: View {
                         Label(convo.isGroup ? "删除群聊" : "清空聊天记录", systemImage: "trash")
                     }
                 }
-                if convo.id != items.last?.id { Hairline(inset: 50 + Space.item + Space.card) }
             }
             if items.isEmpty && !query.trimmed.isEmpty {
                 Text("没有找到「\(query.trimmed)」")

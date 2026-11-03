@@ -210,7 +210,7 @@ struct AlbumGrid: View {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .overlay {
-                        if let image = cachedImage(p.data, key: p.id.uuidString) { Image(uiImage: image).resizable().scaledToFill() }
+                        if let image = cachedImage(p.data, key: p.id.uuidString) { Image(uiImage: image).resizable().scaledToFill().graded() }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
                     .overlay(alignment: .topTrailing) {

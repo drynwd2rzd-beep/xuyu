@@ -14,7 +14,6 @@ struct WeatherRows: View {
         }
         .onChange(of: on) { _, now in if now { refresh() } }
         if on {
-            Hairline()
             HStack(spacing: Space.item) {
                 Text("城市").font(.system(size: 16)).foregroundStyle(Palette.ink)
                 Spacer()

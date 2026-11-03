@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// 二级设置页通用的分组卡片
+/// 设置里的一组：宽字距的小标签，下面的行直接铺在白底上（新版设计不包卡片、不加分割线，靠留白分组）。
+/// 设置首页和各个二级设置页共用
 struct SettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
@@ -9,23 +10,22 @@ struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.tight) {
             SectionLabel(text: title)
+                .padding(.leading, Space.tight)
             VStack(spacing: 0) { content }
-                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                .card()
         }
     }
 }
 
-/// 二级设置页的外框：标题、滚动、纸色背景
+/// 二级设置页的外框：标题、滚动、白底。左右只留一点边：行自己有内边距，按下时的底色差不多铺满一行
 struct SettingsPage<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.section) { content }
-                .padding(.horizontal, Space.page)
-                .padding(.bottom, 40)
+            VStack(alignment: .leading, spacing: Space.group) { content }
+                .padding(.horizontal, Space.tight)
+                .padding(.bottom, Space.bottom)
         }
         .scrollIndicators(.hidden)
         .safeAreaInset(edge: .top, spacing: 0) { SubpageHeader(title: title) }
@@ -44,7 +44,6 @@ struct PrivacySettingsView: View {
         SettingsPage(title: "隐私与安全") {
             SettingsGroup(title: "Face ID") {
                 SettingRow(title: "打开 App") { InkToggle(isOn: guarded($appLock), label: "打开 App 需要 Face ID") }
-                Hairline()
                 SettingRow(title: "让 TA 操作电脑") { InkToggle(isOn: guarded($workAuth), label: "让 TA 操作电脑前需要 Face ID") }
             }
         }
@@ -79,9 +78,7 @@ struct NotificationSettingsView: View {
                 SettingRow(title: "App 内消息提示", subtitle: "在别的页面时，回复会从顶部滑下") {
                     InkToggle(isOn: $inAppBanner, label: "App 内消息提示")
                 }
-                Hairline()
                 SettingRow(title: "待办提醒") { InkToggle(isOn: $todoReminders, label: "待办提醒") }
-                Hairline()
                 SettingRow(title: "日记提醒", subtitle: "每晚 22:00") { InkToggle(isOn: $diaryReminder, label: "日记提醒") }
             }
             SettingsGroup(title: "安静") {
@@ -229,7 +226,6 @@ struct BackupView: View {
             SettingRow(title: "每天自动备份", subtitle: "连着电脑时每天一次，存在电脑的 D:\\絮语备份，保留最近 30 份") {
                 InkToggle(isOn: $auto, label: "每天自动备份")
             }
-            Hairline()
             // 上次没备份成功（多半是自动备份）：这一行右边就换成这句，红色
             actionRow("立即备份到电脑",
                       detail: backupFailed > 0 ? "上次没备份成功"
@@ -264,7 +260,6 @@ struct BackupView: View {
                         }
                     }
                     .buttonStyle(PressableRowStyle())
-                    if b.id != pcBackups.prefix(8).last?.id { Hairline() }
                 }
             }
         }
@@ -280,7 +275,6 @@ struct BackupView: View {
                     return nil
                 }
             }
-            Hairline()
             actionRow("从文件恢复", detail: "", disabled: false) { showImporter = true }
         }
     }

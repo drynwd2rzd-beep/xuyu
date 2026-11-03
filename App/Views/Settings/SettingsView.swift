@@ -23,8 +23,8 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             sections
-                .padding(.horizontal, Space.page)
-                .padding(.bottom, 40)
+                .padding(.horizontal, Space.tight)
+                .padding(.bottom, Space.bottom)
         }
         .scrollIndicators(.hidden)
         .safeAreaInset(edge: .top, spacing: 0) { SubpageHeader(title: "设置") }
@@ -75,14 +75,13 @@ struct SettingsView: View {
 
     /// 首页的四块：我（你是谁）、AI（TA 们和驱动 TA 们的模型）、App（这台手机上的 App 本身）、重置
     private var sections: some View {
-        VStack(alignment: .leading, spacing: Space.section) {
-            section("我") {
+        VStack(alignment: .leading, spacing: Space.group) {
+            SettingsGroup(title: "我") {
                 meRow
-                Hairline()
                 youRow
             }
 
-            section("AI") {
+            SettingsGroup(title: "AI") {
                 Button { router.open(.personas) } label: {
                     SettingRow(title: "角色与群聊") {
                         Text("\(personas.count) 位").font(.system(size: 14)).foregroundStyle(Palette.inkSoft)
@@ -90,38 +89,28 @@ struct SettingsView: View {
                     }
                 }
                 .buttonStyle(PressableRowStyle())
-                Hairline()
                 // 大家共用的世界：生活的世界、天气、关系
                 navRow("世界", route: .world)
-                Hairline()
                 engineRow(.claude)
-                Hairline(inset: 62)
                 engineRow(.codex)
             }
 
-            section("App") {
+            SettingsGroup(title: "App") {
                 Button { router.open(.connection) } label: {
                     connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected, symbol: "desktopcomputer")
                 }
                 .buttonStyle(PressableRowStyle())
-                Hairline()
                 navRow("语音服务", route: .voice)
-                Hairline()
                 navRow("通知", route: .notifications)
-                Hairline()
                 navRow("外观与背景", route: .appearance)
-                Hairline()
                 navRow("隐私与安全", route: .privacy)
-                Hairline()
                 navRow("备份与恢复", route: .backup)
             }
 
             // 从轻到重：只还原偏好 → 删掉所有角色 → 什么都删（像刚装好）
-            section("重置") {
+            SettingsGroup(title: "重置") {
                 resetRow("还原所有设置") { confirming = .settings }
-                Hairline()
                 resetRow("删除所有人设") { confirming = .personas }
-                Hairline()
                 resetRow("恢复出厂设置", danger: true) { confirming = .everything }
             }
             .disabled(resetting)
@@ -284,15 +273,6 @@ struct SettingsView: View {
         }
     }
 
-    private func section<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: Space.tight) {
-            SectionLabel(text: title)
-            VStack(spacing: 0) { content() }
-                .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                .card()
-        }
-    }
-
     private func connectionRow(title: String, subtitle: String, ok: Bool, symbol: String) -> some View {
         HStack(spacing: Space.item) {
             Image(systemName: symbol)
@@ -358,7 +338,7 @@ struct StatusDot: View {
     let ok: Bool
     var body: some View {
         Circle()
-            .fill(ok ? Color(hex: 0x5E8F58) : Palette.faint)
+            .fill(ok ? Palette.online : Palette.faint)
             .frame(width: 8, height: 8)
             .accessibilityLabel(ok ? "正常" : "未连接")
     }

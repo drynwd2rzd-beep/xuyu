@@ -66,7 +66,6 @@ struct WorldView: View {
                     SettingRow(title: pairName(r), subtitle: r.text) { Chevron() }
                 }
                 .buttonStyle(PressableRowStyle())
-                Hairline()
             }
             Button {
                 editing = World.Relation(a: nil, b: personas.first?.id, text: "")
@@ -85,11 +84,9 @@ struct WorldView: View {
             SettingRow(title: "TA 们自己的生活", subtitle: "按自己的作息起床、上班、睡觉，每天有自己的事") {
                 InkToggle(isOn: $s.lifeOn, label: "TA 们自己的生活")
             }
-            Hairline()
             SettingRow(title: "心情会延续", subtitle: "今天的情绪会带到聊天里") {
                 InkToggle(isOn: $s.moodCarry, label: "心情会延续")
             }
-            Hairline()
             SettingRow(title: "世界在发生", subtitle: "TA 们之间发生的事大家都知道，会聊起") {
                 InkToggle(isOn: $s.eventsOn, label: "世界在发生")
             }
@@ -172,7 +169,6 @@ struct RelationEditor: View {
 
             VStack(spacing: 0) {
                 SettingRow(title: "一个人") { picker($a) }
-                Hairline()
                 SettingRow(title: "另一个人") { picker($b) }
             }
             .card()
@@ -208,7 +204,6 @@ struct WorldEventsView: View {
             if !coming.isEmpty {
                 SettingsGroup(title: "Coming up") {
                     ForEach(Array(coming.enumerated()), id: \.offset) { index, c in
-                        if index > 0 { Hairline(inset: 74) }
                         HStack(spacing: Space.item) {
                             VStack(spacing: 0) {
                                 Text("\(Calendar.current.component(.day, from: c.day))").font(Typo.display(22))
@@ -232,7 +227,6 @@ struct WorldEventsView: View {
                         .font(.system(size: 14)).foregroundStyle(Palette.inkSoft).padding(Space.card)
                 }
                 ForEach(Array(events.reversed().enumerated()), id: \.element.id) { index, e in
-                    if index > 0 { Hairline(inset: 74) }
                     HStack(alignment: .top, spacing: Space.item) {
                         Text(Fmt.md.string(from: e.day)).font(Typo.serif(13).italic()).foregroundStyle(Palette.inkSoft).frame(width: 46, alignment: .leading)
                         Text(e.text).font(.system(size: 14.5)).lineSpacing(3).foregroundStyle(Palette.ink)

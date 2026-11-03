@@ -76,7 +76,7 @@ struct ImageStack: View {
     private func card(_ a: Attachment) -> some View {
         Group {
             if let image = cachedImage(a.data, key: a.id.uuidString) {
-                Image(uiImage: image).resizable().scaledToFill()
+                Image(uiImage: image).resizable().scaledToFill().graded()
             } else {
                 Palette.fill
             }

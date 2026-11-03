@@ -12,7 +12,7 @@ struct Polaroid: View {
     var body: some View {
         Group {
             if let photo, let image = cachedImage(photo.data, key: photo.id.uuidString) {
-                Image(uiImage: image).resizable().scaledToFill()
+                Image(uiImage: image).resizable().scaledToFill().graded()
             } else {
                 Palette.fill
             }

@@ -43,8 +43,7 @@ struct CallLogSheet: View {
                 }
                 .padding(.top, 24)
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
-                        if index > 0 { Hairline() }
+                    ForEach(lines) { line in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(line.mine ? "you" : (message.conversation?.title.isEmpty == false ? message.conversation!.title : "TA"))
                                 .font(Typo.serif(12.5).italic()).foregroundStyle(Palette.inkSoft)
