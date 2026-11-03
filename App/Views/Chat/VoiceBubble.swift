@@ -5,6 +5,8 @@ struct VoiceBubble: View {
     let id: String
     let data: Data
     let time: String
+    /// 在你的蓝气泡里：按钮、波形、时间都换成白色系
+    var onBlue = false
 
     private var player: VoicePlayer { VoicePlayer.shared }
     private var isPlaying: Bool { player.playing == id }
@@ -15,18 +17,19 @@ struct VoiceBubble: View {
             HStack(spacing: 10) {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Palette.inkInverse)
+                    .foregroundStyle(onBlue ? Palette.userBubble : Palette.inkInverse)
                     .frame(width: 28, height: 28)
-                    .background(Palette.ink, in: Circle())
+                    .background(onBlue ? Palette.onUserBubble : Palette.ink, in: Circle())
                     .contentTransition(.symbolEffect(.replace))
-                Waveform(seed: id, bars: Self.bars(for: seconds), progress: isPlaying ? player.progress : 0)
+                Waveform(seed: id, bars: Self.bars(for: seconds), progress: isPlaying ? player.progress : 0,
+                         tint: onBlue ? Palette.onUserBubble : Palette.ink)
                     .frame(height: 22)
                 Text(Self.length(seconds))
                     .font(TimedText.stampFont)
-                    .foregroundStyle(TimedText.stampColor)
+                    .foregroundStyle(onBlue ? Palette.onUserBubble.opacity(0.7) : TimedText.stampColor)
                 Text(time)
                     .font(TimedText.stampFont)
-                    .foregroundStyle(TimedText.stampColor)
+                    .foregroundStyle(onBlue ? Palette.onUserBubble.opacity(0.7) : TimedText.stampColor)
             }
             .contentShape(Rectangle())
         }
@@ -57,8 +60,7 @@ struct TranscriptCard: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+            .background(Palette.card, in: .rounded(Radius.bubble))
             .textSelection(.enabled)
     }
 }
@@ -68,6 +70,8 @@ struct Waveform: View {
     let seed: String
     let bars: Int
     let progress: Double
+    /// 播放过的竖条的颜色；没播的是它的淡色
+    var tint: Color = Palette.ink
 
     var body: some View {
         let heights = Self.heights(seed: seed, count: bars)
@@ -75,7 +79,7 @@ struct Waveform: View {
             ForEach(0..<bars, id: \.self) { i in
                 let played = progress > 0 && Double(i) / Double(bars) <= progress
                 Capsule()
-                    .fill(played ? Palette.ink : Palette.inkSoft.opacity(0.45))
+                    .fill(played ? tint : tint.opacity(0.35))
                     .frame(width: 2.5, height: 4 + 18 * heights[i])
             }
         }

@@ -20,6 +20,22 @@ final class LogicTests: XCTestCase {
         return m
     }
 
+    // MARK: - 气泡分组
+
+    /// 气泡的小尾巴只挂在每组最后一条：换人、隔了时间、到底都算一组说完
+    func testGroupEndsGetTail() throws {
+        let context = try makeContext()
+        let convo = Conversation(isGroup: false, memberIDs: [])
+        context.insert(convo)
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        let a = message(.user, "在吗", at: start, in: convo, context: context)
+        let b = message(.user, "画完了吗", at: start + 10, in: convo, context: context)
+        let c = message(.assistant, "画完了", at: start + 20, in: convo, context: context)
+        let d = message(.assistant, "隔了很久", at: start + 3600, in: convo, context: context)
+        let ends = ChatRow.groupEnds(ChatRow.build([a, b, c, d]))
+        XCTAssertEqual(ends, [b.id.uuidString, c.id.uuidString, d.id.uuidString])
+    }
+
     // MARK: - 回复拆成几条
 
     func testParagraphsSplitOnBlankLines() {

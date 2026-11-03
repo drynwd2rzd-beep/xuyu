@@ -171,14 +171,22 @@ struct ChatView: View {
             // 透明度靠这层遮罩，模糊是每条消息按自己的位置糊（见 edgeBlur）；都按页头下沿、输入栏上沿量（同一个坐标系），
             // 键盘、面板升起时跟着走。不用系统的模糊：它在进出场动画里画不出来，只能等进去以后再加，会突然糊一下
             .mask { ChatEdgeMask(headerBottom: headerBottom, barTop: barTop) }
+            // 加号菜单打开：聊天变磨砂（照苹果短信），点一下收起
+            .overlay {
+                if panel == .plus {
+                    PlusVeil { withAnimation(Motion.spring) { panel = nil } }
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                }
+            }
             .safeAreaInset(edge: .top, spacing: 0) {
                 header.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).maxY } action: { headerBottom = $0 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomBar.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).minY } action: { barTop = $0 }
             }
-            // 面板开着时，键盘升起不推动输入框：面板和键盘一样高，两者直接互换
-            .ignoresSafeArea(.keyboard, edges: panel != nil ? .bottom : [])
+            // 表情面板开着时，键盘升起不推动输入框：面板和键盘一样高，两者直接互换
+            .ignoresSafeArea(.keyboard, edges: panel == .stickers ? .bottom : [])
 
             if searching {
                 ChatSearchView(convo: convo, members: members, personaMap: personaMap) { target in
@@ -206,14 +214,17 @@ struct ChatView: View {
             Button {
                 if convo.isGroup { showInfo = true } else if let p = members.first { router.open(.momentsOf(p.id)) }
             } label: {
-                VStack(spacing: 4) {
+                // 极简页头（照 iMessage）：小头像，下面一行小字名字，不加阴影
+                VStack(spacing: 5) {
                     if convo.isGroup {
-                        StackedAvatars(members: members, size: 40, includeMe: true)
+                        StackedAvatars(members: members, size: AvatarSize.header, includeMe: true)
                     } else {
-                        AvatarView(persona: members.first, size: 56)
-                            .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                        AvatarView(persona: members.first, size: AvatarSize.header)
                     }
-                    Text(convo.displayTitle(members)).font(Typo.serif(15, .medium)).foregroundStyle(Palette.ink)
+                    Text(verbatim: convo.displayTitle(members))
+                        .font(.system(size: Typo.label, weight: .medium))
+                        .tracking(Typo.tracking)
+                        .foregroundStyle(Palette.ink)
                     if selecting {
                         Text("已选 \(picked.count) 条").font(.system(size: 11)).foregroundStyle(Palette.inkSoft)
                     }

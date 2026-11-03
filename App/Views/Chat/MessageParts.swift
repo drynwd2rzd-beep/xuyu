@@ -34,8 +34,7 @@ struct QuoteChip: View {
         .padding(.leading, 9)
         .padding(.trailing, onClose == nil ? 11 : 6)
         .padding(.vertical, 7)
-        .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+        .background(Palette.card, in: .rounded(Radius.bubble))
         .contentShape(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
     }
 }
@@ -44,16 +43,20 @@ struct QuoteChip: View {
 struct TimedText: View {
     let text: String
     let time: String
-    var fontSize: CGFloat = Typo.body
+    var fontSize: CGFloat = Typo.bubble
+    /// 你的蓝气泡上：字和时间都是白的
+    var onBlue = false
 
     var body: some View {
         (Text(text) + reserve)
             .font(.system(size: fontSize))
-            .lineSpacing(3)
-            .foregroundStyle(Palette.ink)
+            .lineSpacing(2)
+            .foregroundStyle(onBlue ? Palette.onUserBubble : Palette.ink)
             .fixedSize(horizontal: false, vertical: true)
             .overlay(alignment: .bottomTrailing) {
-                Text(time).font(Self.stampFont).foregroundStyle(Self.stampColor).offset(y: 1)
+                Text(time).font(Self.stampFont)
+                    .foregroundStyle(onBlue ? Palette.onUserBubble.opacity(0.7) : Self.stampColor)
+                    .offset(y: 1)
             }
             .textSelection(.disabled)
     }
@@ -93,8 +96,7 @@ struct ApprovalCard: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Palette.card.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.7), lineWidth: 0.5))
+        .background(Palette.card, in: .rounded(Radius.bubble))
         .sensoryFeedback(.warning, trigger: text)
     }
 
@@ -181,8 +183,7 @@ struct TypingDots: View {
             dots
                 .padding(.horizontal, Space.card)
                 .padding(.vertical, 9)
-                .background(Palette.botBubble.opacity(0.9), in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+                .background(Palette.botBubble, in: BubbleShape(tail: .leading))
         }
     }
 
@@ -245,7 +246,6 @@ struct VideoCardView: View {
             .padding(Space.tight)
             .frame(maxWidth: 270)
             .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
         }
         .buttonStyle(ScaleButtonStyle())
         .accessibilityLabel(Text("\(source)：\(card.title)"))

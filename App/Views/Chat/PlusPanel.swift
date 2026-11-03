@@ -1,122 +1,68 @@
 import SwiftUI
-import SwiftData
-import Photos
-import PhotosUI
 import UIKit
 
-struct PlusPanel: View {
-    let isGroup: Bool
-    let onPhotos: ([Data]) -> Void
-    let onCamera: () -> Void
-    let onLibrary: () -> Void
-    let onFile: () -> Void
-    let onNote: () -> Void
-    let onMention: () -> Void
-    /// 语音通话、一起听、一起读（只有单聊有）
-    var onCall: (() -> Void)? = nil
-    var onListen: (() -> Void)? = nil
-    var onRead: (() -> Void)? = nil
-
-    @State private var recent = RecentPhotos()
-    @State private var picked: [String] = []
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Space.section) {
-            if !recent.assets.isEmpty {
-                HStack {
-                    Text("最近照片").font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
-                    Spacer()
-                    if !picked.isEmpty {
-                        Button {
-                            Task {
-                                let datas = await recent.data(for: picked)
-                                picked = []
-                                onPhotos(datas)
-                            }
-                        } label: {
-                            Text("选好 \(picked.count) 张")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Palette.inkInverse)
-                                .padding(.horizontal, Space.item)
-                                .frame(height: 28)
-                                .background(Palette.ink, in: Capsule())
-                        }
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .padding(.horizontal, 2)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Space.tight) {
-                        ForEach(recent.assets, id: \.localIdentifier) { asset in
-                            RecentThumb(asset: asset, recent: recent, selected: picked.contains(asset.localIdentifier)) {
-                                withAnimation(Motion.snappy) {
-                                    if let i = picked.firstIndex(of: asset.localIdentifier) { picked.remove(at: i) } else { picked.append(asset.localIdentifier) }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.item), count: 4), spacing: Space.section) {
-                tile("camera", "相机", onCamera)
-                tile("photo.on.rectangle", "照片", onLibrary)
-                tile("doc", "文件", onFile)
-                tile("pencil.line", "写想法", onNote)
-                if isGroup { tile("at", "成员", onMention) }
-                if let onCall { tile("phone", "语音通话", onCall) }
-                if let onListen { tile("music.note", "一起听", onListen) }
-                if let onRead { tile("book", "一起读", onRead) }
-            }
-        }
-        .padding(.horizontal, Space.page)
-        .padding(.top, Space.page)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .task { await recent.load() }
-        .animation(Motion.spring, value: picked)
+/// 加号菜单（照苹果短信）：聊天变磨砂，从加号往上浮出一列选项——彩色圆图标 + 大字，加号转成叉。
+/// 点一项就收起菜单去做那件事；点磨砂处收起。菜单项由 Composer+Menu 给出
+struct PlusMenu: View {
+    struct Item: Identifiable {
+        /// 显示的名字（也当 id）
+        let title: String
+        let symbol: String
+        /// 圆图标的渐变：深色、浅色
+        let tint: (Color, Color)
+        let action: () -> Void
+        var id: String { title }
     }
 
-    private func tile(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.system(size: 21))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 60, height: 60)
-                    .background(Palette.paper, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-                Text(label).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+    let items: [Item]
+    @State private var shown = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                Button(action: item.action) { row(item) }
+                    .buttonStyle(ScaleButtonStyle())
+                    .opacity(shown ? 1 : 0)
+                    // 从加号那里长出来：越靠近加号的越先出现。减弱动态效果时只淡入（MOTION-3）
+                    .scaleEffect(shown || Motion.reduced ? 1 : 0.6, anchor: .bottomLeading)
+                    .offset(y: shown || Motion.reduced ? 0 : Space.page)
+                    .animation(Motion.spring.delay(Double(items.count - 1 - index) * Motion.stagger), value: shown)
             }
-            .frame(maxWidth: .infinity)
         }
-        .buttonStyle(ScaleButtonStyle())
+        .onAppear { shown = true }
+    }
+
+    private func row(_ item: Item) -> some View {
+        HStack(spacing: Space.section) {
+            Image(systemName: item.symbol)
+                .font(.system(size: Icon.menuGlyph, weight: .medium))
+                .foregroundStyle(Palette.onUserBubble)
+                .frame(width: Icon.menuCircle, height: Icon.menuCircle)
+                .background(RadialGradient(colors: [item.tint.1, item.tint.0], center: UnitPoint(x: 0.38, y: 0.3),
+                                           startRadius: 0, endRadius: Icon.menuCircle * 0.7), in: Circle())
+            Text(LocalizedStringKey(item.title))
+                .font(.system(size: Typo.title))
+                .tracking(Typo.tracking)
+                .foregroundStyle(Palette.ink)
+        }
+        .frame(minHeight: Space.row)
+        .padding(.trailing, Space.page)
+        .contentShape(Rectangle())
     }
 }
 
-struct RecentThumb: View {
-    let asset: PHAsset
-    let recent: RecentPhotos
-    let selected: Bool
-    let onTap: () -> Void
-    @State private var image: UIImage?
+/// 加号菜单打开时盖在聊天上的磨砂：点一下收起菜单
+struct PlusVeil: View {
+    let onClose: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            ZStack(alignment: .topTrailing) {
-                Group {
-                    if let image { Image(uiImage: image).resizable().scaledToFill() } else { Palette.fill }
-                }
-                .frame(width: 92, height: 92)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-                Circle()
-                    .fill(selected ? Palette.ink : Color.black.opacity(0.15))
-                    .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
-                    .overlay { if selected { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white) } }
-                    .frame(width: 20, height: 20)
-                    .padding(6)
-            }
-            .scaleEffect(selected ? 0.94 : 1)
-        }
-        .buttonStyle(.plain)
-        .task { image = await recent.thumbnail(asset) }
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .overlay(Palette.frosted.opacity(0.5))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onClose)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("收起")
     }
 }
 

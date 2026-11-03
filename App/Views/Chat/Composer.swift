@@ -3,10 +3,11 @@ import SwiftData
 import PhotosUI
 import UniformTypeIdentifiers
 
-/// 聊天页的输入栏：加号、输入框、表情、发送 / 语音，和下面的加号面板、表情面板。
-/// 这里管布局和面板切换；发送、选照片、打电话这些动作见 Composer+Actions，@ 列表和待发区见 Composer+Lists
+/// 聊天页的输入栏：加号、输入框（里面有表情、发送 / 语音），加号菜单和下面的表情面板。
+/// 这里管布局和面板切换；发送、选照片、打电话这些动作见 Composer+Actions，@ 列表和待发区见 Composer+Lists，
+/// 加号菜单有哪几项见 Composer+Menu
 struct Composer: View {
-    /// 输入框下面能打开的面板：加号面板、表情面板
+    /// 输入栏打开的东西：加号菜单（浮在聊天上）、表情面板（在输入框下面，和键盘一样高）
     enum Panel { case plus, stickers }
 
     @Binding var draft: String
@@ -37,13 +38,13 @@ struct Composer: View {
     @State var dictation = Dictation()
     @State var dictationBase = ""
     @State var alert: String? = nil
-    @State private var showPhotos = false
+    @State var showPhotos = false
     @State private var photoItems: [PhotosPickerItem] = []
-    @State private var showCamera = false
-    @State private var showFiles = false
-    @State private var showNote = false
-    @State private var showListen = false
-    @State private var showRead = false
+    @State var showCamera = false
+    @State var showFiles = false
+    @State var showNote = false
+    @State var showListen = false
+    @State var showRead = false
     @State var sendTick = 0
     @FocusState var focused: Bool
 
@@ -121,15 +122,23 @@ struct Composer: View {
     private var core: some View {
         VStack(spacing: 0) {
             inputArea
-            if let panel {
-                // 面板：整宽贴住屏幕底部、和键盘一样高；背景一直铺到屏幕最下沿
-                panelView(panel)
+                // 加号菜单从加号往上浮出来，压在聊天上（聊天那边盖一层磨砂，见 ChatView）
+                .overlay(alignment: .topLeading) {
+                    if panel == .plus {
+                        PlusMenu(items: menuItems)
+                            .padding(.leading, Space.item)
+                            .alignmentGuide(.top) { $0[.bottom] }
+                            .transition(.opacity)
+                    }
+                }
+            if panel == .stickers {
+                // 表情面板：整宽贴住屏幕底部、和键盘一样高；背景一直铺到屏幕最下沿
+                StickerPanel(onSticker: { sendSticker($0) }, atTop: $panelAtTop)
                     .frame(maxWidth: .infinity)
                     .frame(height: panelHeight, alignment: .top)
                     .background {
                         UnevenRoundedRectangle(topLeadingRadius: Radius.card, topTrailingRadius: Radius.card, style: .continuous)
                             .fill(Palette.card)
-                            .shadow(color: .black.opacity(0.06), radius: 16, y: -4)
                             .ignoresSafeArea(edges: .bottom)
                     }
                     .offset(y: panelDrag)
@@ -170,10 +179,9 @@ struct Composer: View {
                     .padding(.trailing, 54)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            HStack(spacing: Space.tight + 2) {
+            HStack(alignment: .bottom, spacing: Space.tight) {
                 plusButton
                 field
-                actionButton
             }
         }
         .padding(.horizontal, Space.item)
@@ -182,23 +190,6 @@ struct Composer: View {
     }
 
     // MARK: - 面板
-
-    @ViewBuilder
-    private func panelView(_ panel: Panel) -> some View {
-        switch panel {
-        case .plus:
-            // 回调都写成闭包：直接传方法（stage、startCall）在严格并发检查下编译器推不出类型
-            let single = !convo.isGroup
-            PlusPanel(isGroup: convo.isGroup, onPhotos: { stage($0) }, onCamera: { showCamera = true },
-                      onLibrary: { showPhotos = true }, onFile: { showFiles = true },
-                      onNote: { showNote = true }, onMention: { mention() },
-                      onCall: single ? { startCall() } : nil,
-                      onListen: single ? { showListen = true } : nil,
-                      onRead: single ? { showRead = true } : nil)
-        case .stickers:
-            StickerPanel(onSticker: { sendSticker($0) }, atTop: $panelAtTop)
-        }
-    }
 
     private var panelDragGesture: some Gesture {
         DragGesture(minimumDistance: 10)
@@ -222,29 +213,32 @@ struct Composer: View {
 
     // MARK: - 控件
 
+    // 输入栏照 iMessage：左边一个浅灰的圆加号（打开时转成叉），右边是细边的输入框，
+    // 表情、语音 / 发送都收在输入框里面，栏本身不加线也不加底色块
+
     private var plusButton: some View {
         Button { toggle(.plus) } label: {
             Image(systemName: "plus")
-                .font(.system(size: 18, weight: .regular))
-                .foregroundStyle(showing(.plus) ? Palette.inkInverse : Palette.ink)
+                .font(.system(size: Icon.plus, weight: .medium))
+                .foregroundStyle(Palette.ink2)
                 .rotationEffect(.degrees(showing(.plus) ? 45 : 0))
-                .frame(width: Space.control, height: Space.control)
-                .background(showing(.plus) ? Palette.ink : Palette.card.opacity(0.9), in: Circle())
-                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 0.5))
+                .frame(width: Space.field, height: Space.field)
+                .background(showing(.plus) ? Palette.fill : Palette.card, in: Circle())
         }
         .buttonStyle(ScaleButtonStyle())
         .accessibilityLabel("更多")
+        .accessibilityValue(showing(.plus) ? Text("开") : Text("关"))
     }
 
     private var field: some View {
-        HStack(alignment: .bottom, spacing: 4) {
+        HStack(alignment: .bottom, spacing: 2) {
             TextField("Message to \(convo.isGroup ? convo.displayTitle(members) : members.first?.name ?? "")…", text: $draft, axis: .vertical)
-                .font(.system(size: Typo.body))
+                .font(.system(size: Typo.bubble))
                 .foregroundStyle(Palette.ink)
                 .lineLimit(1...6)
                 .focused($focused)
-                .padding(.vertical, 11)
-                .padding(.leading, Space.card)
+                .padding(.vertical, Space.tight)
+                .padding(.leading, Space.section)
             Button { toggle(.stickers) } label: {
                 // 两个图标一直都在，只是交替淡入淡出：跟着输入框一起移动，不会留在原地叠在一起
                 ZStack {
@@ -257,39 +251,41 @@ struct Composer: View {
                         .opacity(showing(.stickers) ? 1 : 0)
                         .scaleEffect(showing(.stickers) ? 1 : 0.7)
                 }
-                .frame(width: 36, height: Space.control)
+                .frame(width: Icon.fieldButton, height: Space.field)
             }
             .accessibilityLabel(showing(.stickers) ? "键盘" : "表情")
-            .padding(.trailing, 4)
+            actionButton
+                .padding(.trailing, 4)
         }
-        .background(Palette.card.opacity(0.9), in: RoundedRectangle(cornerRadius: Space.control / 2, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Space.control / 2, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+        .overlay(Capsule().strokeBorder(Palette.inkSoft.opacity(0.35), lineWidth: 0.5))
+        .contentShape(Capsule())
     }
 
-    /// 有内容就是发送，没有就是语音。对方回复时也能继续发，新消息会自然地接上
+    /// 有内容就是蓝色的发送，没有就是语音输入（只有一个话筒图标，录音时换成蓝底的波形）。
+    /// 对方回复时也能继续发，新消息会自然地接上
     @ViewBuilder
     private var actionButton: some View {
         let sending = canSend
+        let filled = sending || dictation.isRecording
         Button {
             if sending { sendText() } else { toggleDictation() }
         } label: {
             ZStack {
-                Circle().fill(Palette.ink)
-                if dictation.isRecording {
-                    Circle().stroke(Palette.ink.opacity(0.25), lineWidth: 6)
-                        .scaleEffect(1 + CGFloat(dictation.level) * 0.35)
-                        .animation(.easeOut(duration: 0.1), value: dictation.level)
-                }
+                Circle().fill(Palette.userBubble)
+                    .frame(width: Icon.send, height: Icon.send)
+                    .scaleEffect(filled ? 1 + (dictation.isRecording ? CGFloat(dictation.level) * 0.15 : 0) : 0.3)
+                    .opacity(filled ? 1 : 0)
+                    .animation(.easeOut(duration: 0.1), value: dictation.level)
                 Image(systemName: sending ? "arrow.up" : (dictation.isRecording ? "waveform" : "mic"))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Palette.inkInverse)
+                    .font(.system(size: filled ? Icon.sendGlyph : Icon.plus, weight: filled ? .bold : .regular))
+                    .foregroundStyle(filled ? Palette.onUserBubble : Palette.ink2)
                     .contentTransition(.symbolEffect(.replace))
             }
-            .frame(width: 44, height: 44)
+            .frame(width: Icon.fieldButton, height: Space.field)
         }
         .buttonStyle(ScaleButtonStyle())
         .accessibilityLabel(sending ? "发送" : "语音输入")
-        .animation(Motion.snappy, value: sending)
+        .animation(Motion.snappy, value: filled)
     }
 
     /// 通话页用 fullScreenCover(item:) 打开，要一个能区分每次通话的包装

@@ -23,15 +23,18 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10), "聊天列表没有出现")
         row.tap()
 
-        // 表情面板 ↔ 键盘 ↔ 加号面板来回切
+        // 表情面板 ↔ 键盘 ↔ 加号菜单来回切
         tapIfExists(app.buttons["表情"])
         sleep(1)
         tapIfExists(app.buttons["键盘"])
         sleep(1)
-        tapIfExists(app.buttons["更多"])
+        let plus = app.buttons["更多"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 5), "输入栏没有加号")
+        plus.tap()
+        XCTAssertTrue(app.buttons["照片"].waitForExistence(timeout: 5), "加号菜单没有浮出来")
+        plus.tap()
         sleep(1)
-        tapIfExists(app.buttons["更多"])
-        sleep(1)
+        XCTAssertFalse(app.buttons["照片"].exists, "加号菜单没有收起")
 
         // 打字发送
         let field = app.textFields.firstMatch

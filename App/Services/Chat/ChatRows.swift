@@ -33,6 +33,19 @@ struct ChatRow: Identifiable {
         }
         return rows
     }
+
+    /// 每一组（同一个人连着说的几条）最后一条的行 id：这一条的气泡带小尾巴（像 iMessage）。
+    /// 下一行不是「接着说」的消息（是时间、换了人、或者已经到底）就算这一组说完了
+    static func groupEnds(_ rows: [ChatRow]) -> Set<String> {
+        var ends: Set<String> = []
+        for (index, row) in rows.enumerated() {
+            guard case .message = row.kind else { continue }
+            let next = rows.indices.contains(index + 1) ? rows[index + 1].kind : nil
+            if case .message(_, first: false) = next { continue }
+            ends.insert(row.id)
+        }
+        return ends
+    }
 }
 
 /// 聊天页此刻要画的那一屏：排哪些行、「正在输入」的小点放哪、「已读」挂在哪条下面、最下面一截长什么样。
@@ -40,6 +53,8 @@ struct ChatRow: Identifiable {
 struct ChatRows {
     /// 要画的行（「正在输入」的那条接在最后）
     let rows: [ChatRow]
+    /// 每一组最后一条的行 id（气泡带小尾巴，见 ChatRow.groupEnds）
+    let groupEnds: Set<String>
     /// 前面还有没排进来的更早消息：顶上显示「查看更早的消息」
     let hasEarlier: Bool
     /// TA 已经开始回、但这句还没打完（只显示跳动的小点）的那条
@@ -74,7 +89,7 @@ struct ChatRows {
         let receipt = readReceipt(messages, buffers: buffers, now: now)
         let tail = [rows.last?.id ?? "", typing == nil ? "" : "typing", messages.last?.id.uuidString ?? "",
                     "\(messages.last?.content.count ?? 0)", receipt?.uuidString ?? ""].joined(separator: "|")
-        return ChatRows(rows: rows, hasEarlier: all.count > window.count, typing: typing, last: messages.last,
+        return ChatRows(rows: rows, groupEnds: ChatRow.groupEnds(rows), hasEarlier: all.count > window.count, typing: typing, last: messages.last,
                         receipt: receipt, live: live, tail: tail)
     }
 

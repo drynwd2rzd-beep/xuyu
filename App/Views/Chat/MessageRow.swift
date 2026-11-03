@@ -29,6 +29,8 @@ struct MessageRow: View {
     let persona: Persona?
     let isGroup: Bool
     let first: Bool
+    /// 这一组的最后一条：气泡带小尾巴（像 iMessage）
+    let last: Bool
     let selecting: Bool
     let picked: Bool
     let actions: MessageActions
@@ -74,6 +76,7 @@ struct MessageRow: View {
 
     // MARK: - 用户
 
+    // 像 iMessage：你自己这边不放头像；单聊里 TA 也不放头像和名字（页头已经有了），群聊才带上，分得清谁在说
     private var userSide: some View {
         HStack(alignment: .top, spacing: Space.tight) {
             Spacer(minLength: 48)
@@ -84,7 +87,6 @@ struct MessageRow: View {
                 if !message.quote.isEmpty { QuoteChip(text: message.quote).onTapGesture { actions.openQuote(message) } }
                 translationView
             }
-            UserAvatar(size: 34).opacity(first ? 1 : 0)
         }
     }
 
@@ -92,14 +94,16 @@ struct MessageRow: View {
 
     private var assistantSide: some View {
         HStack(alignment: .top, spacing: 10) {
-            AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
-                // 双击头像：拍一拍（看不见的头像不算）
-                .onTapGesture(count: 2) { if first, let persona { actions.nudge(persona) } }
-                .accessibilityAction(named: Text("拍一拍")) { if let persona { actions.nudge(persona) } }
+            if isGroup {
+                AvatarView(persona: persona, size: 34, ring: true).opacity(first ? 1 : 0)
+                    // 双击头像：拍一拍（看不见的头像不算）
+                    .onTapGesture(count: 2) { if first, let persona { actions.nudge(persona) } }
+                    .accessibilityAction(named: Text("拍一拍")) { if let persona { actions.nudge(persona) } }
+            }
             VStack(alignment: .leading, spacing: 5) {
-                // 名字只在 TA 这一串的第一条上面出现（像 iMessage）。以前「正在输入」时也总带着名字，
-                // 连着发第二条时名字先冒出来、小点变成字时又消失，这一行忽高忽低，看起来像抽了一下
-                if first || !steps.isEmpty { label }
+                // 名字只在 TA 这一串的第一条上面出现（像 iMessage），单聊里只在有工作过程、思考过程可以展开时出现。
+                // 以前「正在输入」时也总带着名字，连着发第二条时名字先冒出来、小点变成字时又消失，这一行忽高忽低
+                if (first && (isGroup || hasDetail)) || !steps.isEmpty { label }
                 if hasDetail {
                     // 展开 / 收起：高度从 0 平滑长出来（或缩回去），下面的消息被柔和地推开，不会跳
                     detail
@@ -240,7 +244,7 @@ struct MessageRow: View {
                                     timeLabel
                                 }
                             } else {
-                                TimedText(text: text, time: time)
+                                TimedText(text: text, time: time, onBlue: isUser)
                             }
                         }
                         .transition(.bubblePop(anchor: isUser ? .bottomTrailing : .bottomLeading))
@@ -251,7 +255,7 @@ struct MessageRow: View {
             ImageStack(attachments: message.sortedAttachments) { actions.openImages(message.sortedAttachments, $0) }
                 .contextMenu { menu }
             if !message.content.isEmpty {
-                bubble(isUser: isUser) { TimedText(text: message.content, time: time) }
+                bubble(isUser: isUser) { TimedText(text: message.content, time: time, onBlue: isUser) }
             }
         case .sticker:
             if let a = message.sortedAttachments.first, let image = cachedImage(a.data, key: a.id.uuidString) {
@@ -262,7 +266,7 @@ struct MessageRow: View {
         case .voice:
             if let audio = message.sortedAttachments.first {
                 bubble(isUser: isUser) {
-                    VoiceBubble(id: message.id.uuidString, data: audio.data, time: time)
+                    VoiceBubble(id: message.id.uuidString, data: audio.data, time: time, onBlue: isUser)
                 }
                 // 转文字：语音气泡不动，说的话在下面另起一张浅色小卡片
                 if transcript {
@@ -282,24 +286,19 @@ struct MessageRow: View {
                 FileCard(name: a.fileName, size: a.data.count, time: time, data: a.data).contextMenu { menu }
             }
             if !message.content.isEmpty {
-                bubble(isUser: isUser) { TimedText(text: message.content, time: time) }
+                bubble(isUser: isUser) { TimedText(text: message.content, time: time, onBlue: isUser) }
             }
         }
     }
 
+    /// 气泡：你的是蓝底白字、TA 的是浅灰底（iMessage），一组的最后一条带小尾巴
     private func bubble<C: View>(isUser: Bool, @ViewBuilder _ inner: () -> C) -> some View {
-        inner()
-            .padding(.horizontal, 13)
-            .padding(.top, 9)
-            .padding(.bottom, 7)
-            .background(isUser ? Palette.userBubble.opacity(0.94) : Palette.botBubble.opacity(0.9),
-                        in: RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-            .overlay {
-                if !isUser {
-                    RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(Palette.hairline.opacity(0.9), lineWidth: 0.5)
-                }
-            }
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
+        let shape = BubbleShape(tail: last ? (isUser ? .trailing : .leading) : nil)
+        return inner()
+            .padding(.horizontal, Space.item)
+            .padding(.vertical, Space.tight)
+            .background(isUser ? Palette.userBubble : Palette.botBubble, in: shape)
+            .contentShape(.contextMenuPreview, shape)
             .contextMenu { menu }
     }
 

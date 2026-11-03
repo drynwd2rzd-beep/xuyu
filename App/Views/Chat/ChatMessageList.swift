@@ -108,7 +108,7 @@ extension ChatView {
             }
             ForEach(layout.rows) { row in
                 Group {
-                    rowContent(row, receipt: layout.receipt, now: now)
+                    rowContent(row, receipt: layout.receipt, groupEnds: layout.groupEnds, now: now)
                 }
                 // 靠近页头、输入栏的这一行跟着变糊（透明度由 ChatEdgeMask 管）
                 .modifier(EdgeBlur(headerBottom: headerBottom, barTop: barTop))
@@ -122,7 +122,7 @@ extension ChatView {
 
     /// 一行的样子：时间、撤回、拍一拍，或者一条消息（你最后一条下面挂「已读」）
     @ViewBuilder
-    private func rowContent(_ row: ChatRow, receipt: UUID?, now: Date) -> some View {
+    private func rowContent(_ row: ChatRow, receipt: UUID?, groupEnds: Set<String>, now: Date) -> some View {
         switch row.kind {
         case .stamp(let date):
             Text(date.separatorStamp)
@@ -141,6 +141,7 @@ extension ChatView {
                        persona: m.personaID.flatMap { personaMap[$0] },
                        isGroup: convo.isGroup,
                        first: first,
+                       last: groupEnds.contains(row.id),
                        selecting: selecting,
                        picked: picked.contains(m.id),
                        actions: actions)
@@ -150,7 +151,8 @@ extension ChatView {
                     .fill(Palette.highlight.opacity(highlighted == m.id ? 0.6 : 0))
                     .padding(-4)
             }
-            .padding(.top, first ? 14 : 4)
+            // 同一组里的气泡挨得很近，组和组之间留一段（像 iMessage）
+            .padding(.top, first ? Space.section : Space.bubbleGap)
             // 刚发出、刚收到的：这一行慢慢撑开，气泡从自己那一边的下角冒出来；你发的从输入框那里升上来
             .riseIn(fresh: now.timeIntervalSince(m.createdAt) < 3,
                     anchor: m.role == .user ? .bottomTrailing : .bottomLeading,

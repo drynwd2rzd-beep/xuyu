@@ -42,8 +42,13 @@ enum Palette {
     static let faint = Color.dynamic(light: 0xC1C1C7, dark: 0x55555B)
     /// 细线：只留给表格、代码块这类内容本身的边（设计规范不用横贯的分割线）
     static let hairline = Color.dynamic(light: 0xECECEF, dark: 0x2A2A2E)
-    static let userBubble = Color.dynamic(light: 0xE2E1DB, dark: 0x2B2B2F)
-    static let botBubble = Color.dynamic(light: 0xFFFFFF, dark: 0x1D1D20)
+    /// 你的气泡：iMessage 的蓝，上面的字是白的（onUserBubble）
+    static let userBubble = Color.dynamic(light: 0x0A7CFF, dark: 0x0A84FF)
+    static let onUserBubble = Color(hex: 0xFFFFFF)
+    /// TA 的气泡：iMessage 的浅灰，字用 ink
+    static let botBubble = Color.dynamic(light: 0xE9E9EB, dark: 0x262628)
+    /// 页头、输入栏的磨砂底：半透明的底色，下面的消息隐约透出来（不加分割线，靠这个分层）
+    static let frosted = Color.dynamic(light: 0xFFFFFF, dark: 0x0B0B0C).opacity(0.86)
     static let noir = Color.dynamic(light: 0x0E0E10, dark: 0xF2F2F4)
     static let onNoir = Color.dynamic(light: 0xFFFFFF, dark: 0x0E0E10)
     static let danger = Color.dynamic(light: 0xD4485F, dark: 0xEC6B80)
@@ -55,6 +60,18 @@ enum Palette {
     static let online = Color(hex: 0x34C27A)
     /// 照片统一调色里那层暖光（PhotoGrade）
     static let photoWarmth = Color(hex: 0xFFB070)
+
+    /// 加号菜单圆图标的渐变（深色、浅色），照设计稿；压在图标上的符号是白的，不分深浅色
+    enum Menu {
+        static let call = (Color(hex: 0x35B871), Color(hex: 0x9BE6B8))
+        static let listen = (Color(hex: 0xF2547A), Color(hex: 0xFFB3C6))
+        static let read = (Color(hex: 0xE8A33A), Color(hex: 0xFFD79A))
+        static let note = (Color(hex: 0x8C7BF0), Color(hex: 0xD3CBFF))
+        static let photo = (Color(hex: 0xFF7A45), Color(hex: 0xFFC9A3))
+        static let file = (Color(hex: 0x4FB3EE), Color(hex: 0xCDEFFF))
+        static let camera = (Color(hex: 0x8E8E95), Color(hex: 0xD5D5DA))
+        static let mention = (Color(hex: 0x7466F2), Color(hex: 0xD9D3FF))
+    }
 
     static let avatarTints: [UInt32] = [0x1E1E1F, 0xE7E3DA, 0xD8C5AE, 0xB7C3B1, 0xAEBFCE, 0xD6B9B6]
 }
@@ -77,6 +94,8 @@ enum Typo {
     static let caption: CGFloat = 11
     /// 名字、子页面标题
     static let title: CGFloat = 17
+    /// 聊天气泡里的字（像 iMessage 一样大一点）
+    static let bubble: CGFloat = 17
     /// 页面大标题（细字、宽字距）
     static let heading: CGFloat = 22
     /// 设置行的标题（UI-1）
@@ -101,7 +120,7 @@ enum Radius {
     /// 小方块：表情、组件库图标、代码块
     static let tile: CGFloat = 18
     /// 聊天气泡
-    static let bubble: CGFloat = 20
+    static let bubble: CGFloat = 18
     /// 底部弹出面板顶部
     static let sheet: CGFloat = 38
     /// 小控件：头像底色块、分段内块
@@ -121,6 +140,8 @@ enum Space {
     static let page: CGFloat = 18
     /// 卡片与卡片之间
     static let section: CGFloat = 14
+    /// 同一组气泡之间（像 iMessage 一样几乎贴着）
+    static let bubbleGap: CGFloat = 2
     /// 设置里一组和一组之间：靠留白分开，不加线
     static let group: CGFloat = 24
     /// 滚动页最下面留的空
@@ -137,8 +158,32 @@ enum Space {
     static let rowTall: CGFloat = 60
     /// 输入框、按钮高度
     static let control: CGFloat = 42
+    /// 聊天输入框（一行时）和加号的高度：照 iMessage
+    static let field: CGFloat = 36
     /// 页面顶部到标题
     static let top: CGFloat = 16
+}
+
+/// 头像尺寸（UI-1）
+enum AvatarSize {
+    /// 聊天页头
+    static let header: CGFloat = 36
+}
+
+/// 图标和小按钮的尺寸（UI-1）
+enum Icon {
+    /// 输入栏的加号、话筒
+    static let plus: CGFloat = 16
+    /// 输入框里每个小按钮占的宽度（表情、话筒 / 发送）
+    static let fieldButton: CGFloat = 32
+    /// 蓝色发送圆
+    static let send: CGFloat = 28
+    /// 发送圆里的箭头
+    static let sendGlyph: CGFloat = 13
+    /// 加号菜单里的彩色圆图标
+    static let menuCircle: CGFloat = 40
+    /// 加号菜单圆图标里的符号
+    static let menuGlyph: CGFloat = 18
 }
 
 /// 统一的弹簧动画
@@ -155,6 +200,8 @@ enum Motion {
     static let pressOut = Animation.spring(duration: 0.5, bounce: 0)
     /// 拖动松手后的归位：跟着手势速度，柔和收尾
     static let settle = Animation.interpolatingSpring(mass: 1, stiffness: 170, damping: 24)
+    /// 一串东西依次出现时，每个比上一个晚多少秒（加号菜单）
+    static let stagger: Double = 0.03
     /// 很快地淡掉（或在原地换一样东西）：小点变字前淡出、切页前旧页淡出、键盘和面板互换
     static let fade = Animation.easeOut(duration: 0.18)
     /// 打开聊天：从点的那一行飞进去，一气呵成不回弹

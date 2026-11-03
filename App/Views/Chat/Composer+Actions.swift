@@ -6,8 +6,14 @@ import UniformTypeIdentifiers
 extension Composer {
     // MARK: - 动作
 
-    /// 点加号或表情图标：在面板、键盘之间切换（输入框始终停在同一个位置）
+    /// 点加号或表情图标：在面板、键盘之间切换（输入框始终停在同一个位置）。
+    /// 加号菜单浮在聊天上、不占键盘的位置：打开时收起键盘，再点一下（叉）就收起菜单
     func toggle(_ p: Panel) {
+        if p == .plus {
+            if panel != .plus { focused = false }
+            withAnimation(Motion.spring) { panel = panel == .plus ? nil : .plus }
+            return
+        }
         if panel == p {
             // 面板 → 键盘：图标马上带动画变回来；键盘升到和面板一样高后，聊天页再把面板撤掉
             withAnimation(Motion.snappy) { leaving = p }
