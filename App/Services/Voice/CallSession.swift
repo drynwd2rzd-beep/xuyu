@@ -4,7 +4,8 @@ import Speech
 import AVFoundation
 import Observation
 
-/// 语音通话：你说话 → 停顿一下自动发出 → TA 一边想一边用自己的声音一句一句念出来，字幕下面带韩语翻译。
+/// 语音通话：你说话 → 停顿一下自动发出 → TA 一边想一边用自己的声音一句一句念出来，字幕下面带另一种话的翻译。
+/// 通话用中文还是韩语：开始时跟着 TA 的「语音语言」，通话里随时能切（听你说话、TA 说话、接话声一起换）。
 /// TA 说话时点中间的头像可以打断。挂断后聊天里留一个「通话时长」气泡，点开看通话内容（见 CallLogs）。
 /// 界面在 Views/Chat/CallView.swift
 @MainActor
@@ -15,8 +16,19 @@ final class CallSession {
     struct Line: Identifiable, Codable, Hashable {
         var id = UUID()
         var mine: Bool
-        var zh: String
-        var ko = ""
+        /// 说的原话
+        var text: String
+        /// 原话下面的翻译：中文的翻成韩语，韩语的翻成中文
+        var translation = ""
+        /// 这句是用哪种话说的（以前的通话记录没有这一项）
+        var lang: PersonaLanguage?
+
+        // 存盘的键名沿用以前的 zh / ko，旧的通话记录照样能读
+        enum CodingKeys: String, CodingKey {
+            case id, mine, lang
+            case text = "zh"
+            case translation = "ko"
+        }
     }
 
     let persona: Persona
@@ -30,6 +42,18 @@ final class CallSession {
     private(set) var spoken: Double = 0
     private(set) var muted = false
     private(set) var speaker = true
+    /// 这通电话现在用哪种话
+    private(set) var language: PersonaLanguage
+
+    /// 中文 ⇄ 韩语：听你说话的识别器和接话声马上换；TA 正在说的这一段说完，下一段用新的话
+    func switchLanguage() {
+        language = language == .ko ? .zh : .ko
+        recognizer = Self.recognizer(for: language)
+        fillers = []
+        fillerIndex = 0
+        prepareFillers()
+        if phase == .listening { listen() }
+    }
 
     func toggleMute() {
         muted.toggle()
@@ -44,7 +68,7 @@ final class CallSession {
 
     @ObservationIgnored private let context: ModelContext
     @ObservationIgnored private let relay: RelayClient
-    @ObservationIgnored private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+    @ObservationIgnored private var recognizer: SFSpeechRecognizer?
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
@@ -65,6 +89,19 @@ final class CallSession {
         self.members = members
         self.context = context
         self.relay = relay
+        language = persona.lang
+        recognizer = Self.recognizer(for: persona.lang)
+    }
+
+    private static func recognizer(for language: PersonaLanguage) -> SFSpeechRecognizer? {
+        SFSpeechRecognizer(locale: Locale(identifier: language == .ko ? "ko-KR" : "zh-CN"))
+    }
+
+    /// TA 的声音，说这通电话现在用的话
+    private var spec: VoiceSpec {
+        var s = VoiceSpec(persona)
+        s.language = language
+        return s
     }
 
     /// 返回错误提示；成功时返回 nil
@@ -83,11 +120,14 @@ final class CallSession {
     }
 
     private func prepareFillers() {
-        let phrases = persona.lang == .ko ? ["음…", "음, 잠깐만."] : ["嗯……", "嗯，我想想。"]
-        let spec = VoiceSpec(persona)
+        let language = language
+        let phrases = language == .ko ? ["음…", "음, 잠깐만."] : ["嗯……", "嗯，我想想。"]
+        let spec = spec
         Task { [weak self] in
             for phrase in phrases {
                 guard let audio = try? await Voice.speak(phrase, spec: spec) else { continue }
+                // 合成期间切了语言：这一声不要了
+                guard self?.language == language else { return }
                 self?.fillers.append(audio)
             }
         }
@@ -156,7 +196,7 @@ final class CallSession {
         let text = live.trimmed
         stopListening()
         guard !text.isEmpty else { return listen() }
-        lines.append(Line(mine: true, zh: text))
+        lines.append(Line(mine: true, text: text, lang: language))
         live = ""
         respond()
     }
@@ -166,14 +206,16 @@ final class CallSession {
     /// 这一轮发给 TA 的请求：最近的聊天 + 通话到现在说的话，用这个对话的整份人设
     private func turnRequest() -> RelayRequest {
         let names = Dictionary(members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        let call = lines.map { "\($0.mine ? PromptParts.userName : persona.name)：\($0.zh)" }.joined(separator: "\n")
+        let call = lines.map { "\($0.mine ? PromptParts.userName : persona.name)：\($0.text)" }.joined(separator: "\n")
+        // 通话里说的全是要念出来的话：用这通电话现在的语言，盖过系统提示里「打字用中文」那条
+        let spoken = language == .ko ? "这通电话用韩语说：像韩国人打电话那样自然口语，不要中韩混杂。" : "这通电话用中文说。"
         let prompt = """
         \(PromptParts.contextBlock(memory: nil, history: convo.visibleMessages(), recent: Limits.Prompt.callChat, names: names))
 
         你们现在正在打语音电话，通话到现在：
         \(call)
 
-        现在轮到你说。像打电话那样：口语、自然，一次一两句，可以带「嗯」「哈哈」这类语气；不要用表情、不要写任何【】标记、不要用 Markdown。只输出你要说的话。
+        现在轮到你说。像打电话那样：口语、自然，一次一两句，可以带「嗯」「哈哈」这类语气；不要用表情、不要写任何【】标记、不要用 Markdown。\(spoken)只输出你要说的话。
         """
         return PromptParts.lightRequest(persona, prompt, system: PromptBuilder.system(for: persona, convo: convo, members: members))
     }
@@ -181,7 +223,7 @@ final class CallSession {
     private func respond() {
         phase = .thinking
         let request = turnRequest()
-        let queue = SentenceQueue(spec: VoiceSpec(persona))
+        let queue = SentenceQueue(spec: spec)
         filling?.cancel()
         filling = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(900))
@@ -216,11 +258,12 @@ final class CallSession {
         while fillerPlaying, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(40)) }
         filling?.cancel()
         phase = .speaking
-        if let last = lines.last, !last.mine {
-            lines[lines.count - 1].zh += text
-            lines[lines.count - 1].ko = ""
+        // 接着 TA 上一句说（中途换了语言就另起一行，一行只有一种话，翻译才对得上）
+        if let last = lines.last, !last.mine, last.lang == language {
+            lines[lines.count - 1].text += text
+            lines[lines.count - 1].translation = ""
         } else {
-            lines.append(Line(mine: false, zh: text))
+            lines.append(Line(mine: false, text: text, lang: language))
         }
         spoken = 0
         guard let audio, let p = try? AVAudioPlayer(data: audio) else {
@@ -269,9 +312,10 @@ final class CallSession {
         CallLogs.shared.set(lines, for: m.id)
     }
 
-    func translated(_ id: UUID, _ ko: String) {
-        guard let i = lines.firstIndex(where: { $0.id == id }) else { return }
-        lines[i].ko = ko
+    /// 翻好一句：只在原话没变时写上（TA 还在往这一行接着说，旧的翻译就不要了）
+    func translated(_ id: UUID, from text: String, _ translation: String) {
+        guard let i = lines.firstIndex(where: { $0.id == id }), lines[i].text == text else { return }
+        lines[i].translation = translation
     }
 }
 

@@ -42,7 +42,7 @@ enum PromptParts {
         case .nudge: body = m.role == .user ? "（拍了拍\(m.content)）" : "（拍了拍\(userName)）"
         // 语音通话：TA 记得电话里聊了什么（最多带上最后 8 句）
         case .call:
-            let said = CallLogs.shared.lines(m.id).suffix(8).map { ($0.mine ? userName : "你") + "：" + $0.zh }.joined(separator: "；")
+            let said = CallLogs.shared.lines(m.id).suffix(8).map { ($0.mine ? userName : "你") + "：" + $0.text }.joined(separator: "；")
             body = "（打了 \(m.content) 的语音电话\(said.isEmpty ? "" : "，电话里说了：\(said)")）"
         }
         if !m.quote.isEmpty { body = "（引用「\(m.quote)」）" + body }

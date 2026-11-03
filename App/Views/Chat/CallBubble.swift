@@ -48,8 +48,8 @@ struct CallLogSheet: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(line.mine ? "you" : (message.conversation?.title.isEmpty == false ? message.conversation!.title : "TA"))
                                 .font(Typo.serif(12.5).italic()).foregroundStyle(Palette.inkSoft)
-                            Text(line.zh).font(.system(size: 15)).foregroundStyle(Palette.ink)
-                            if !line.ko.isEmpty { Text(line.ko).font(.system(size: 13)).foregroundStyle(Palette.inkSoft) }
+                            Text(line.text).font(.system(size: 15)).foregroundStyle(Palette.ink)
+                            if !line.translation.isEmpty { Text(line.translation).font(.system(size: 13)).foregroundStyle(Palette.inkSoft) }
                         }
                         .padding(.horizontal, Space.card)
                         .padding(.vertical, 11)

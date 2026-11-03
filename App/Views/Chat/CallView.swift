@@ -1,11 +1,12 @@
 import SwiftUI
 import Translation
 
-/// 通话页：深色、头像在中间，光晕跟着谁在说话变；字幕下面是韩语。通话本身在 Services/Voice/CallSession.swift
+/// 通话页：深色、头像在中间，光晕跟着谁在说话变；字幕下面是另一种话的翻译（中文翻成韩语，韩语翻成中文）。
+/// 右上角「中 / 한」切换这通电话说哪种话，「译」开关翻译字幕。通话本身在 Services/Voice/CallSession.swift
 struct CallView: View {
     @State var session: CallSession
     @Environment(\.dismiss) private var dismiss
-    @State private var korean = true
+    @State private var subtitles = true
     @State private var failure: String?
     @State private var translation: TranslationSession.Configuration?
     @State private var tick = Date.now
@@ -53,17 +54,17 @@ struct CallView: View {
                 tick = .now
             }
         }
-        // 韩语字幕：iPhone 自带的翻译（不花钱）。有新的一句没翻就翻
-        .onChange(of: session.lines.map(\.zh)) { _, _ in
-            if translation == nil {
-                translation = TranslationSession.Configuration(source: Locale.Language(identifier: "zh-Hans"), target: Locale.Language(identifier: "ko"))
-            } else {
-                translation?.invalidate()
-            }
-        }
+        // 翻译字幕：iPhone 自带的翻译（不花钱）。有新的一句没翻就翻
+        .onChange(of: session.lines.map(\.text)) { _, _ in retranslate() }
         .translationTask(translation) { t in
-            for line in session.lines where line.ko.isEmpty {
-                if let r = try? await t.translate(line.zh) { session.translated(line.id, r.targetText) }
+            guard let source = translation?.source else { return }
+            for line in session.lines where line.translation.isEmpty && Self.locale(line) == source {
+                // 翻不出来（没下语言包、没网）只是这句没有翻译字幕，不影响通话
+                if let r = try? await t.translate(line.text) { session.translated(line.id, from: line.text, r.targetText) }
+            }
+            // 中途切过语言，还有另一种话的句子没翻：换个方向接着翻
+            if let other = session.lines.first(where: { $0.translation.isEmpty && Self.locale($0) != source }) {
+                translation = Self.configuration(from: other.lang ?? .zh)
             }
         }
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil; dismiss() } })) {
@@ -82,15 +83,49 @@ struct CallView: View {
             }
             .accessibilityLabel("收起通话")
             Spacer()
-            Button { withAnimation(Motion.snappy) { korean.toggle() } } label: {
-                Text("한").font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(korean ? night : light)
-                    .padding(.horizontal, 12).frame(height: 30)
-                    .background(korean ? light : light.opacity(0.12), in: Capsule())
+            Button { withAnimation(Motion.snappy) { session.switchLanguage() } } label: {
+                capsule(session.language == .ko ? "한" : "中", on: false)
             }
-            .accessibilityLabel(korean ? Text("韩语字幕（开）") : Text("韩语字幕（关）"))
+            .accessibilityLabel(session.language == .ko ? Text("通话语言：韩语") : Text("通话语言：中文"))
+            Button { withAnimation(Motion.snappy) { subtitles.toggle() } } label: {
+                capsule(session.language == .ko ? "中" : "한", on: subtitles)
+            }
+            .accessibilityLabel("翻译字幕")
+            .accessibilityValue(subtitles ? Text("开") : Text("关"))
         }
         .padding(.horizontal, Space.tight)
+    }
+
+    /// 右上角的小胶囊：on 时实心
+    private func capsule(_ text: String, on: Bool) -> some View {
+        Text(verbatim: text).font(.system(size: 14, weight: .medium))
+            .foregroundStyle(on ? night : light)
+            .contentTransition(.opacity)
+            .padding(.horizontal, 12).frame(height: 30)
+            .background(on ? light : light.opacity(0.12), in: Capsule())
+    }
+
+    // MARK: - 翻译
+
+    /// 这一行原话的语言（以前的通话记录没记，都是中文）
+    private static func locale(_ line: CallSession.Line) -> Locale.Language {
+        language(line.lang ?? .zh)
+    }
+
+    private static func language(_ lang: PersonaLanguage) -> Locale.Language {
+        Locale.Language(identifier: lang == .ko ? "ko" : "zh-Hans")
+    }
+
+    /// 从这种话翻成另一种
+    private static func configuration(from lang: PersonaLanguage) -> TranslationSession.Configuration {
+        TranslationSession.Configuration(source: language(lang), target: language(lang == .ko ? .zh : .ko))
+    }
+
+    /// 有没翻的句子：同一个方向就让翻译重跑一遍，换了方向就换一份配置
+    private func retranslate() {
+        guard let pending = session.lines.first(where: { $0.translation.isEmpty }) else { return }
+        let config = Self.configuration(from: pending.lang ?? .zh)
+        if translation?.source == config.source { translation?.invalidate() } else { translation = config }
     }
 
     private var title: some View {
@@ -151,14 +186,14 @@ struct CallView: View {
                     Text(line.mine ? "you" : session.persona.name)
                         .font(Typo.serif(12.5).italic()).foregroundStyle(light.opacity(current ? 0.5 : 0.3))
                     if current && !line.mine && session.phase == .speaking {
-                        karaoke(line.zh)
+                        karaoke(line.text)
                     } else {
-                        Text(line.zh)
+                        Text(verbatim: line.text)
                             .font(Typo.serif(current ? 22 : 15.5))
                             .foregroundStyle(light.opacity(current ? 1 : 0.34))
                     }
-                    if korean, !line.ko.isEmpty {
-                        Text(line.ko).font(.system(size: current ? 14.5 : 12.5, weight: .light)).foregroundStyle(light.opacity(current ? 0.6 : 0.26))
+                    if subtitles, !line.translation.isEmpty {
+                        Text(verbatim: line.translation).font(.system(size: current ? 14.5 : 12.5, weight: .light)).foregroundStyle(light.opacity(current ? 0.6 : 0.26))
                     }
                 }
                 .multilineTextAlignment(.center)

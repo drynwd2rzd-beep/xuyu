@@ -51,6 +51,17 @@ final class StorageTests: XCTestCase {
         XCTAssertEqual(list.first?.daily, false)
     }
 
+    /// 以前的通话记录存的是 zh / ko，没有 lang：照样读得出原话和翻译，再存回去键名不变
+    func testOldCallLogStillDecodes() throws {
+        let old = Data(#"[{"id":"\#(UUID().uuidString)","mine":true,"zh":"在干嘛","ko":"뭐 해"}]"#.utf8)
+        let lines = try JSONDecoder().decode([CallSession.Line].self, from: old)
+        XCTAssertEqual(lines.first?.text, "在干嘛")
+        XCTAssertEqual(lines.first?.translation, "뭐 해")
+        XCTAssertNil(lines.first?.lang)
+        let saved = try XCTUnwrap(String(data: JSONEncoder().encode(lines), encoding: .utf8))
+        XCTAssertTrue(saved.contains(#""zh":"在干嘛""#))
+    }
+
     func testKeyedStoreRoundTripAndRemove() {
         let store = KeyedFileStore<String>(.thoughts)
         let a = UUID(), b = UUID()

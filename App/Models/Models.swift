@@ -73,8 +73,8 @@ extension Persona {
     }
 }
 
-/// 角色用哪种语言聊天、发语音
-enum PersonaLanguage: String { case zh, ko }
+/// 角色用哪种语言聊天、发语音（通话记录里每一句也记着它，所以能存盘）
+enum PersonaLanguage: String, Codable { case zh, ko }
 
 @Model
 final class Conversation {
