@@ -101,6 +101,7 @@ struct RootView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if tabBarShown {
                     FloatingTabBar(selection: $router.tab)
+                        .frame(maxWidth: .infinity)
                         // 底栏后面一层由淡到浓的纸色，往上多伸一截、往下铺到屏幕最底，
                         // 帖子、消息滚到这里就淡掉，不和底栏的小字叠在一起（设计稿 .fade）。Today 的画册不要
                         .background(alignment: .bottom) {
