@@ -70,3 +70,29 @@ struct SectionLabel: View {
             .padding(.top, Space.tight)
     }
 }
+
+/// 根页面的标题（照设计稿）：靠左的细字、宽字距，后面跟一个很淡的拉丁小字（聊天 Colloquia、动态 Momenta、设置 Optiones）；
+/// 右边可以放一个图标按钮
+struct PageHeading<Trailing: View>: View {
+    let title: LocalizedStringKey
+    let latin: String
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(alignment: .lastTextBaseline, spacing: Space.item) {
+            Text(title)
+                .font(.system(size: Typo.Book.title, weight: .light))
+                .tracking(Typo.labelTracking)
+                .foregroundStyle(Palette.ink)
+            Text(verbatim: latin)
+                .font(Typo.serif(Typo.label))
+                .tracking(Typo.tracking)
+                .foregroundStyle(Palette.inkSoft)
+            Spacer()
+            trailing
+        }
+        .padding(.horizontal, Space.page)
+        .padding(.top, Space.group)
+        .padding(.bottom, Space.item)
+    }
+}

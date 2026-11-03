@@ -38,18 +38,26 @@ struct PostView: View {
 
     private var photoPost: some View {
         VStack(alignment: .leading, spacing: Space.tight) {
-            HStack(spacing: Space.item) {
+            // 一行：头像、名字、心情、多久以前（照设计稿），右边「···」
+            HStack(alignment: .center, spacing: Space.item) {
                 avatar(AvatarSize.post)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: name).font(.system(size: Typo.label, weight: .medium)).tracking(Typo.tracking)
-                    if !moment.mood.isEmpty {
-                        Text(verbatim: moment.mood).font(.system(size: Typo.caption)).foregroundStyle(Palette.inkSoft)
-                    }
+                Text(verbatim: name).font(.system(size: Typo.label, weight: .medium)).tracking(Typo.tracking)
+                    .foregroundStyle(Palette.ink)
+                Group {
+                    if !moment.mood.isEmpty { Text(verbatim: moment.mood) }
+                    Text(verbatim: PostTime.label(moment.createdAt, now: now))
                 }
-                .foregroundStyle(Palette.ink)
+                .font(.system(size: Typo.caption))
+                .foregroundStyle(Palette.inkSoft)
                 Spacer()
+                Image(systemName: "ellipsis")
+                    .font(.system(size: Icon.plus))
+                    .foregroundStyle(Palette.inkSoft)
+                    .frame(width: Space.control, height: Space.control)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, Space.card)
+            .padding(.leading, Space.card)
+            .padding(.trailing, Space.tight)
             PostPhotos(photos: shots) { like(only: true) }
             PostActions(moment: moment, people: people, onComment: { onOpen(true) })
                 .padding(.horizontal, Space.tight)
@@ -62,10 +70,6 @@ struct PostView: View {
                     .padding(.horizontal, Space.card)
             }
             CommentPreview(moment: moment, people: people, now: now) { onOpen(false) }
-                .padding(.horizontal, Space.card)
-            Text(verbatim: PostTime.label(moment.createdAt, now: now))
-                .font(Typo.serif(Typo.label))
-                .foregroundStyle(Palette.inkSoft)
                 .padding(.horizontal, Space.card)
         }
         .padding(.bottom, Space.group)

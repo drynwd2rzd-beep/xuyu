@@ -2,89 +2,55 @@ import SwiftUI
 import UIKit
 import QuickLook
 
-/// 多张照片：叠成一摞，左右滑动切换
+/// 聊天里的照片（照设计稿）：一张 4:5 的圆角照片，统一调色，不加白边和阴影；
+/// 几张就左右滑着看，右上角「1/3」。点一下看大图
 struct ImageStack: View {
     let attachments: [Attachment]
     let onOpen: (Int) -> Void
     @State private var top = 0
-    @State private var drag: CGFloat = 0
-
-    private let side: CGFloat = 188
 
     var body: some View {
         let count = attachments.count
-        // 拖动进度：下面那张会随之慢慢升上来
-        let progress = min(abs(drag) / 150, 1)
-        ZStack {
+        TabView(selection: $top) {
             ForEach(Array(attachments.enumerated()), id: \.element.id) { index, a in
-                let pos = (index - top + count) % count
-                if pos < 3 || pos == count - 1 {
-                    let layer = pos == count - 1 && count > 3 ? 2 : pos
-                    card(a)
-                        .scaleEffect(layer == 0 ? 1 - progress * 0.04 : (layer == 1 ? 0.97 + progress * 0.03 : 0.95))
-                        .rotationEffect(.degrees(layer == 0 ? Double(drag / 24)
-                                                 : (layer == 1 ? 5 * Double(1 - progress) : -5)))
-                        .offset(x: layer == 0 ? drag : (layer == 1 ? 10 * (1 - progress) : -9),
-                                y: layer == 0 ? 0 : (layer == 1 ? -9 * (1 - progress) : -12))
-                        .zIndex(Double(3 - layer))
-                }
+                card(a).tag(index)
             }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(width: Self.width, height: Self.width * 5 / 4)
+        .clipShape(.rounded(Radius.bubble))
+        .overlay(alignment: .topTrailing) {
             if count > 1 {
-                Text("\(top + 1) / \(count)")
-                    .font(.system(size: Typo.caption, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 3)
-                    .background(.black.opacity(0.5), in: Capsule())
-                    .frame(width: side, height: side, alignment: .topTrailing)
-                    .padding(10)
-                    .frame(width: side, height: side, alignment: .topTrailing)
-                    .zIndex(9)
+                Text(verbatim: "\(top + 1)/\(count)")
+                    .font(Typo.serif(Typo.label))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.onPhoto)
+                    .padding(.horizontal, Space.tight)
+                    .padding(.vertical, 2)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(Space.tight)
                     .contentTransition(.numericText())
             }
         }
-        .frame(width: side, height: side)
-        .padding(.top, count > 1 ? 12 : 0)
-        .padding(.trailing, count > 1 ? 10 : 0)
-        .contentShape(Rectangle())
+        .contentShape(.rounded(Radius.bubble))
         .onTapGesture { onOpen(top) }
-        .gesture(
-            DragGesture(minimumDistance: 12)
-                .onChanged { value in
-                    guard count > 1, abs(value.translation.width) > abs(value.translation.height) else { return }
-                    drag = value.translation.width
-                }
-                .onEnded { value in
-                    guard count > 1 else { return }
-                    let dx = value.translation.width
-                    let flick = abs(value.predictedEndTranslation.width) > 180
-                    if abs(dx) > 50 || flick {
-                        // 同一个弹簧动画里：最上面那张顺着方向塞到最底下，下一张升上来
-                        withAnimation(Motion.settle) {
-                            top = dx < 0 ? (top + 1) % count : (top - 1 + count) % count
-                            drag = 0
-                        }
-                    } else {
-                        withAnimation(Motion.settle) { drag = 0 }
-                    }
-                }
-        )
         .sensoryFeedback(.selection, trigger: top)
-        .accessibilityLabel("\(count) 张照片")
+        .accessibilityLabel(Text("\(count) 张照片"))
     }
 
+    /// 照片的宽度（照设计稿 210 点）
+    private static let width: CGFloat = 210
+
     private func card(_ a: Attachment) -> some View {
-        Group {
-            if let image = cachedImage(a.data, key: a.id.uuidString) {
-                Image(uiImage: image).resizable().scaledToFill().graded()
-            } else {
-                Palette.fill
+        Color.clear
+            .overlay {
+                if let image = cachedImage(a.data, key: a.id.uuidString) {
+                    Image(uiImage: image).resizable().scaledToFill().graded()
+                } else {
+                    Palette.fill
+                }
             }
-        }
-        .frame(width: side, height: side)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.bubble, style: .continuous).strokeBorder(.white, lineWidth: 3))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 6)
+            .clipped()
     }
 }
 
@@ -110,13 +76,12 @@ struct NoteCard: View {
         .background {
             RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
                 .fill(Palette.card)
-                .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
         }
         .overlay(alignment: .top) {
             Rectangle().fill(Palette.clay.opacity(0.5)).frame(height: 3)
                 .clipShape(UnevenRoundedRectangle(topLeadingRadius: Radius.tile, topTrailingRadius: Radius.tile, style: .continuous))
         }
-        .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+
     }
 }
 
@@ -164,6 +129,6 @@ struct FileCard: View {
         .padding(Space.item)
         .frame(maxWidth: 250, alignment: .leading)
         .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 0.5))
+
     }
 }

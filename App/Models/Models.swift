@@ -127,6 +127,11 @@ final class Conversation {
         return last.role == .assistant && last.createdAt > lastReadAt
     }
 
+    /// 你上次看过以后 TA 们新说了几条（聊天列表上那个小数字）
+    func unreadCount(at now: Date = .now) -> Int {
+        (messages ?? []).filter { $0.role == .assistant && $0.createdAt > lastReadAt && $0.createdAt <= now }.count
+    }
+
     func displayTitle(_ members: [Persona]) -> String {
         if !title.trimmed.isEmpty { return title }
         if isGroup { return members.isEmpty ? "群聊" : members.map(\.name).joined(separator: "、") }

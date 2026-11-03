@@ -7,6 +7,7 @@ struct ChatListView: View {
     @Environment(ChatEngine.self) private var engine
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
+    @Query(sort: \DiaryEntry.day, order: .reverse) private var entries: [DiaryEntry]
     @State private var query = ""
     @State private var openRow: UUID?
     @State private var pendingRemoval: Conversation?
@@ -15,6 +16,15 @@ struct ChatListView: View {
 
     private var personaMap: [UUID: Persona] {
         Dictionary(personas.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// 每位角色此刻的心情：TA 最近一篇写了心情的日记
+    private var moods: [UUID: String] {
+        var result: [UUID: String] = [:]
+        for e in entries where e.author == .ai && !e.mood.isEmpty {
+            if let id = e.personaID, result[id] == nil { result[id] = e.mood }
+        }
+        return result
     }
 
     private func members(_ convo: Conversation) -> [Persona] {
@@ -36,15 +46,25 @@ struct ChatListView: View {
     }
 
     var body: some View {
+        // 照设计稿：「聊天 Colloquia」，一条浅灰的搜索框，下面一行行直接铺在白底上（不包卡片、不加线）
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.section) {
-                PageTitle(title: "Chats") { EmptyView() }
-                SearchField(text: $query, placeholder: "搜索")
+            VStack(alignment: .leading, spacing: 0) {
+                PageHeading(title: "聊天", latin: "Colloquia") {
+                    Button { router.open(.personas) } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: Icon.compose))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: Space.control, height: Space.control)
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                    .accessibilityLabel("新建聊天")
+                }
+                SearchField(text: $query, placeholder: "搜索聊天记录")
+                    .padding(.horizontal, Space.page)
+                    .padding(.bottom, Space.tight)
                 list
             }
-            .padding(.horizontal, Space.page)
-            .padding(.top, Space.top)
-            .padding(.bottom, 96)
+            .padding(.bottom, Space.bookBottom)
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.immediately)
@@ -62,7 +82,7 @@ struct ChatListView: View {
                                                tint: Palette.danger) { pendingRemoval = convo }) {
                     Button { router.open(.chat(convo.id), from: rowFrames.rects[convo.id]) } label: {
                         ConversationRow(convo: convo, members: members(convo), personaMap: personaMap,
-                                        typing: engine.isBusy(convo))
+                                        typing: engine.isBusy(convo), mood: convo.isGroup ? "" : moods[convo.memberIDs.first ?? UUID()] ?? "")
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rowFrames.rects[convo.id] = $0 }
                     }
                     .buttonStyle(PressableRowStyle())
@@ -85,8 +105,6 @@ struct ChatListView: View {
                     .padding(.vertical, 28)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-        .card()
         .animation(Motion.spring, value: items.map(\.id))
         .confirmationDialog(pendingRemoval?.isGroup == true ? "删除这个群聊？" : "清空聊天记录？",
                             isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
@@ -129,10 +147,9 @@ struct SearchField: View {
                 .accessibilityLabel("清除")
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: Space.control)
+        .padding(.horizontal, Space.section)
+        .frame(height: Space.search)
         .background(Palette.card, in: Capsule())
-        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
     }
 }
 
@@ -141,42 +158,62 @@ struct ConversationRow: View {
     let members: [Persona]
     let personaMap: [UUID: Persona]
     let typing: Bool
+    /// TA 此刻的心情（最近一篇日记里写的；群聊没有）
+    var mood = ""
+
+    /// 未读小数字的底色：TA 心情的颜色
+    private var tint: Color { MoodTint.glow(for: mood).m1 }
 
     var body: some View {
         TimelineView(PlannedSchedule(convo)) { _ in
             let last = convo.lastVisible(at: .now)
-            let unread = convo.hasUnread(at: .now)
-            HStack(spacing: Space.item) {
-                ConversationAvatar(convo: convo, members: members, size: 50)
-                    .overlay(alignment: .topTrailing) {
-                        if unread {
-                            Circle().fill(Palette.ink).frame(width: 12, height: 12)
-                                .overlay(Circle().strokeBorder(Palette.card, lineWidth: 2))
-                                .offset(x: 2, y: -2)
-                        }
-                    }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(convo.displayTitle(members))
-                            .font(Typo.serif(17.5, .medium))
+            let unread = convo.hasUnread(at: .now) ? convo.unreadCount(at: .now) : 0
+            // 照设计稿：光球头像；名字后面跟 TA 此刻的心情小字；时间是淡淡的拉丁字；
+            // TA 说的最后一句用宋体，你说的用系统字、前面带「你：」；未读是 TA 颜色的小数字
+            HStack(spacing: Space.section) {
+                ConversationAvatar(convo: convo, members: members, size: AvatarSize.list)
+                VStack(alignment: .leading, spacing: Space.tiny) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.tight) {
+                        Text(verbatim: convo.displayTitle(members))
+                            .font(.system(size: Typo.body, weight: .medium))
+                            .tracking(Typo.tracking)
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)
+                        if !mood.isEmpty {
+                            Text(verbatim: mood).font(.system(size: Typo.caption)).foregroundStyle(Palette.inkSoft)
+                        }
                         if convo.pinned {
-                            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Palette.faint)
+                            Image(systemName: "pin.fill").font(.system(size: Icon.pin)).foregroundStyle(Palette.faint)
                         }
                         Spacer(minLength: Space.tight)
                         if let last {
-                            Text(last.createdAt.listStamp).font(.system(size: 12)).foregroundStyle(Palette.inkSoft)
+                            Text(verbatim: PostTime.label(last.createdAt, now: .now))
+                                .font(Typo.serif(Typo.label))
+                                .monospacedDigit()
+                                .foregroundStyle(Palette.inkSoft)
                         }
                     }
-                    Text(typing ? "正在输入…" : preview(last))
-                        .font(.system(size: 14))
-                        .foregroundStyle(typing ? Palette.ink : Palette.inkSoft)
-                        .lineLimit(1)
+                    HStack(spacing: Space.tight) {
+                        let mine = last?.role == .user
+                        Text(verbatim: typing ? String(localized: "正在输入…") : (mine ? String(localized: "你：") : "") + preview(last))
+                            .font(mine || typing ? .system(size: Typo.label) : Typo.serif(Typo.label))
+                            .foregroundStyle(mine ? Palette.inkSoft : Palette.ink2)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        if unread > 0 {
+                            Text(verbatim: "\(unread)")
+                                .font(.system(size: Typo.caption))
+                                .monospacedDigit()
+                                .foregroundStyle(Palette.onPhoto)
+                                .padding(.horizontal, Space.tiny)
+                                .frame(minWidth: Space.badge, minHeight: Space.badge)
+                                .background(tint, in: Capsule())
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, Space.card)
-            .padding(.vertical, 13)
+            .padding(.horizontal, Space.page)
+            .padding(.vertical, Space.section)
             .contentShape(Rectangle())
             // 旁白：名字、最新一句一起读，有新消息时说「未读」（小圆点本身读不出来）
             .accessibilityElement(children: .combine)

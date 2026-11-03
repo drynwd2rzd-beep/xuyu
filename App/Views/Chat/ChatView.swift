@@ -231,16 +231,24 @@ struct ChatView: View {
                 }
             }
             .buttonStyle(.plain)
-            Spacer()
-            Button { withAnimation(Motion.spring) { searching = true } } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 44, height: 44)
+            // 设计稿页头只有返回、头像和名字：搜索这段聊天放在长按名字的菜单里（UI-4）
+            .contextMenu {
+                Button { withAnimation(Motion.spring) { searching = true } } label: {
+                    Label("搜索聊天记录", systemImage: "magnifyingglass")
+                }
             }
-            .accessibilityLabel("搜索聊天记录")
+            .accessibilityAction(named: Text("搜索聊天记录")) { withAnimation(Motion.spring) { searching = true } }
+            Spacer()
+            // 和左边的返回键一样宽，头像和名字才在正中间
+            Color.clear.frame(width: Space.control, height: Space.control)
         }
         .padding(.horizontal, Space.tight)
         .padding(.bottom, Space.tight)
+        // 页头是磨砂的白：下面的消息隐约透上来，不加分割线（设计稿）
+        .background {
+            Rectangle().fill(.ultraThinMaterial)
+                .overlay(Palette.frosted)
+                .ignoresSafeArea(edges: .top)
+        }
     }
 }

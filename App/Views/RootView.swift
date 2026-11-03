@@ -89,19 +89,20 @@ struct RootView: View {
                 tabPage(.moments) { MomentsView(root: true) }
             }
             // 上下边缘：往上滚的内容在状态栏那一截柔和地淡进纸色，不会硬生生切在时间下面；
-            // 底栏后面也是一层由浓到淡的纸色，一直铺到屏幕最底下，底栏像浮在纸上。
-            // safeAreaInsets.bottom 已经算上了底栏的高度（这一层在底栏的 safeAreaInset 里面）
+            // 底栏后面也是一层由浓到淡的纸色，一直铺到屏幕最底下，底栏的小字不压在帖子、消息上（设计稿 .fade）。
+            // 两层各自伸进安全区：这一层在底栏的 safeAreaInset 里面，往下伸就盖住了底栏和屏幕最下沿。
+            // 以前是在忽略了安全区的 GeometryReader 里量安全区，量出来是 0，渐隐只有几点高，等于没有。
+            // Today 是铺满照片的画册，不要这层纸色
             .overlay {
-                GeometryReader { g in
-                    VStack(spacing: 0) {
-                        EdgeFade(edge: .top).frame(height: g.safeAreaInsets.top + 6)
-                        Spacer(minLength: 0)
-                        EdgeFade(edge: .bottom)
-                            .frame(height: g.safeAreaInsets.bottom + 28)
-                            .opacity(tabBarShown ? 1 : 0)
-                    }
+                VStack(spacing: 0) {
+                    EdgeFade(edge: .top).frame(height: Space.tiny).ignoresSafeArea(edges: .top)
+                    Spacer(minLength: 0)
+                    EdgeFade(edge: .bottom)
+                        .frame(height: Space.group)
+                        .ignoresSafeArea(edges: .bottom)
+                        .opacity(tabBarShown ? 1 : 0)
                 }
-                .ignoresSafeArea()
+                .opacity(router.tab == .today ? 0 : 1)
                 .allowsHitTesting(false)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {

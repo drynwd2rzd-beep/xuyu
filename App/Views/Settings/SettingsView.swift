@@ -9,6 +9,7 @@ import PhotosUI
 struct SettingsView: View {
     @Environment(RelayClient.self) private var relay
     @Environment(Router.self) private var router
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \Persona.sortIndex) private var personas: [Persona]
     @AppStorage(Prefs.nickname) private var nickname = ""
     @AppStorage(Prefs.defaultClaudeModel) private var claudeModel = ""
@@ -27,7 +28,6 @@ struct SettingsView: View {
                 .padding(.bottom, Space.bottom)
         }
         .scrollIndicators(.hidden)
-        .safeAreaInset(edge: .top, spacing: 0) { SubpageHeader(title: "设置") }
         .background(Palette.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $modelEngine) { engine in
@@ -76,9 +76,18 @@ struct SettingsView: View {
     /// 首页的四块：我（你是谁）、AI（TA 们和驱动 TA 们的模型）、App（这台手机上的 App 本身）、重置
     private var sections: some View {
         VStack(alignment: .leading, spacing: Space.group) {
-            SettingsGroup(title: "我") {
+            // 照设计稿：返回，「设置 Optiones」，然后是你（头像、称呼、TA 们都知道的那段「你是谁」）
+            VStack(alignment: .leading, spacing: 0) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: Icon.back, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: Space.control, height: Space.control)
+                }
+                .accessibilityLabel("返回")
+                PageHeading(title: "设置", latin: "Optiones") { EmptyView() }
+                    .padding(.horizontal, -Space.tight)
                 meRow
-                youRow
             }
 
             SettingsGroup(title: "AI") {
@@ -100,7 +109,7 @@ struct SettingsView: View {
 
             SettingsGroup(title: "App") {
                 Button { router.open(.connection) } label: {
-                    connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected, symbol: "desktopcomputer")
+                    connectionRow(title: "电脑中继", subtitle: relayLine, ok: relay.isConnected)
                 }
                 .buttonStyle(PressableRowStyle())
                 navRow("语音服务", route: .voice)
@@ -209,20 +218,12 @@ struct SettingsView: View {
         .buttonStyle(PressableRowStyle())
     }
 
-    /// 自己：头像（点一下从相册换，长按可恢复成文字头像）+ 称呼
+    /// 你（照设计稿）：头像（点一下从相册换，长按可以移除），右边是称呼，下面是 TA 们都知道的那段「你是谁」
+    /// （宋体，存在世界观里，见 World.State.you）。两样都在这里直接改
     private var meRow: some View {
-        HStack(spacing: Space.item) {
+        HStack(alignment: .top, spacing: Space.page) {
             PhotosPicker(selection: $avatarItem, matching: .images) {
-                UserAvatar(size: 40)
-                    .overlay(alignment: .bottomTrailing) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(Palette.inkInverse)
-                            .frame(width: 17, height: 17)
-                            .background(Palette.ink, in: Circle())
-                            .overlay(Circle().strokeBorder(Palette.card, lineWidth: 1.5))
-                            .offset(x: 3, y: 3)
-                    }
+                UserAvatar(size: AvatarSize.me)
             }
             .buttonStyle(ScaleButtonStyle())
             .accessibilityLabel("更换我的头像")
@@ -234,37 +235,32 @@ struct SettingsView: View {
                 }
             }
             .id(avatarStamp)
-            Text("我").font(.system(size: 16)).foregroundStyle(Palette.ink)
-            Spacer()
-            TextField("怎么称呼你", text: $nickname)
-                .multilineTextAlignment(.trailing)
-                .font(.system(size: 15))
-                .foregroundStyle(Palette.ink2)
-                .frame(maxWidth: 160)
+            VStack(alignment: .leading, spacing: Space.tiny) {
+                TextField("怎么称呼你", text: $nickname)
+                    .font(.system(size: Typo.title))
+                    .tracking(Typo.tracking)
+                    .foregroundStyle(Palette.ink)
+                TextField("你是谁：住在哪、做什么、喜欢什么…", text: $you, axis: .vertical)
+                    .font(Typo.serif(Typo.label))
+                    .lineSpacing(Space.tiny)
+                    .lineLimit(1...8)
+                    .foregroundStyle(Palette.ink2)
+                    .onChange(of: you) { _, new in
+                        var s = World.state
+                        guard s.you != new else { return }
+                        s.you = new
+                        World.state = s
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: World.changed)) { _ in
+                        // 从备份恢复、恢复出厂设置后跟着变
+                        let latest = World.state.you
+                        if latest != you { you = latest }
+                    }
+            }
+            .padding(.top, Space.tiny)
         }
         .padding(.horizontal, Space.card)
-        .frame(height: Space.rowTall)
-    }
-
-    /// 你是谁：TA 们都知道的那一段（存在世界观里，见 World.State.you）
-    private var youRow: some View {
-        TextField("你是谁：住在哪、做什么、喜欢什么…", text: $you, axis: .vertical)
-            .font(.system(size: 15))
-            .lineSpacing(4)
-            .lineLimit(2...8)
-            .padding(Space.card)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: you) { _, new in
-                var s = World.state
-                guard s.you != new else { return }
-                s.you = new
-                World.state = s
-            }
-            .onReceive(NotificationCenter.default.publisher(for: World.changed)) { _ in
-                // 从备份恢复、恢复出厂设置后跟着变
-                let latest = World.state.you
-                if latest != you { you = latest }
-            }
+        .padding(.top, Space.page)
     }
 
     private var relayLine: String {
@@ -276,52 +272,32 @@ struct SettingsView: View {
         }
     }
 
-    private func connectionRow(title: String, subtitle: String, ok: Bool, symbol: String) -> some View {
-        HStack(spacing: Space.item) {
-            Image(systemName: symbol)
-                .font(.system(size: 15))
-                .foregroundStyle(Palette.ink)
-                .frame(width: 34, height: 34)
-                .background(Palette.fill, in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16)).foregroundStyle(Palette.ink)
-                Text(subtitle).font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).lineLimit(1)
+    /// 电脑中继一行（照设计稿）：右边一个小绿点（连上了）和现在的状态，不放图标
+    private func connectionRow(title: String, subtitle: String, ok: Bool) -> some View {
+        SettingRow(title: title) {
+            HStack(spacing: Space.tight) {
+                StatusDot(ok: ok)
+                Text(verbatim: subtitle).lineLimit(1)
             }
-            Spacer()
-            StatusDot(ok: ok)
+            .font(.system(size: Typo.value))
+            .foregroundStyle(Palette.inkSoft)
             Chevron()
         }
-        .padding(.horizontal, Space.card)
-        .frame(height: Space.rowTall)
-        .contentShape(Rectangle())
     }
 
-    /// Claude / Codex 一行：显示它的默认模型，点进去选模型和推理强度
+    /// Claude / Codex 一行：「Claude 默认模型」，右边是现在选的模型，点进去选模型和推理强度
     private func engineRow(_ engine: Engine) -> some View {
         let s = engine == .claude ? relay.status?.claude : relay.status?.codex
         let model = engine == .claude ? claudeModel : codexModel
         let effort = engine == .claude ? claudeEffort : codexEffort
-        let subtitle: String = if s?.installed == false {
-            "电脑上还没有安装"
-        } else {
-            "默认模型 · " + ModelNames.summary(model, effort, engine: engine, status: relay.status)
-        }
+        let value: String = s?.installed == false
+            ? String(localized: "电脑上还没有安装")
+            : ModelNames.summary(model, effort, engine: engine, status: relay.status)
         return Button { modelEngine = engine } label: {
-            HStack(spacing: Space.item) {
-                EngineLogo(engine: engine, size: 18)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.fill, in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(engine.label).font(.system(size: 16)).foregroundStyle(Palette.ink)
-                    Text(subtitle).font(.system(size: Typo.secondary)).foregroundStyle(Palette.inkSoft).lineLimit(1)
-                }
-                Spacer()
-                StatusDot(ok: s?.installed == true && relay.isConnected)
+            SettingRow(title: String(localized: "\(engine.label) 默认模型")) {
+                Text(verbatim: value).font(.system(size: Typo.value)).foregroundStyle(Palette.inkSoft).lineLimit(1)
                 Chevron()
             }
-            .padding(.horizontal, Space.card)
-            .frame(height: Space.rowTall)
-            .contentShape(Rectangle())
         }
         .buttonStyle(PressableRowStyle())
     }

@@ -65,8 +65,9 @@ struct MomentsView: View {
     }
 
     /// 「动态 Moments」：细字、宽字距，旁边一个很淡的英文；右边是发动态的笔
+    /// 「动态 Momenta」；从别处推进来的这一页，标题上面多一个返回
     private var header: some View {
-        HStack(alignment: .lastTextBaseline) {
+        VStack(alignment: .leading, spacing: 0) {
             if !root {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
@@ -75,27 +76,18 @@ struct MomentsView: View {
                         .frame(width: Space.control, height: Space.control)
                 }
                 .accessibilityLabel("返回")
+                .padding(.horizontal, Space.tight)
             }
-            Text("动态")
-                .font(.system(size: Typo.Book.title, weight: .light))
-                .tracking(Typo.labelTracking)
-            Text(verbatim: "Moments")
-                .font(Typo.serif(Typo.label))
-                .tracking(Typo.tracking)
-                .foregroundStyle(Palette.inkSoft)
-            Spacer()
-            Button { composing = true } label: {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: Icon.compose))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: Space.control, height: Space.control)
+            PageHeading(title: "动态", latin: "Momenta") {
+                Button { composing = true } label: {
+                    Image(systemName: "plus.square")
+                        .font(.system(size: Icon.compose))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: Space.control, height: Space.control)
+                }
+                .buttonStyle(ScaleButtonStyle())
+                .accessibilityLabel("发动态")
             }
-            .buttonStyle(ScaleButtonStyle())
-            .accessibilityLabel("发动态")
         }
-        .foregroundStyle(Palette.ink)
-        .padding(.horizontal, Space.page)
-        .padding(.top, Space.group)
-        .padding(.bottom, Space.item)
     }
 }

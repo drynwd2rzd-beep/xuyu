@@ -101,9 +101,9 @@ struct MessageRow: View {
                     .accessibilityAction(named: Text("拍一拍")) { if let persona { actions.nudge(persona) } }
             }
             VStack(alignment: .leading, spacing: 5) {
-                // 名字只在 TA 这一串的第一条上面出现（像 iMessage），单聊里只在有工作过程、思考过程可以展开时出现。
+                // 名字只在群聊里 TA 这一串的第一条上面出现（像 iMessage）；单聊里只有工作模式在干活时出现（设计稿单聊没有名字行）。
                 // 以前「正在输入」时也总带着名字，连着发第二条时名字先冒出来、小点变成字时又消失，这一行忽高忽低
-                if (first && (isGroup || hasDetail)) || !steps.isEmpty { label }
+                if (first && isGroup) || !steps.isEmpty { label }
                 if hasDetail {
                     // 展开 / 收起：高度从 0 平滑长出来（或缩回去），下面的消息被柔和地推开，不会跳
                     detail

@@ -122,6 +122,9 @@ enum Space {
     static let rowTall: CGFloat = 60
     /// 输入框、按钮高度
     static let control: CGFloat = 42
+    /// 搜索框的高度、未读小数字的最小尺寸
+    static let search: CGFloat = 38
+    static let badge: CGFloat = 18
     /// 聊天输入框（一行时）和加号的高度：照 iMessage
     static let field: CGFloat = 36
     /// 页面顶部到标题
@@ -150,6 +153,10 @@ enum AvatarSize {
     static let profile: CGFloat = 76
     /// 这个头像有多少压进横幅里（一半）
     static let profileOverlap: CGFloat = 38
+    /// 聊天列表的头像
+    static let list: CGFloat = 50
+    /// 设置首页「你」的头像
+    static let me: CGFloat = 58
 }
 
 /// 图标和小按钮的尺寸（UI-1）
@@ -169,6 +176,8 @@ enum Icon {
     static let heartPop: CGFloat = 84
     /// 发动态的笔
     static let compose: CGFloat = 21
+    /// 聊天列表里置顶的小图钉
+    static let pin: CGFloat = 9
     /// 返回键的箭头
     static let back: CGFloat = 18
     /// 快拍里「你」那个头像右下角的加号
