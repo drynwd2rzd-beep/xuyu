@@ -24,7 +24,8 @@ struct SwipeRow<Content: View>: View {
 
     var body: some View {
         content
-            .background(Palette.card)
+            // 行本身是页面的白底（盖住后面露出来的按钮）；列表不再包在灰卡片里
+            .background(Palette.paper)
             .offset(x: offset)
             .background { actions }
             .clipped()

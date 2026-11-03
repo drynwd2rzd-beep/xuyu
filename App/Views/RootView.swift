@@ -88,26 +88,28 @@ struct RootView: View {
                 tabPage(.chats) { ChatListView() }
                 tabPage(.moments) { MomentsView(root: true) }
             }
-            // 上下边缘：往上滚的内容在状态栏那一截柔和地淡进纸色，不会硬生生切在时间下面；
-            // 底栏后面也是一层由浓到淡的纸色，一直铺到屏幕最底下，底栏的小字不压在帖子、消息上（设计稿 .fade）。
-            // 两层各自伸进安全区：这一层在底栏的 safeAreaInset 里面，往下伸就盖住了底栏和屏幕最下沿。
+            // 顶上：往上滚的内容在状态栏那一截柔和地淡进纸色，不会硬生生切在时间下面。
             // 以前是在忽略了安全区的 GeometryReader 里量安全区，量出来是 0，渐隐只有几点高，等于没有。
             // Today 是铺满照片的画册，不要这层纸色
-            .overlay {
-                VStack(spacing: 0) {
-                    EdgeFade(edge: .top).frame(height: Space.tiny).ignoresSafeArea(edges: .top)
-                    Spacer(minLength: 0)
-                    EdgeFade(edge: .bottom)
-                        .frame(height: Space.group)
-                        .ignoresSafeArea(edges: .bottom)
-                        .opacity(tabBarShown ? 1 : 0)
-                }
-                .opacity(router.tab == .today ? 0 : 1)
-                .allowsHitTesting(false)
+            .overlay(alignment: .top) {
+                EdgeFade(edge: .top)
+                    .frame(height: Space.tiny)
+                    .ignoresSafeArea(edges: .top)
+                    .opacity(router.tab == .today ? 0 : 1)
+                    .allowsHitTesting(false)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if tabBarShown {
                     FloatingTabBar(selection: $router.tab)
+                        // 底栏后面一层由淡到浓的纸色，往上多伸一截、往下铺到屏幕最底，
+                        // 帖子、消息滚到这里就淡掉，不和底栏的小字叠在一起（设计稿 .fade）。Today 的画册不要
+                        .background(alignment: .bottom) {
+                            EdgeFade(edge: .bottom)
+                                .padding(.top, -Space.group)
+                                .ignoresSafeArea(edges: .bottom)
+                                .opacity(router.tab == .today ? 0 : 1)
+                                .allowsHitTesting(false)
+                        }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
